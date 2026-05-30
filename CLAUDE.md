@@ -38,8 +38,15 @@ Agent 产出必须符合预定义的竞品知识 Schema：
 
 - 代码用英文命名，注释和文档用中文
 - 遵循 CLAUDE.md 全局规则（简洁、手术式修改、目标驱动）
-- 每次结束工作前更新 `PROGRESS.md` 和 `DECISIONS.md`
 - Git 提交信息格式：`<type>: <description>`（feat / fix / docs / refactor）
+
+## 结束对话流程
+
+每次对话结束前，必须按顺序执行以下步骤：
+
+1. 更新 `PROGRESS.md` — 记录本次完成、进行中、下一步
+2. 更新 `DECISIONS.md` — 记录本次做出的技术决策（如有）
+3. `git add` → `git commit` → `git push origin master` — 同步到远程仓库
 
 ## 时间节点
 

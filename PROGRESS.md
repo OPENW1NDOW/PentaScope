@@ -16,6 +16,14 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-05-31
+- 完成：
+  - Task 1: 项目骨架搭建（requirements.txt、.gitignore 补全、.env.example、src/tests 子目录 __init__.py、tests/conftest.py 共享 fixtures）
+  - Task 2: Input Schemas（CompetitorBasic、AnalysisGoal、CompetitorInput 三个 Pydantic 模型，11 项测试全部通过）
+- 进行中：无
+- 下一步：Task 3 — Profile Schema
+- 阻塞：无
+
 ## 2026-05-30
 - 完成：
   - 开题材料研读与分析（CIS AI 全栈挑战赛开题材料）

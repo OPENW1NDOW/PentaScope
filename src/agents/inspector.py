@@ -62,7 +62,7 @@ class InspectorAgent:
 
         # LLM 质量评估
         report_text = report.model_dump_json()
-        llm_result = await self.llm.call_json(INSPECTOR_SYSTEM, f"请检查以下报告：\n\n{report_text[:6000]}")
+        llm_result = await self.llm.call_json(INSPECTOR_SYSTEM, f"请检查以下报告：\n\n{report_text[:15000]}")
 
         # 合并结果
         llm_issues = [

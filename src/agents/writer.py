@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
+from pydantic import ValidationError
 from src.schemas.analysis import CompetitiveAnalysis
 from src.schemas.report import FinalReport
 from src.agents.prompts import WRITER_SYSTEM
@@ -32,6 +33,19 @@ class WriterAgent:
         result["metadata"]["competitors_analyzed"] = competitors
         result["metadata"]["generated_at"] = datetime.now(timezone.utc).isoformat()
 
-        report = FinalReport(**result)
+        try:
+            report = FinalReport(**result)
+        except ValidationError as e:
+            logger.warning("[writer] Pydantic 校验失败, 重试: %s", e)
+            result = await self.llm.call_json(WRITER_SYSTEM, prompt)
+            result.setdefault("metadata", {})
+            result["metadata"]["competitors_analyzed"] = competitors
+            result["metadata"]["generated_at"] = datetime.now(timezone.utc).isoformat()
+            try:
+                report = FinalReport(**result)
+            except ValidationError as e2:
+                logger.error("[writer] 重试后仍然失败: %s, raw=%s", e2, result)
+                raise ValueError(f"Writer output validation failed after retry: {e2}") from e2
+
         logger.info("[writer] 报告撰写完成: %s", report.title)
         return report

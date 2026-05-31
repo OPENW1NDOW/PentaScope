@@ -1,5 +1,6 @@
 import json
 import logging
+from pydantic import ValidationError
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
 from src.agents.prompts import ANALYZER_SYSTEM
@@ -26,7 +27,17 @@ class AnalyzerAgent:
         prompt = f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
         result = await self.llm.call_json(ANALYZER_SYSTEM, prompt)
 
-        analysis = CompetitiveAnalysis(**result)
+        try:
+            analysis = CompetitiveAnalysis(**result)
+        except ValidationError as e:
+            logger.warning("[analyzer] Pydantic 校验失败, 重试: %s", e)
+            result = await self.llm.call_json(ANALYZER_SYSTEM, prompt)
+            try:
+                analysis = CompetitiveAnalysis(**result)
+            except ValidationError as e2:
+                logger.error("[analyzer] 重试后仍然失败: %s, raw=%s", e2, result)
+                raise ValueError(f"Analyzer output validation failed after retry: {e2}") from e2
+
         logger.info("[analyzer] 分析完成, 功能矩阵 %d 条, SWOT %d/%d/%d/%d",
                     len(analysis.feature_matrix),
                     len(analysis.swot.strengths), len(analysis.swot.weaknesses),

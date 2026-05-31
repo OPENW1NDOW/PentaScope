@@ -17,7 +17,7 @@ def build_graph(llm, http, parser) -> StateGraph:
     inspector = InspectorAgent(llm=llm)
 
     async def collector_node(state: AnalysisState) -> dict:
-        logger.info("[graph] → collector")
+        logger.info("[graph] → collector (retry_count=%d)", state.get("retry_count", 0))
         profiles = await collector.collect(state["user_input"])
         return {"profiles": profiles, "current_node": "collector"}
 

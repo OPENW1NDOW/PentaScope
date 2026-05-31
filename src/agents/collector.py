@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from pydantic import ValidationError
 from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
 from src.schemas.profile import CompetitorProfile
 from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
@@ -22,7 +23,16 @@ class CollectorAgent:
         """从自然语言描述中解析分析目标"""
         logger.info("[collector] 解析分析目标: %s", context[:50])
         result = await self.llm.call_json(COLLECTOR_GOAL_SYSTEM, f"用户输入：{context}")
-        return AnalysisGoal(**result)
+        try:
+            return AnalysisGoal(**result)
+        except ValidationError as e:
+            logger.warning("[collector] parse_goal 校验失败, 重试: %s", e)
+            result = await self.llm.call_json(COLLECTOR_GOAL_SYSTEM, f"用户输入：{context}")
+            try:
+                return AnalysisGoal(**result)
+            except ValidationError as e2:
+                logger.error("[collector] parse_goal 重试后仍然失败: %s, raw=%s", e2, result)
+                raise ValueError(f"Collector parse_goal validation failed after retry: {e2}") from e2
 
     async def classify_competitor(self, name: str, goal: AnalysisGoal) -> dict:
         """判断竞品类型"""
@@ -49,7 +59,22 @@ class CollectorAgent:
             "data_sources": sources,
             "completeness_score": self._calc_completeness(raw),
         }
-        return CompetitorProfile(**raw)
+        try:
+            return CompetitorProfile(**raw)
+        except ValidationError as e:
+            logger.warning("[collector] _extract_profile 校验失败, 重试: %s", e)
+            raw = await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt)
+            raw["classification"] = classification
+            raw["metadata"] = {
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+                "data_sources": sources,
+                "completeness_score": self._calc_completeness(raw),
+            }
+            try:
+                return CompetitorProfile(**raw)
+            except ValidationError as e2:
+                logger.error("[collector] _extract_profile 重试后仍然失败: %s, raw=%s", e2, raw)
+                raise ValueError(f"Collector _extract_profile validation failed after retry: {e2}") from e2
 
     def _calc_completeness(self, data: dict) -> float:
         """计算数据完整度"""

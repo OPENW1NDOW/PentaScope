@@ -83,3 +83,30 @@ class TestCompetitorProfile:
         sample_competitor_profile["feature_tree"] = []
         p = CompetitorProfile(**sample_competitor_profile)
         assert p.feature_tree == []
+
+
+from src.schemas.analysis import (
+    CompetitiveAnalysis, PositioningEntry, Positioning,
+    FeatureMatrixEntry, BusinessModelEntry, BusinessModel,
+    OperationsEntry, Operations, UserSentiment, SwotEntry, Swot,
+    RadarDimensions, RadarScore,
+)
+
+
+class TestCompetitiveAnalysis:
+    def test_valid_full(self, sample_competitive_analysis):
+        a = CompetitiveAnalysis(**sample_competitive_analysis)
+        assert len(a.positioning.per_competitor) == 1
+        assert len(a.feature_matrix) == 1
+        assert a.feature_matrix[0].gap_level == "落后"
+        assert len(a.radar_scores) == 1
+        assert a.radar_scores[0].dimensions.feature_breadth == 4.5
+
+    def test_swot_has_dimension(self, sample_competitive_analysis):
+        a = CompetitiveAnalysis(**sample_competitive_analysis)
+        assert a.swot.strengths[0].dimension == "positioning"
+
+    def test_radar_score_range(self, sample_competitive_analysis):
+        sample_competitive_analysis["radar_scores"][0]["dimensions"]["feature_breadth"] = 6.0
+        with pytest.raises(ValidationError):
+            CompetitiveAnalysis(**sample_competitive_analysis)

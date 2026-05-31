@@ -146,7 +146,7 @@ def sample_competitive_analysis():
                 {
                     "point": "生态完善",
                     "evidence": "覆盖支付、理财、生活服务等多场景",
-                    "dimension": "feature",
+                    "dimension": "positioning",
                     "source_urls": ["https://www.alipay.com"],
                 }
             ],

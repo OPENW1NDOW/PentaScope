@@ -110,3 +110,46 @@ class TestCompetitiveAnalysis:
         sample_competitive_analysis["radar_scores"][0]["dimensions"]["feature_breadth"] = 6.0
         with pytest.raises(ValidationError):
             CompetitiveAnalysis(**sample_competitive_analysis)
+
+
+from src.schemas.report import FinalReport, ExecutiveSummary, ReportSection, ActionItem, ActionItems, ReportMetadata
+from src.schemas.feedback import RejectionFeedback, FeedbackIssue, AgentMessage
+
+
+class TestFinalReport:
+    def test_valid_full(self, sample_final_report):
+        r = FinalReport(**sample_final_report)
+        assert r.title == "支付宝竞品分析报告"
+        assert len(r.action_items.immediate) == 1
+        assert r.metadata.quality_score == 0.85
+
+    def test_action_items_time_layers(self, sample_final_report):
+        r = FinalReport(**sample_final_report)
+        assert r.action_items.immediate[0].priority == "高"
+        assert r.action_items.short_term[0].priority == "中"
+        assert r.action_items.long_term[0].priority == "低"
+
+
+class TestRejectionFeedback:
+    def test_valid(self):
+        f = RejectionFeedback(
+            passed=False,
+            issues=[FeedbackIssue(agent="collector", field="feature_tree", severity="critical", reason="为空", suggestion="补充功能数据")],
+            retry_count=0, max_retries=2
+        )
+        assert f.passed is False
+        assert f.issues[0].agent == "collector"
+
+    def test_passed_no_issues(self):
+        f = RejectionFeedback(passed=True, issues=[], retry_count=0, max_retries=2)
+        assert f.passed is True
+
+
+class TestAgentMessage:
+    def test_valid(self):
+        m = AgentMessage(
+            from_agent="collector", to_agent="analyzer",
+            message_type="result", payload={"profiles": []},
+            timestamp="2026-05-31T10:00:00", trace_id="abc-123"
+        )
+        assert m.from_agent == "collector"

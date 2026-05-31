@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 from pydantic import ValidationError
@@ -9,6 +10,15 @@ logger = logging.getLogger(__name__)
 
 APP_STORE_SEARCH_URL = "https://apps.apple.com/cn/search?term={name}"
 YINGYONGBAO_SEARCH_URL = "https://sj.qq.com/search?q={name}"
+BAIKE_SEARCH_URL = "https://baike.baidu.com/item/{name}"
+BAIDU_SEARCH_URL = "https://www.baidu.com/s?wd={name}+产品功能+定价"
+
+URL_TEMPLATES = [
+    ("app_store", APP_STORE_SEARCH_URL),
+    ("yingyongbao", YINGYONGBAO_SEARCH_URL),
+    ("baike", BAIKE_SEARCH_URL),
+    ("baidu_search", BAIDU_SEARCH_URL),
+]
 
 
 class CollectorAgent:
@@ -89,35 +99,38 @@ class CollectorAgent:
             score -= 0.1
         return max(0, round(score, 2))
 
+    async def _collect_single(self, comp: CompetitorBasic, goal: AnalysisGoal) -> CompetitorProfile:
+        """采集单个竞品：分类 → 并行多源采集 → 结构化抽取"""
+        classification = await self.classify_competitor(comp.name, goal)
+
+        # 并行采集多个数据源
+        source_tasks = []
+        for _, url_template in URL_TEMPLATES:
+            url = url_template.format(name=comp.name)
+            source_tasks.append(self._fetch_and_parse(url))
+
+        texts = await asyncio.gather(*source_tasks, return_exceptions=True)
+
+        sources = []
+        valid_texts = []
+        for i, text in enumerate(texts):
+            if isinstance(text, str) and text:
+                url = URL_TEMPLATES[i][1].format(name=comp.name)
+                valid_texts.append(text)
+                sources.append(url)
+
+        combined_text = "\n\n".join(valid_texts) if valid_texts else f"竞品名称：{comp.name}，公司：{comp.company or '未知'}"
+
+        profile = await self._extract_profile(comp.name, combined_text, classification, sources)
+        logger.info("[collector] %s 采集完成, completeness=%.2f", comp.name, profile.metadata.completeness_score)
+        return profile
+
     async def collect(self, user_input: CompetitorInput) -> list[CompetitorProfile]:
-        """完整的采集流程：目标解析 → 分类 → 差异化采集"""
-        # Step 1: 解析目标
+        """完整的采集流程：目标解析 → 并行采集所有竞品"""
         goal = await self.parse_goal(user_input.analysis_context)
 
-        profiles = []
-        for comp in user_input.competitors:
-            # Step 2: 分类
-            classification = await self.classify_competitor(comp.name, goal)
+        # 并行采集所有竞品
+        tasks = [self._collect_single(comp, goal) for comp in user_input.competitors]
+        profiles = await asyncio.gather(*tasks)
 
-            # Step 3: 差异化采集
-            sources = []
-            texts = []
-
-            # 应用商店采集
-            for url_template in [APP_STORE_SEARCH_URL, YINGYONGBAO_SEARCH_URL]:
-                url = url_template.format(name=comp.name)
-                text = await self._fetch_and_parse(url)
-                if text:
-                    texts.append(text)
-                    sources.append(url)
-
-            # 合并所有采集文本
-            combined_text = "\n\n".join(texts) if texts else f"竞品名称：{comp.name}，公司：{comp.company or '未知'}"
-
-            # LLM 抽取结构化数据
-            profile = await self._extract_profile(comp.name, combined_text, classification, sources)
-            profiles.append(profile)
-
-            logger.info("[collector] %s 采集完成, completeness=%.2f", comp.name, profile.metadata.completeness_score)
-
-        return profiles
+        return list(profiles)

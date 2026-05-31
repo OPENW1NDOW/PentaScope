@@ -1,4 +1,7 @@
+import asyncio
 import logging
+import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -14,7 +17,7 @@ USER_AGENTS = [
 
 
 class HttpClient:
-    """异步 HTTP 客户端，带超时和 User-Agent 轮换"""
+    """异步 HTTP 客户端，带超时、User-Agent 轮换和同域名频率控制"""
 
     def __init__(self):
         self.client = httpx.AsyncClient(
@@ -23,14 +26,25 @@ class HttpClient:
             headers={"User-Agent": USER_AGENTS[0]},
         )
         self._ua_index = 0
+        self._last_request: dict[str, float] = {}
 
     def _rotate_ua(self):
         self._ua_index = (self._ua_index + 1) % len(USER_AGENTS)
         self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
 
+    async def _rate_limit(self, url: str):
+        """同域名频率控制"""
+        domain = urlparse(url).netloc
+        if domain in self._last_request:
+            elapsed = time.time() - self._last_request[domain]
+            if elapsed < settings.COLLECT_INTERVAL:
+                await asyncio.sleep(settings.COLLECT_INTERVAL - elapsed)
+        self._last_request[domain] = time.time()
+
     async def get(self, url: str) -> str | None:
         """GET 请求，失败返回 None"""
         try:
+            await self._rate_limit(url)
             self._rotate_ua()
             response = await self.client.get(url)
             if response.status_code == 200:

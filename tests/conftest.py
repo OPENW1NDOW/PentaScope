@@ -24,7 +24,7 @@ def sample_competitor_profile():
     """Complete CompetitorProfile dict matching the PRD schema."""
     return {
         "classification": {
-            "competitor_type": "核心",
+            "competitor_type": "核心竞品",
             "reason": "同为支付赛道头部产品，功能重叠度高",
         },
         "basic_info": {

@@ -61,3 +61,25 @@ class TestCompetitorInput:
                 competitors=[CompetitorBasic(name=f"竞品{i}") for i in range(6)],
                 analysis_context="test"
             )
+
+
+from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, FeatureTree, Feature, Pricing, PricingTier, UserReviews, SampleReview, RecentUpdate, ProfileMetadata
+
+
+class TestCompetitorProfile:
+    def test_valid_full(self, sample_competitor_profile):
+        p = CompetitorProfile(**sample_competitor_profile)
+        assert p.classification.competitor_type == "核心竞品"
+        assert p.basic_info.name == "支付宝"
+        assert len(p.feature_tree) == 1
+        assert p.metadata.completeness_score == 0.85
+
+    def test_completeness_score_range(self, sample_competitor_profile):
+        sample_competitor_profile["metadata"]["completeness_score"] = 1.5
+        with pytest.raises(ValidationError):
+            CompetitorProfile(**sample_competitor_profile)
+
+    def test_empty_feature_tree(self, sample_competitor_profile):
+        sample_competitor_profile["feature_tree"] = []
+        p = CompetitorProfile(**sample_competitor_profile)
+        assert p.feature_tree == []

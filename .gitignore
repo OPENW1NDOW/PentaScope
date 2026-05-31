@@ -25,5 +25,10 @@ Thumbs.db
 # Claude Code local config (个人配置，不共享)
 .claude/
 
+# Testing / Linting
+.pytest_cache/
+.ruff_cache/
+
 # Logs
+logs/
 *.log

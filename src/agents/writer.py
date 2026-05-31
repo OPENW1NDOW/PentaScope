@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timezone
 from src.schemas.analysis import CompetitiveAnalysis
@@ -18,7 +19,6 @@ class WriterAgent:
         logger.info("[writer] 开始撰写报告, 竞品: %s", competitors)
 
         # 序列化完整分析数据
-        import json
         analysis_data = analysis.model_dump()
         analysis_text = json.dumps(analysis_data, ensure_ascii=False, indent=2)
         if len(analysis_text) > 8000:

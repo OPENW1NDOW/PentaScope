@@ -1,4 +1,3 @@
-import pytest
 from src.tools.html_parser import HtmlParser
 
 

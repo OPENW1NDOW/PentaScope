@@ -44,5 +44,11 @@ class HttpClient:
             logger.warning("[http] %s 请求失败: %s", url, e)
             return None
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
     async def close(self):
         await self.client.aclose()

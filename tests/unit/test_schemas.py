@@ -1,6 +1,10 @@
 import pytest
 from pydantic import ValidationError
 from src.schemas.input import CompetitorBasic, AnalysisGoal, CompetitorInput
+from src.schemas.profile import CompetitorProfile
+from src.schemas.analysis import CompetitiveAnalysis
+from src.schemas.report import FinalReport
+from src.schemas.feedback import RejectionFeedback, FeedbackIssue, AgentMessage
 
 
 class TestCompetitorBasic:
@@ -63,9 +67,6 @@ class TestCompetitorInput:
             )
 
 
-from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, FeatureTree, Feature, Pricing, PricingTier, UserReviews, SampleReview, RecentUpdate, ProfileMetadata
-
-
 class TestCompetitorProfile:
     def test_valid_full(self, sample_competitor_profile):
         p = CompetitorProfile(**sample_competitor_profile)
@@ -85,14 +86,6 @@ class TestCompetitorProfile:
         assert p.feature_tree == []
 
 
-from src.schemas.analysis import (
-    CompetitiveAnalysis, PositioningEntry, Positioning,
-    FeatureMatrixEntry, BusinessModelEntry, BusinessModel,
-    OperationsEntry, Operations, UserSentiment, SwotEntry, Swot,
-    RadarDimensions, RadarScore,
-)
-
-
 class TestCompetitiveAnalysis:
     def test_valid_full(self, sample_competitive_analysis):
         a = CompetitiveAnalysis(**sample_competitive_analysis)
@@ -110,10 +103,6 @@ class TestCompetitiveAnalysis:
         sample_competitive_analysis["radar_scores"][0]["dimensions"]["feature_breadth"] = 6.0
         with pytest.raises(ValidationError):
             CompetitiveAnalysis(**sample_competitive_analysis)
-
-
-from src.schemas.report import FinalReport, ExecutiveSummary, ReportSection, ActionItem, ActionItems, ReportMetadata
-from src.schemas.feedback import RejectionFeedback, FeedbackIssue, AgentMessage
 
 
 class TestFinalReport:

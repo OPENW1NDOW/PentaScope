@@ -1,3 +1,4 @@
+import json
 import logging
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
@@ -17,7 +18,6 @@ class AnalyzerAgent:
         logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
 
         # 序列化完整 profile 数据
-        import json
         profiles_data = [p.model_dump() for p in profiles]
         profiles_text = json.dumps(profiles_data, ensure_ascii=False, indent=2)
         if len(profiles_text) > 12000:

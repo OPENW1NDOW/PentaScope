@@ -31,8 +31,11 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
   - Task 11: Collector Agent（目标解析 → 竞品分类 → 差异化采集，3 项测试全部通过）
   - Task 12: Analyzer Agent（四维框架对比 + SWOT + 雷达评分，1 项测试通过）
   - Task 13: Writer Agent（四段式执行摘要 + 时间分层行动建议，1 项测试通过）
+  - Task 14: Inspector Agent（程序化检查 + LLM 质量评估，1 项测试通过）
+  - Task 15: LangGraph State（AnalysisState TypedDict 定义）
+  - Task 16: LangGraph Builder（collector → analyzer → writer → inspector 线性流 + 质检反馈环，2 项集成测试通过）
 - 进行中：无
-- 下一步：Task 14 — Inspector Agent
+- 下一步：Task 17 — FastAPI Backend
 - 阻塞：无
 
 ## 2026-05-30

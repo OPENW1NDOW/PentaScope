@@ -16,26 +16,24 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
-## 2026-05-31
+## 2026-05-31 ~ 2026-06-01
 - 完成：
-  - Task 1: 项目骨架搭建（requirements.txt、.gitignore 补全、.env.example、src/tests 子目录 __init__.py、tests/conftest.py 共享 fixtures）
-  - Task 2: Input Schemas（CompetitorBasic、AnalysisGoal、CompetitorInput 三个 Pydantic 模型，11 项测试全部通过）
-  - Task 3: Profile Schema（Classification、BasicInfo、FeatureTree、Pricing、UserReviews、RecentUpdate、CompetitorProfile）
-  - Task 4: Analysis Schema（CompetitiveAnalysis，含四维框架、SWOT、雷达评分）
-  - Task 5: Report + Feedback Schemas（FinalReport、RejectionFeedback）
-  - Task 6: Utils（Config + Logger）
-  - Task 7: LLM Client（Doubao API 适配，JSON 模式调用）
-  - Task 8: HTTP Client + HTML Parser（httpx 异步请求 + BeautifulSoup 解析）
-  - Task 9: Validators（输入校验、URL 校验）
-  - Task 10: Agent Prompts（采集/分析/撰写/质检四个 Agent 的 System Prompt）
-  - Task 11: Collector Agent（目标解析 → 竞品分类 → 差异化采集，3 项测试全部通过）
-  - Task 12: Analyzer Agent（四维框架对比 + SWOT + 雷达评分，1 项测试通过）
-  - Task 13: Writer Agent（四段式执行摘要 + 时间分层行动建议，1 项测试通过）
-  - Task 14: Inspector Agent（程序化检查 + LLM 质量评估，1 项测试通过）
-  - Task 15: LangGraph State（AnalysisState TypedDict 定义）
-  - Task 16: LangGraph Builder（collector → analyzer → writer → inspector 线性流 + 质检反馈环，2 项集成测试通过）
+  - PRD V3.0 重写（基于 MIT 模板 + 竞品分析 SOP，14 章节完整覆盖）
+  - SPEC.md 技术规格（spec-driven development skill）
+  - 18 个实现 Task 全部完成（subagent-driven development skill）
+    - Task 1: 项目骨架
+    - Task 2-5: 5 个 Schema（input/profile/analysis/report/feedback）
+    - Task 6-9: 4 个工具（config/logger/LLM client/HTTP client/HTML parser/validators）
+    - Task 10-14: 4 个 Agent + Prompts（collector/analyzer/writer/inspector）
+    - Task 15-16: LangGraph State + Builder（含反馈闭环）
+    - Task 17-18: FastAPI 后端 + Streamlit 前端
+  - 代码审查（code-reviewer agent），发现 10 个问题
+  - 10 个审查问题修复（4 批 subagent 并行修复）
+  - receiving-code-review 验证：9 个修复合理，#8 为误判已回退
+  - .env 配置（Doubao API Key）
+  - 51 个测试全部通过
 - 进行中：无
-- 下一步：Task 17 — FastAPI Backend
+- 下一步：手动验收（启动前后端，真实 Doubao API 跑完整分析）
 - 阻塞：无
 
 ## 2026-05-30

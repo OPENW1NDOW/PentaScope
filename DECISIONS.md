@@ -54,3 +54,33 @@
 - 选择：面向企业产品经理的自动化竞品分析工具（内部使用）
 - 理由：场景 A 锁定，目标用户明确
 - 备选：通用分析平台（排除原因：太泛，无法聚焦）
+
+## 2026-05-31: Agent 构建方式
+- 选择：手写 Agent（纯 Python 函数 + LangGraph StateGraph）
+- 理由：Agent 间是固定流水线，不需要 LangChain 的动态工具选择能力；Doubao 兼容性不确定；评分标准强调可观测性，手写逻辑更透明
+- 备选：LangChain Agent 封装（排除原因：抽象层增加调试难度，Doubao function calling 兼容性未知）
+
+## 2026-05-31: 前后端架构
+- 选择：FastAPI 后端 + Streamlit 前端，前后端分离
+- 理由：FastAPI 提供 API 端点，Streamlit 调用 API，职责清晰
+- 备选：Streamlit 直接调用 LangGraph（排除原因：Cooper 要求前后端分离）
+
+## 2026-05-31: 依赖管理
+- 选择：venv + pip + requirements.txt
+- 理由：纯 Python 项目，无重依赖（CUDA/科学计算），venv 最简单
+- 备选：conda（排除原因：过重，不需要）
+
+## 2026-05-31: 结构化输出方案
+- 选择：Doubao JSON mode（response_format={"type": "json_object"}）
+- 理由：Doubao 支持 JSON mode，直接约束 LLM 输出格式，比 Prompt 约束更可靠
+- 备选：Prompt 约束 + 后处理解析（排除原因：JSON mode 更稳定）
+
+## 2026-05-31: 目标设定实现方式
+- 选择：采集 Agent 内部三步走（目标解析 → 竞品分类 → 差异化采集）
+- 理由：目标解析是轻量 LLM 调用，不值得单独设 Agent；目标设定绑定前端 UI 会限制后续迁移为 skill
+- 备选：独立目标设定 Agent / 前端 UI 下拉框（排除原因：前者过度设计，后者耦合前端形态）
+
+## 2026-06-01: 采集数据传递方式
+- 选择：Analyzer 和 Writer 使用 model_dump() 序列化完整数据传给 LLM
+- 理由：原实现只传统计数字，LLM 无法生成有意义的分析/报告；完整数据传递是正确性问题
+- 备选：手动拼接摘要文本（排除原因：丢失关键细节）

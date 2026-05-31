@@ -17,17 +17,14 @@ class WriterAgent:
         """基于分析结果生成最终报告"""
         logger.info("[writer] 开始撰写报告, 竞品: %s", competitors)
 
-        # 序列化分析数据
-        analysis_text = (
-            f"功能矩阵: {len(analysis.feature_matrix)} 条\n"
-            f"定位分析: {len(analysis.positioning.per_competitor)} 个竞品\n"
-            f"商业模式: {len(analysis.business_model.per_competitor)} 个竞品\n"
-            f"运营策略: {len(analysis.operations.per_competitor)} 个竞品\n"
-            f"用户情感: {analysis.user_sentiment.summary}\n"
-            f"SWOT: 优势{len(analysis.swot.strengths)}/劣势{len(analysis.swot.weaknesses)}/机会{len(analysis.swot.opportunities)}/威胁{len(analysis.swot.threats)}\n"
-        )
+        # 序列化完整分析数据
+        import json
+        analysis_data = analysis.model_dump()
+        analysis_text = json.dumps(analysis_data, ensure_ascii=False, indent=2)
+        if len(analysis_text) > 8000:
+            analysis_text = analysis_text[:8000] + "\n...(数据已截断)"
 
-        prompt = f"请基于以下分析数据撰写竞品报告：\n\n竞品列表：{competitors}\n\n{analysis_text}"
+        prompt = f"请基于以下分析数据撰写竞品报告：\n\n竞品列表：{competitors}\n\n分析数据：\n{analysis_text}"
         result = await self.llm.call_json(WRITER_SYSTEM, prompt)
 
         # 补充 metadata

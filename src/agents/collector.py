@@ -48,6 +48,14 @@ class CollectorAgent:
         """判断竞品类型"""
         prompt = f"竞品名称：{name}\n分析目标：{goal.goal_type}，关注领域：{goal.focus_area or '未指定'}"
         result = await self.llm.call_json(COLLECTOR_CLASSIFY_SYSTEM, prompt)
+        # 校验必要字段
+        if "competitor_type" not in result or "reason" not in result:
+            logger.warning("[collector] classify_competitor 返回缺少字段, 重试: %s", result)
+            result = await self.llm.call_json(COLLECTOR_CLASSIFY_SYSTEM, prompt)
+            if "competitor_type" not in result or "reason" not in result:
+                logger.error("[collector] classify_competitor 重试后仍缺少字段: %s", result)
+                result.setdefault("competitor_type", "核心竞品")
+                result.setdefault("reason", "无法判断，默认归类")
         return result
 
     async def _fetch_and_parse(self, url: str) -> str:

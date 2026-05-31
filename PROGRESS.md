@@ -20,8 +20,17 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 - 完成：
   - Task 1: 项目骨架搭建（requirements.txt、.gitignore 补全、.env.example、src/tests 子目录 __init__.py、tests/conftest.py 共享 fixtures）
   - Task 2: Input Schemas（CompetitorBasic、AnalysisGoal、CompetitorInput 三个 Pydantic 模型，11 项测试全部通过）
+  - Task 3: Profile Schema（Classification、BasicInfo、FeatureTree、Pricing、UserReviews、RecentUpdate、CompetitorProfile）
+  - Task 4: Analysis Schema（CompetitiveAnalysis，含四维框架、SWOT、雷达评分）
+  - Task 5: Report + Feedback Schemas（FinalReport、RejectionFeedback）
+  - Task 6: Utils（Config + Logger）
+  - Task 7: LLM Client（Doubao API 适配，JSON 模式调用）
+  - Task 8: HTTP Client + HTML Parser（httpx 异步请求 + BeautifulSoup 解析）
+  - Task 9: Validators（输入校验、URL 校验）
+  - Task 10: Agent Prompts（采集/分析/撰写/质检四个 Agent 的 System Prompt）
+  - Task 11: Collector Agent（目标解析 → 竞品分类 → 差异化采集，3 项测试全部通过）
 - 进行中：无
-- 下一步：Task 3 — Profile Schema
+- 下一步：Task 12 — Analyzer Agent
 - 阻塞：无
 
 ## 2026-05-30

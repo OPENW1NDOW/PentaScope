@@ -84,36 +84,41 @@ class CollectorAgent:
             )
         return "\n\n".join(parts)
 
-    async def _extract_profile(self, name: str, text: str, classification: dict, sources: list[str]) -> CompetitorProfile:
-        """从文本中抽取结构化竞品画像"""
-        prompt = f"竞品名称：{name}\n\n网页文本内容：\n{text[:8000]}"
-        raw = await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt)
-
-        # 补充 classification 和 metadata
+    @staticmethod
+    def _normalize_raw(raw: dict, classification: dict, sources: list[str]) -> dict:
+        """规整 LLM 输出：补充 classification/metadata，兜底纠正常见结构偏差"""
+        # sample_reviews 偶尔被 LLM 填成字符串数组，转成 SampleReview 结构
+        reviews = raw.get("user_reviews", {}).get("sample_reviews")
+        if isinstance(reviews, list):
+            raw["user_reviews"]["sample_reviews"] = [
+                {"content": r, "rating": 3} if isinstance(r, str) else r
+                for r in reviews
+            ]
         raw["classification"] = classification
         raw["metadata"] = {
             "collected_at": datetime.now(timezone.utc).isoformat(),
             "data_sources": sources,
-            "completeness_score": self._calc_completeness(raw),
+            "completeness_score": CollectorAgent._calc_completeness_static(raw),
         }
+        return raw
+
+    async def _extract_profile(self, name: str, text: str, classification: dict, sources: list[str]) -> CompetitorProfile:
+        """从文本中抽取结构化竞品画像"""
+        prompt = f"竞品名称：{name}\n\n网页文本内容：\n{text[:8000]}"
+        raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt), classification, sources)
         try:
             return CompetitorProfile(**raw)
         except ValidationError as e:
             logger.warning("[collector] _extract_profile 校验失败, 重试: %s", e)
-            raw = await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt)
-            raw["classification"] = classification
-            raw["metadata"] = {
-                "collected_at": datetime.now(timezone.utc).isoformat(),
-                "data_sources": sources,
-                "completeness_score": self._calc_completeness(raw),
-            }
+            raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt), classification, sources)
             try:
                 return CompetitorProfile(**raw)
             except ValidationError as e2:
                 logger.error("[collector] _extract_profile 重试后仍然失败: %s, raw=%s", e2, raw)
                 raise ValueError(f"Collector _extract_profile validation failed after retry: {e2}") from e2
 
-    def _calc_completeness(self, data: dict) -> float:
+    @staticmethod
+    def _calc_completeness_static(data: dict) -> float:
         """计算数据完整度"""
         score = 1.0
         if not data.get("feature_tree"):

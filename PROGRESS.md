@@ -32,6 +32,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 - 浏览器验收发现并修复：
     - 竞品上限 5→10（用户输入 6 个触发 422）
     - 前端错误处理 bug：未处理非 200 响应，直接读 data["status"] 抛 KeyError，掩盖真实校验错误 → 改为先判 status_code，解析 FastAPI detail 友好展示
+    - LLM 输出结构偏差：sample_reviews 被填成字符串数组（应为 SampleReview 对象），导致采集校验失败 → ① prompt 补全元素结构示例 ② collector 加 _normalize_raw 兜底（字符串转 {content, rating:3}）
 - 下一步：浏览器真人交互验收（≤10 个竞品正常跑通）；双竞品确认 quality_score 回填
 - 阻塞：无
 - 安全提醒：本次验收用的 Doubao API Key 在对话中明文出现过，建议轮换

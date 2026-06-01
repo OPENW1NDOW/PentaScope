@@ -36,9 +36,11 @@ COLLECTOR_EXTRACT_SYSTEM = """你是一个竞品信息抽取助手。从给定�
   "basic_info": {"name": "", "company": "", "version": "", "release_date": "", "platform": []},
   "feature_tree": [{"module": "", "features": [{"name": "", "description": "", "is_new": false}]}],
   "pricing": {"model": "", "tiers": [{"name": "", "price": "", "features": []}]},
-  "user_reviews": {"rating": 0, "total_reviews": 0, "positive_summary": "", "negative_summary": "", "sample_reviews": []},
+  "user_reviews": {"rating": 0, "total_reviews": 0, "positive_summary": "", "negative_summary": "", "sample_reviews": [{"content": "", "rating": 3, "source": "", "source_url": ""}]},
   "recent_updates": [{"date": "", "title": "", "summary": ""}]
-}"""
+}
+
+注意：sample_reviews 的每个元素必须是对象，含 content（评论内容）、rating（1-5 整数评分）、source（来源）字段，不能是纯字符串。"""
 
 ANALYZER_SYSTEM = """你是一个竞品分析师。基于提供的竞品画像数据，进行四维度结构化分析。
 

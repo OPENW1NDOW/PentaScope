@@ -33,9 +33,17 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
     - 竞品上限 5→10（用户输入 6 个触发 422）
     - 前端错误处理 bug：未处理非 200 响应，直接读 data["status"] 抛 KeyError，掩盖真实校验错误 → 改为先判 status_code，解析 FastAPI detail 友好展示
     - LLM 输出结构偏差：sample_reviews 被填成字符串数组（应为 SampleReview 对象），导致采集校验失败 → ① prompt 补全元素结构示例 ② collector 加 _normalize_raw 兜底（字符串转 {content, rating:3}）
-- 下一步：浏览器真人交互验收（≤10 个竞品正常跑通）；双竞品确认 quality_score 回填
+    - LLM JSON 含裸控制字符（字符串值内裸换行）→ Invalid control character → llm_client 改 json.loads(..., strict=False)
+    - analyzer 枚举校验失败：feature_matrix.gap_level 被填 "小米领先" 等带主语值 → analyzer 加 _normalize（gap_level/our_product/competitors/swot.dimension 枚举规整：精确→包含匹配→默认）
+    - writer 枚举校验失败：action_items.priority 被填 "中等" → writer 加 _normalize（priority 规整 + metadata 补充）
+  - 最终验证成功：6 品牌（小米/VIVO/OPPO/三星/华为/苹果）完整跑通，产出高质量报告，data_sources 13 条真实 URL，quality_score 0.55，无校验错误
+- 下一步（新 session 优先处理）：
+  1. 【可观测性，评分项】修日志落盘：setup_logger 写了但从未被调用，logs/app.log 不生成；agent/graph 的 INFO/WARNING 日志（[graph] → collector、采集源成败、completeness）全部丢失。需在 api 启动时初始化 logger 并配置 root level，让全链路日志可见。
+  2. 【数据源场景适配】手机品牌用 iTunes(App 搜索) 不契合——搜到的是同名 App 非手机硬件，导致溯源 URL 真但内容弱。Demo 建议用 Notion 类 SaaS 软件（数据源契合），手机仅作架构通用性展示；或为硬件场景换专业评测/电商源。
+  3. quality_score 0.55 偏低反映数据完整度一般（质检诚实反映），与 #2 相关联。
+- 已知非阻塞瑕疵：无（本轮 LLM 鲁棒性问题已全部修复）
 - 阻塞：无
-- 安全提醒：本次验收用的 Doubao API Key 在对话中明文出现过，建议轮换
+- 安全提醒：验收用的 Doubao API Key 在对话中明文出现过，务必轮换
 
 ## 2026-05-31 ~ 2026-06-01
 - 完成：

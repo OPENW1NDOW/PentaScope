@@ -33,7 +33,8 @@ class LLMClient:
                     timeout=settings.LLM_TIMEOUT,
                 )
                 content = response.choices[0].message.content
-                return json.loads(self._strip_json_fence(content))
+                # strict=False 允许字符串值内的裸控制字符（LLM 常在内容里直接输出换行）
+                return json.loads(self._strip_json_fence(content), strict=False)
             except (json.JSONDecodeError, KeyError, IndexError) as e:
                 last_error = e
                 logger.warning(

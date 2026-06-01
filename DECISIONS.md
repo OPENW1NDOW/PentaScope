@@ -95,6 +95,11 @@
 - 理由：原数据源（App Store 页面/百度百科/百度搜索）实测全部失败（404/403/反爬）；新三源实测稳定返回真实内容，iTunes 还直接提供定价与满意度数据，强化信息溯源
 - 备选：百度百科加反爬（排除原因：补全请求头后仍 403）、维基百科（排除原因：403）
 
+## 2026-06-01: LLM 输出鲁棒性统一用「规整兜底」策略
+- 选择：每个 Agent 在 Pydantic 校验前对 LLM 原始输出做 _normalize 规整（prompt 引导 + 代码兜底双保险）
+- 理由：Doubao 输出不稳定，反复出现结构/枚举偏差（sample_reviews 填字符串、gap_level 填"小米领先"、priority 填"中等"、裸控制字符）。光靠 prompt 约束无法 100% 命中，必须代码兜底。枚举规整用「精确匹配→包含匹配→默认值」三级降级
+- 备选：仅靠 prompt + 重试（排除原因：重试同样失败，6 品牌场景必现）、JSON Schema 强约束（排除原因：Doubao 不支持 response_format）
+
 ## 2026-06-01: 信息溯源与质量分在 graph 层回填
 - 选择：`data_sources` 和 `quality_score` 由 graph 节点回填，而非依赖 writer LLM 自填
 - 理由：writer 拿不到 profile 的 sources、LLM 自填的 quality_score 恒为 0 不可信；溯源应取自采集真实结果，质量分应取自质检 issue 严重度

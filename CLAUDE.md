@@ -52,7 +52,7 @@ Agent 产出必须符合预定义的竞品知识 Schema：
 1. 更新 `PROGRESS.md` — 记录本次完成、进行中、下一步
 2. 更新 `DECISIONS.md` — 记录本次做出的技术决策（如有）
 3. `git add` → `git commit` → `git push origin master` — 同步到远程仓库
-   - **关键：push 前必须先跑 `git status`，确认本次实际参与项目开发、且保存在本地的所有新增/改动文件都已纳入提交，一个都不能漏。** 这包括但不限于代码、文档、配置，以及技能（spec-driven、writing-plans 等）产出并落盘到本地的过程文档（如 `SPEC.md`、`docs/superpowers/plans/` 下的计划文件）。
+   - **关键：push 前必须先跑 `git status`，确认本次实际参与项目开发、且保存在本地的所有新增/改动文件都已纳入提交，一个都不能漏。** 这包括但不限于代码、文档、配置，以及技能（spec-driven、writing-plans 等）产出并落盘到本地的过程文档（如 `docs/SPEC.md`、`docs/superpowers/plans/` 下的计划文件）。
    - 技能调用不会自动 `git add`，需显式添加。除 `.gitignore` 明确排除者（如 `.env`、密钥等敏感文件）外，本地的开发产物都应同步到远程，避免换电脑后丢失。
 
 ## 时间节点

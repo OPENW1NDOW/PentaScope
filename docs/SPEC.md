@@ -54,11 +54,11 @@ ruff format src/                                # format
 
 ```
 ByteDance-AI-Full-Stack-Challenge/
-├── SPEC.md                     # 本文件：技术规格
 ├── PROGRESS.md                 # 进度日志
 ├── DECISIONS.md                # 技术决策记录
 ├── CLAUDE.md                   # AI 协作指令
 ├── docs/
+│   ├── SPEC.md                 # 本文件：技术规格
 │   ├── PRD.md                  # 产品需求文档
 │   └── competition-materials/  # 赛题材料
 ├── src/
@@ -211,7 +211,7 @@ logger.info("[collector] 采集完成, profiles=%d,耗时=%.1fs", len(profiles),
 
 ## 已确认决策
 
-1. **Doubao 结构化输出**：支持 JSON mode，使用 `response_format={"type": "json_object"}` 约束 LLM 输出
+1. **Doubao 结构化输出**：Doubao-Seed-2.0-lite 端点**不支持** `response_format={"type":"json_object"}`（实测返回 400，见 DECISIONS 2026-06-01）。改为纯 prompt 约束 + 代码块剥离 + `json.loads(strict=False)` 解析重试 + 各 Agent `_normalize` 规整兜底
 2. **数据源采集策略**：应用商店（App Store/应用宝）用 URL 模板直接拼接搜索地址；媒体/社交源（36氪/虎嗅/微博等）通过搜索获取结果 URL
 3. **流式进度展示**：需要实现。LangGraph streaming + Streamlit 实时更新，展示当前 Agent 阶段和进度
 

@@ -62,7 +62,7 @@ class TestCompetitorInput:
     def test_too_many_competitors(self):
         with pytest.raises(ValidationError):
             CompetitorInput(
-                competitors=[CompetitorBasic(name=f"竞品{i}") for i in range(6)],
+                competitors=[CompetitorBasic(name=f"竞品{i}") for i in range(11)],
                 analysis_context="test"
             )
 

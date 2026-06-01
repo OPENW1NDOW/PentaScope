@@ -4,7 +4,7 @@ from src.schemas.input import CompetitorBasic
 
 class AnalysisRequest(BaseModel):
     """API 请求"""
-    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=5)
+    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=10)
     analysis_context: str = Field(..., min_length=1)
 
 

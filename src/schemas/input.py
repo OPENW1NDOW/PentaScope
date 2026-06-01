@@ -22,5 +22,5 @@ class AnalysisGoal(BaseModel):
 
 class CompetitorInput(BaseModel):
     """完整的用户输入"""
-    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=5, description="竞品列表")
+    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=10, description="竞品列表")
     analysis_context: str = Field(..., min_length=1, description="自然语言描述分析意图")

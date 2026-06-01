@@ -41,7 +41,14 @@ if st.button("开始分析", type="primary"):
                 )
                 data = response.json()
 
-                if data["status"] == "completed":
+                if response.status_code != 200:
+                    detail = data.get("detail", data)
+                    if isinstance(detail, list):
+                        msgs = [d.get("msg", str(d)) for d in detail]
+                        st.error("请求校验失败：" + "；".join(msgs))
+                    else:
+                        st.error(f"请求失败（{response.status_code}）：{detail}")
+                elif data["status"] == "completed":
                     report = data["report"]
                     st.success(f"分析完成！Trace ID: {data['trace_id']}")
 

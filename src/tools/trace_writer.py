@@ -25,3 +25,27 @@ class TraceWriter:
             tid = f"{ts}-{secrets.token_hex(3)}"  # 3 bytes -> 6 hex
             if not (base / tid).exists():
                 return tid
+
+    def _atomic_write_json(self, path: Path, obj) -> None:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps(obj, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+
+    @staticmethod
+    def _serialize(data):
+        if isinstance(data, list):
+            return [m.model_dump(mode="json") for m in data]
+        return data.model_dump(mode="json")
+
+    def save_stage(self, stage: str, data) -> None:
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            target = self.dir / f"{stage}.json"
+            obj = self._serialize(data)
+            self._atomic_write_json(target, obj)
+            self._written.add(stage)
+        except Exception as e:  # noqa: BLE001 — 落盘是辅助能力，绝不阻塞主流程
+            logger.warning("[trace] 落盘失败 stage=%s trace=%s: %s", stage, self.trace_id, e)

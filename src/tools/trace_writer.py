@@ -40,10 +40,22 @@ class TraceWriter:
             return [m.model_dump(mode="json") for m in data]
         return data.model_dump(mode="json")
 
+    def _next_version(self, stage: str) -> int:
+        existing = list(self.dir.glob(f"{stage}_v*.json"))
+        nums = []
+        for p in existing:
+            suffix = p.stem[len(stage) + 2:]  # 去掉 "{stage}_v"
+            if suffix.isdigit():
+                nums.append(int(suffix))
+        return (max(nums) + 1) if nums else 1
+
     def save_stage(self, stage: str, data) -> None:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
             target = self.dir / f"{stage}.json"
+            if target.exists():
+                n = self._next_version(stage)
+                os.replace(target, self.dir / f"{stage}_v{n}.json")
             obj = self._serialize(data)
             self._atomic_write_json(target, obj)
             self._written.add(stage)

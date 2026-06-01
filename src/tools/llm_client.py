@@ -30,11 +30,10 @@ class LLMClient:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    response_format={"type": "json_object"},
                     timeout=settings.LLM_TIMEOUT,
                 )
                 content = response.choices[0].message.content
-                return json.loads(content)
+                return json.loads(self._strip_json_fence(content))
             except (json.JSONDecodeError, KeyError, IndexError) as e:
                 last_error = e
                 logger.warning(
@@ -48,6 +47,16 @@ class LLMClient:
         raise ValueError(
             f"Failed to parse LLM response as JSON after {settings.LLM_MAX_RETRIES + 1} attempts: {last_error}"
         )
+
+    @staticmethod
+    def _strip_json_fence(content: str) -> str:
+        """剥离模型可能输出的 ```json ... ``` 代码块包裹"""
+        text = content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+        return text.strip()
 
     async def call_text(self, system_prompt: str, user_prompt: str) -> str:
         """调用 LLM 返回纯文本"""

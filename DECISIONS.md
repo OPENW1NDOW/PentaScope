@@ -80,6 +80,26 @@
 - 理由：目标解析是轻量 LLM 调用，不值得单独设 Agent；目标设定绑定前端 UI 会限制后续迁移为 skill
 - 备选：独立目标设定 Agent / 前端 UI 下拉框（排除原因：前者过度设计，后者耦合前端形态）
 
+## 2026-06-01: 放弃 JSON mode，改纯 prompt 约束（推翻 05-31 决策）
+- 选择：去掉 `response_format={"type":"json_object"}`，靠 prompt 约束 + 代码块剥离 + 解析重试
+- 理由：真实验收发现 Doubao-Seed-2.0-lite 端点不支持该参数，直接返回 400；实测纯 prompt 约束已能稳定输出合法 JSON
+- 备选：保留 JSON mode（排除原因：模型不支持，是硬性失败）
+
+## 2026-06-01: LLM 超时从 30s 调到 120s
+- 选择：`LLM_TIMEOUT = 120`
+- 理由：实测单次中等规模调用要 30.4s，30s 超时反复触发导致全链路失败；Doubao-Seed-2.0-lite 推理较慢
+- 备选：换更快模型（排除原因：课题指定该模型资源）
+
+## 2026-06-01: 数据源改为 iTunes API + Bing + 搜狗（推翻 05-30 数据源）
+- 选择：iTunes Search API（结构化 JSON，含价格/评分/描述）+ Bing 搜索 + 搜狗搜索
+- 理由：原数据源（App Store 页面/百度百科/百度搜索）实测全部失败（404/403/反爬）；新三源实测稳定返回真实内容，iTunes 还直接提供定价与满意度数据，强化信息溯源
+- 备选：百度百科加反爬（排除原因：补全请求头后仍 403）、维基百科（排除原因：403）
+
+## 2026-06-01: 信息溯源与质量分在 graph 层回填
+- 选择：`data_sources` 和 `quality_score` 由 graph 节点回填，而非依赖 writer LLM 自填
+- 理由：writer 拿不到 profile 的 sources、LLM 自填的 quality_score 恒为 0 不可信；溯源应取自采集真实结果，质量分应取自质检 issue 严重度
+- 备选：让 writer prompt 填这两个字段（排除原因：writer 无 source 数据、LLM 自评分不客观）
+
 ## 2026-06-01: 采集数据传递方式
 - 选择：Analyzer 和 Writer 使用 model_dump() 序列化完整数据传给 LLM
 - 理由：原实现只传统计数字，LLM 无法生成有意义的分析/报告；完整数据传递是正确性问题

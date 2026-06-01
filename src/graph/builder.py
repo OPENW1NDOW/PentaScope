@@ -30,16 +30,30 @@ def build_graph(llm, http, parser) -> StateGraph:
         logger.info("[graph] → writer")
         competitors = [c.name for c in state["user_input"].competitors]
         report = await writer.write(state["analysis"], competitors)
+        # 从采集阶段汇总信息溯源，回填到报告（writer 拿不到 profile，需在此补全）
+        sources = sorted({
+            src
+            for profile in state.get("profiles", [])
+            for src in profile.metadata.data_sources
+        })
+        if sources:
+            report.metadata.data_sources = sources
         return {"report": report, "current_node": "writer"}
 
     async def inspector_node(state: AnalysisState) -> dict:
         logger.info("[graph] → inspector")
+        report = state["report"]
         feedback = await inspector.inspect(
-            state["report"],
+            report,
             retry_count=state.get("retry_count", 0),
             max_retries=state.get("max_retries", 2),
         )
+        # 根据质检 issue 严重度回填质量分（0-1，writer 默认填 0，此处给出真实评分）
+        penalty = {"critical": 0.4, "major": 0.2, "minor": 0.05}
+        score = max(0.0, 1.0 - sum(penalty[i.severity] for i in feedback.issues))
+        report.metadata.quality_score = round(score, 2)
         return {
+            "report": report,
             "feedback": feedback,
             "retry_count": state.get("retry_count", 0) + (0 if feedback.passed else 1),
             "current_node": "inspector",

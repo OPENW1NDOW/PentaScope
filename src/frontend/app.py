@@ -1,6 +1,5 @@
 import streamlit as st
 import httpx
-import json
 
 API_BASE = "http://localhost:8000/api/v1"
 
@@ -62,9 +61,9 @@ if st.button("开始分析", type="primary"):
                     st.header("行动建议")
                     ai = report.get("action_items", {})
                     for layer_name, layer_label in [
-                        ("immediate", "短期（1个月内）"),
-                        ("short_term", "中期（3个月内）"),
-                        ("long_term", "长期（6个月内）"),
+                        ("immediate", "即时（1个月内）"),
+                        ("short_term", "短期（3个月内）"),
+                        ("long_term", "长期（6-12个月）"),
                     ]:
                         items = ai.get(layer_name, [])
                         if items:

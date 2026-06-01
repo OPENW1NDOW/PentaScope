@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from pydantic import ValidationError
@@ -8,16 +9,14 @@ from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM,
 
 logger = logging.getLogger(__name__)
 
-APP_STORE_SEARCH_URL = "https://apps.apple.com/cn/search?term={name}"
-YINGYONGBAO_SEARCH_URL = "https://sj.qq.com/search?q={name}"
-BAIKE_SEARCH_URL = "https://baike.baidu.com/item/{name}"
-BAIDU_SEARCH_URL = "https://www.baidu.com/s?wd={name}+产品功能+定价"
+ITUNES_API_URL = "https://itunes.apple.com/search?term={name}&country=cn&entity=software&limit=3"
+BING_SEARCH_URL = "https://www.bing.com/search?q={name}+产品功能+定价"
+SOGOU_SEARCH_URL = "https://www.sogou.com/web?query={name}+功能+价格"
 
 URL_TEMPLATES = [
-    ("app_store", APP_STORE_SEARCH_URL),
-    ("yingyongbao", YINGYONGBAO_SEARCH_URL),
-    ("baike", BAIKE_SEARCH_URL),
-    ("baidu_search", BAIDU_SEARCH_URL),
+    ("itunes_api", ITUNES_API_URL),
+    ("bing_search", BING_SEARCH_URL),
+    ("sogou_search", SOGOU_SEARCH_URL),
 ]
 
 
@@ -59,11 +58,31 @@ class CollectorAgent:
         return result
 
     async def _fetch_and_parse(self, url: str) -> str:
-        """抓取网页并提取文本"""
-        html = await self.http.get(url)
-        if html is None:
+        """抓取网页并提取文本；iTunes API 返回 JSON，单独解析"""
+        raw = await self.http.get(url)
+        if raw is None:
             return ""
-        return self.parser.extract_text(html)
+        if "itunes.apple.com" in url:
+            return self._parse_itunes(raw)
+        return self.parser.extract_text(raw)
+
+    @staticmethod
+    def _parse_itunes(raw: str) -> str:
+        """从 iTunes Search API 的 JSON 中提取应用名/价格/评分/描述"""
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return ""
+        parts = []
+        for app in data.get("results", []):
+            parts.append(
+                f"应用：{app.get('trackName', '')}\n"
+                f"价格：{app.get('formattedPrice', '')}\n"
+                f"评分：{app.get('averageUserRating', '')}（{app.get('userRatingCount', 0)} 条评价）\n"
+                f"开发商：{app.get('sellerName', '')}\n"
+                f"描述：{app.get('description', '')[:1000]}"
+            )
+        return "\n\n".join(parts)
 
     async def _extract_profile(self, name: str, text: str, classification: dict, sources: list[str]) -> CompetitorProfile:
         """从文本中抽取结构化竞品画像"""

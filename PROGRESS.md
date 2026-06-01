@@ -16,6 +16,23 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-01（前后端手动验收）
+- 完成：
+  - 环境搭建：Python 3.14 + venv，依赖全装（无 wheel 兼容问题），51 测试通过
+  - 真实 Doubao API 端到端验收，跑通完整四 Agent 链路，产出高质量结构化报告
+  - 验收中修复 4 个真实问题：
+    - `response_format=json_object` Doubao 不支持（400）→ 改纯 prompt 约束 + 代码块剥离
+    - `LLM_TIMEOUT=30s` 太短（单次调用实测 30.4s）→ 调到 120s
+    - 数据源抓取全失败（百科403/AppStore404/百度反爬）→ 换 iTunes API + Bing + 搜狗，补全请求头
+    - `report.data_sources` 断链（writer 拿不到 profile sources）→ graph 层 writer_node 回填
+  - 顺手修两处瑕疵：前端行动建议层级标签（immediate=即时）、quality_score 由 inspector_node 按 issue 严重度回填（0-1）
+  - 验证溯源恢复：报告 data_sources 含 3 个真实来源，正文用上 iTunes 真实评分（4.7/5，2万+评价）
+  - CLAUDE.md 补充常用命令 + 代码架构（/init）
+- 进行中：无
+- 下一步：双竞品完整跑一遍确认 quality_score 回填效果；前端浏览器真人交互验收
+- 阻塞：无
+- 安全提醒：本次验收用的 Doubao API Key 在对话中明文出现过，建议轮换
+
 ## 2026-05-31 ~ 2026-06-01
 - 完成：
   - PRD V3.0 重写（基于 MIT 模板 + 竞品分析 SOP，14 章节完整覆盖）

@@ -71,3 +71,22 @@ def test_save_stage_v_number_from_disk(tmp_path):
     assert (d / "03_report_v1.json").exists()
     assert (d / "03_report_v2.json").exists()
     assert json.loads((d / "03_report_v1.json").read_text(encoding="utf-8"))["name"] == "r1"
+
+
+def test_save_meta_overwrites(tmp_path):
+    tw = TraceWriter("t-6", base_dir=tmp_path)
+    tw.save_meta({"status": "running"})
+    tw.save_meta({"status": "completed"})
+    data = json.loads((tmp_path / "t-6" / "meta.json").read_text(encoding="utf-8"))
+    assert data["status"] == "completed"   # 覆盖写
+    assert not (tmp_path / "t-6" / "meta_v1.json").exists()  # 不产生版本快照
+
+
+def test_save_stage_failure_does_not_raise(tmp_path, monkeypatch):
+    tw = TraceWriter("t-7", base_dir=tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(tw, "_atomic_write_json", boom)
+    # 不抛异常即通过（落盘失败仅 warning）
+    tw.save_stage("01_profiles", _Dummy(name="x", when=datetime(2026, 6, 2)))

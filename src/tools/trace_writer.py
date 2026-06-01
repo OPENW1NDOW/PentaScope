@@ -61,3 +61,10 @@ class TraceWriter:
             self._written.add(stage)
         except Exception as e:  # noqa: BLE001 — 落盘是辅助能力，绝不阻塞主流程
             logger.warning("[trace] 落盘失败 stage=%s trace=%s: %s", stage, self.trace_id, e)
+
+    def save_meta(self, meta: dict) -> None:
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self._atomic_write_json(self.dir / "meta.json", meta)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[trace] meta 落盘失败 trace=%s: %s", self.trace_id, e)

@@ -14,3 +14,12 @@ class AnalysisResponse(BaseModel):
     status: str  # "completed" | "failed"
     report: dict | None = None
     error: str | None = None
+
+
+class TraceResponse(BaseModel):
+    """追溯 API 响应"""
+    trace_id: str
+    meta: dict | None = None
+    stages: dict = Field(default_factory=dict)
+    snapshots: list[str] = Field(default_factory=list)
+    log: str = ""

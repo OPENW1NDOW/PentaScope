@@ -1,7 +1,9 @@
 import logging
+import re
+import json
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter
-from src.api.schemas import AnalysisRequest, AnalysisResponse
+from fastapi import APIRouter, HTTPException
+from src.api.schemas import AnalysisRequest, AnalysisResponse, TraceResponse
 from src.schemas.input import CompetitorInput
 from src.tools.llm_client import LLMClient
 from src.tools.http_client import HttpClient
@@ -72,3 +74,55 @@ async def analyze(request: AnalysisRequest):
         return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
     finally:
         await http.close()
+
+
+_TRACE_RE = re.compile(r"\d{8}-\d{6}-[0-9a-f]{6}")
+
+_STAGE_FILES = {
+    "profiles": "01_profiles.json",
+    "analysis": "02_analysis.json",
+    "report": "03_report.json",
+    "feedback": "04_feedback.json",
+}
+
+
+def _load_json(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@router.get("/trace/{trace_id}", response_model=TraceResponse)
+async def get_trace(trace_id: str, version: str | None = None):
+    if not _TRACE_RE.fullmatch(trace_id):
+        raise HTTPException(status_code=404, detail="trace not found")
+    base = runs_dir()
+    trace_dir = (base / trace_id).resolve()
+    # 双重防护：解析后必须仍在 runs/ 下
+    if base.resolve() not in trace_dir.parents and trace_dir != base.resolve():
+        raise HTTPException(status_code=404, detail="trace not found")
+    if not trace_dir.is_dir():
+        raise HTTPException(status_code=404, detail="trace not found")
+
+    # 按需取指定历史版本内容
+    if version is not None:
+        if not re.fullmatch(r"0[1-4]_[a-z]+_v\d+", version):
+            raise HTTPException(status_code=404, detail="version not found")
+        vf = trace_dir / f"{version}.json"
+        if not vf.is_file():
+            raise HTTPException(status_code=404, detail="version not found")
+        return TraceResponse(trace_id=trace_id, stages={version: _load_json(vf)})
+
+    stages = {key: _load_json(trace_dir / fn) for key, fn in _STAGE_FILES.items()}
+    snapshots = sorted(p.stem for p in trace_dir.glob("0[1-4]_*_v*.json"))
+    log_path = trace_dir / "run.log"
+    log_text = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
+
+    return TraceResponse(
+        trace_id=trace_id,
+        meta=_load_json(trace_dir / "meta.json"),
+        stages=stages,
+        snapshots=snapshots,
+        log=log_text,
+    )

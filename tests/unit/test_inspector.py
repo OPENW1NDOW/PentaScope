@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.schemas.report import FinalReport
-from src.schemas.feedback import RejectionFeedback
 from src.agents.inspector import InspectorAgent
 
 

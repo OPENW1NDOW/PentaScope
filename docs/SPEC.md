@@ -84,6 +84,7 @@ ByteDance-AI-Full-Stack-Challenge/
 │   │   ├── http_client.py      # httpx 封装（异步请求+超时+重试）
 │   │   ├── html_parser.py      # BeautifulSoup 封装
 │   │   ├── llm_client.py       # Doubao LLM 客户端（OpenAI 兼容）
+│   │   ├── trace_writer.py     # 中间产物落盘（按 trace_id 分目录 + 重试快照）
 │   │   └── validators.py       # Schema 校验器 + URL 校验器
 │   ├── schemas/                # 数据 Schema 定义
 │   │   ├── __init__.py
@@ -97,7 +98,8 @@ ByteDance-AI-Full-Stack-Challenge/
 │   │   └── app.py              # Streamlit 入口
 │   └── utils/                  # 通用工具
 │       ├── __init__.py
-│       ├── logger.py           # 结构化日志
+│       ├── logger.py           # 结构化日志（init_logging 配 root + 文件）
+│       ├── paths.py            # 项目根/runs/logs 绝对路径（不依赖 CWD）
 │       └── config.py           # 配置管理（API key、模型 endpoint 等）
 ├── tests/
 │   ├── __init__.py
@@ -109,7 +111,9 @@ ByteDance-AI-Full-Stack-Challenge/
 │   │   └── test_inspector.py   # 质检 Agent 测试
 │   └── integration/            # 集成测试
 │       ├── test_graph.py       # 完整图运行测试
-│       └── test_api.py         # API 端点测试
+│       ├── test_api.py         # API 端点测试
+│       └── test_trace_api.py   # 追溯 API + meta 落盘测试
+├── runs/                       # 每次分析的中间产物 + run.log（gitignore）
 ├── logs/                       # 运行日志（gitignore）
 ├── requirements.txt
 ├── .gitignore

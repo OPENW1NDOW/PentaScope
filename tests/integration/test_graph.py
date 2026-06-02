@@ -1,5 +1,4 @@
 import pytest
-import json
 from unittest.mock import AsyncMock, MagicMock
 from src.schemas.input import CompetitorInput, CompetitorBasic
 from src.graph.builder import build_graph

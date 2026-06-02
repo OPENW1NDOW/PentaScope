@@ -1,6 +1,5 @@
 import pytest
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
 from src.schemas.profile import CompetitorProfile
 from src.agents.collector import CollectorAgent

@@ -16,6 +16,28 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-02（可观测性与中间产物追溯）
+- 完成：
+  - 走完整 brainstorming → doubt-driven（单模型 + Codex 跨模型对抗审查）→ writing-plans → subagent-driven 流程
+  - 设计文档 `docs/superpowers/specs/2026-06-02-observability-trace-persistence-design.md`，实现计划 `docs/superpowers/plans/2026-06-02-observability-trace-persistence.md`
+  - SPEC.md 移入 docs/，修正过时的 JSON mode 决策（与 DECISIONS 06-01 对齐）
+  - 14 个 Task 全部实现（feat/observability-trace 分支），71 测试通过、ruff 全清：
+    - TraceWriter（src/tools/trace_writer.py）：trace_id 北京时间格式+碰撞规避、save_stage（json mode 序列化+原子写+重试快照 _vN）、save_meta、容错仅 warning 不抛
+    - src/utils/paths.py：项目根/runs/logs 绝对路径，不依赖 CWD
+    - 日志接线：init_logging 配 root logger（控制台+logs/app.log），修复 setup_logger 从未被调用的 bug；每次分析另存 runs/<trace_id>/run.log
+    - graph 各节点产出落盘四阶段产物，build_graph 返回 (graph, node_trace) 记录路由决策
+    - routes.py：trace_id 新格式、TraceWriter 注入、ainvoke 前后两次写 meta（running/completed/failed）
+    - 追溯 API GET /trace/{trace_id}：路径穿越双重防护（fullmatch + resolve 校验）、按需取历史版本
+    - 前端「执行追溯」面板：6 tab 展示中间产物+日志+快照对比
+  - doubt-driven 暴露并修复的真实问题：原子写、model_dump(mode=json)、路径穿越正则未锚定、meta 两次写防孤儿、快照覆盖全 4 stage、logger 幂等判断按 baseFilename
+- 进行中：无
+- 下一步（新 session）：
+  1. 手动 UI 验证前端追溯面板（启动前后端跑一次，确认 6 tab、快照对比渲染正常）
+  2. feat/observability-trace 分支合并回 master
+  3. 数据源场景适配（手机品牌 iTunes 不契合，Demo 建议用 Notion 类 SaaS）— 沿用 06-01 待办
+- 阻塞：无
+- 安全提醒：验收用的 Doubao API Key 在历史对话中明文出现过，务必轮换（沿用 06-01 提醒）
+
 ## 2026-06-01（前后端手动验收）
 - 完成：
   - 环境搭建：Python 3.14 + venv，依赖全装（无 wheel 兼容问题），51 测试通过

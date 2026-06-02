@@ -1,4 +1,3 @@
-from pathlib import Path
 from src.utils.paths import project_root, runs_dir, logs_dir
 
 

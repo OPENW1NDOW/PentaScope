@@ -1,4 +1,7 @@
+import json
 import re
+from datetime import datetime
+from pydantic import BaseModel
 from src.tools.trace_writer import TraceWriter
 
 
@@ -12,11 +15,6 @@ def test_new_trace_id_collision_avoidance(tmp_path):
     (tmp_path / tid).mkdir()
     tid2 = TraceWriter.new_trace_id(base_dir=tmp_path)
     assert tid2 != tid
-
-
-import json
-from datetime import datetime
-from pydantic import BaseModel
 
 
 class _Dummy(BaseModel):

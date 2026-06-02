@@ -4,7 +4,6 @@ import os
 import secrets
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 

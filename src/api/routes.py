@@ -37,12 +37,17 @@ async def analyze(request: AnalysisRequest):
     })
 
     # 为本次分析挂一个 run.log 文件 handler（按 trace_id 留存单次运行日志）
-    trace_dir = runs_dir() / trace_id
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    run_handler = logging.FileHandler(str(trace_dir / "run.log"), encoding="utf-8")
-    run_handler.setFormatter(logging.Formatter(
-        "[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
-    logging.getLogger().addHandler(run_handler)
+    # 与其它落盘一致：失败仅 warning，绝不阻塞主分析流程
+    run_handler = None
+    try:
+        trace_dir = runs_dir() / trace_id
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        run_handler = logging.FileHandler(str(trace_dir / "run.log"), encoding="utf-8")
+        run_handler.setFormatter(logging.Formatter(
+            "[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        logging.getLogger().addHandler(run_handler)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[api] run.log handler 创建失败 trace=%s: %s", trace_id, e)
 
     http = HttpClient()
     node_trace: list = []
@@ -64,7 +69,7 @@ async def analyze(request: AnalysisRequest):
             "retry_count": result.get("retry_count", 0),
             "node_trace": node_trace,
             "input": {
-                "competitors": [c.name for c in request.competitors],
+                "competitors": [c.model_dump() for c in request.competitors],
                 "analysis_context": request.analysis_context,
             },
         })
@@ -81,8 +86,9 @@ async def analyze(request: AnalysisRequest):
         })
         return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
     finally:
-        logging.getLogger().removeHandler(run_handler)
-        run_handler.close()
+        if run_handler is not None:
+            logging.getLogger().removeHandler(run_handler)
+            run_handler.close()
         await http.close()
 
 

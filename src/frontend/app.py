@@ -51,6 +51,7 @@ if st.button("开始分析", type="primary"):
                 elif data["status"] == "completed":
                     report = data["report"]
                     st.success(f"分析完成！Trace ID: {data['trace_id']}")
+                    st.session_state["last_trace_id"] = data["trace_id"]
 
                     # 执行摘要
                     st.header("执行摘要")
@@ -100,3 +101,41 @@ if st.button("开始分析", type="primary"):
                 st.error("无法连接后端服务，请确认 FastAPI 已启动 (uvicorn src.api.main:app --port 8000)")
             except Exception as e:
                 st.error(f"发生错误: {e}")
+
+# 执行追溯面板（可观测性：查看每个 Agent 的中间产物与决策过程）
+st.divider()
+with st.expander("执行追溯（中间产物）", expanded=False):
+    tid_input = st.text_input("Trace ID", value=st.session_state.get("last_trace_id", ""))
+    if st.button("加载追溯") and tid_input:
+        try:
+            r = httpx.get(f"{API_BASE}/trace/{tid_input}", timeout=30)
+            if r.status_code != 200:
+                st.error(f"加载失败：{r.json().get('detail', r.status_code)}")
+            else:
+                t = r.json()
+                tabs = st.tabs(["元信息", "采集", "分析", "报告", "质检", "日志"])
+                with tabs[0]:
+                    st.json(t.get("meta") or {})
+                with tabs[1]:
+                    st.json(t["stages"].get("profiles"))
+                with tabs[2]:
+                    st.json(t["stages"].get("analysis"))
+                with tabs[3]:
+                    st.json(t["stages"].get("report"))
+                with tabs[4]:
+                    st.json(t["stages"].get("feedback"))
+                with tabs[5]:
+                    st.code(t.get("log") or "（无日志）")
+                if t.get("snapshots"):
+                    st.markdown("**重试快照（打回前的历史版本）**")
+                    ver = st.selectbox("选择历史版本", t["snapshots"])
+                    if st.button("查看该版本"):
+                        rv = httpx.get(f"{API_BASE}/trace/{tid_input}", params={"version": ver}, timeout=30)
+                        if rv.status_code == 200:
+                            st.json(rv.json()["stages"].get(ver))
+                        else:
+                            st.error("加载该版本失败")
+        except httpx.ConnectError:
+            st.error("无法连接后端服务")
+        except Exception as e:
+            st.error(f"加载追溯出错: {e}")

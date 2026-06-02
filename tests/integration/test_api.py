@@ -14,7 +14,7 @@ class TestAPI:
             assert response.json()["status"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_analyze_returns_report(self, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_analyze_returns_report(self, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
@@ -43,7 +43,8 @@ class TestAPI:
 
         with patch("src.api.routes.LLMClient", return_value=mock_llm), \
              patch("src.api.routes.HttpClient", return_value=mock_http), \
-             patch("src.api.routes.HtmlParser", return_value=mock_parser):
+             patch("src.api.routes.HtmlParser", return_value=mock_parser), \
+             patch("src.api.routes.runs_dir", lambda: tmp_path):
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:

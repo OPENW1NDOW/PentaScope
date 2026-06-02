@@ -105,7 +105,7 @@ if st.button("开始分析", type="primary"):
 # 执行追溯面板（可观测性：查看每个 Agent 的中间产物与决策过程）
 st.divider()
 with st.expander("执行追溯（中间产物）", expanded=False):
-    tid_input = st.text_input("Trace ID", value=st.session_state.get("last_trace_id", ""))
+    tid_input = st.text_input("Trace ID", value=st.session_state.get("last_trace_id", "")).strip()
     if st.button("加载追溯") and tid_input:
         try:
             r = httpx.get(f"{API_BASE}/trace/{tid_input}", timeout=30)

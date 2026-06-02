@@ -30,11 +30,18 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
     - 追溯 API GET /trace/{trace_id}：路径穿越双重防护（fullmatch + resolve 校验）、按需取历史版本
     - 前端「执行追溯」面板：6 tab 展示中间产物+日志+快照对比
   - doubt-driven 暴露并修复的真实问题：原子写、model_dump(mode=json)、路径穿越正则未锚定、meta 两次写防孤儿、快照覆盖全 4 stage、logger 幂等判断按 baseFilename
+  - 手动 UI 验证通过：真实跑通多次分析，产物落盘/meta/run.log/node_trace 全正常；反馈闭环+重试快照真实生效（ef2b68 打回 collector，01~04 的 _v1 快照全保存，验证了「快照覆盖全 4 stage」修正）；追溯面板加载成功；顺手修了前端 trace_id 输入 strip（粘贴空格导致 404）
 - 进行中：无
 - 下一步（新 session）：
-  1. 手动 UI 验证前端追溯面板（启动前后端跑一次，确认 6 tab、快照对比渲染正常）
-  2. feat/observability-trace 分支合并回 master
+  1. feat/observability-trace 分支合并回 master
+  2. 【报告质量，独立课题】UI 验证时质检诚实暴露上游 Agent 3 类真实缺陷（与可观测性功能无关，是先前就存在、现在才被追溯照出）：
+     - 溯源下沉断链：report 顶层有 12 条 data_sources，但各 section 的 source_refs、各 action_item 的 source_urls 全空（与 06-01 修过的 report.data_sources 断链同类、不同位置）
+     - SWOT 丢失：analysis 里有 SWOT，但 writer 没写进最终报告的 SWOT 模块
+     - focus_area 空：collector 解析目标时未填 analysis_goal.focus_area
+     - 后果：质检每次发现 3+ issue、打回重试 2 次仍不通过、quality_score=0.0
+     - 修复方向：debug writer（下沉 source_refs/source_urls、补 SWOT 模块）、collector（填 focus_area）
   3. 数据源场景适配（手机品牌 iTunes 不契合，Demo 建议用 Notion 类 SaaS）— 沿用 06-01 待办
+  4. 【可选小优化】Windows 控制台中文乱码（GBK），run.log/app.log 文件本身 UTF-8 正常，仅终端显示乱码
 - 阻塞：无
 - 安全提醒：验收用的 Doubao API Key 在历史对话中明文出现过，务必轮换（沿用 06-01 提醒）
 

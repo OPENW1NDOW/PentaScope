@@ -36,6 +36,14 @@ async def analyze(request: AnalysisRequest):
         },
     })
 
+    # 为本次分析挂一个 run.log 文件 handler（按 trace_id 留存单次运行日志）
+    trace_dir = runs_dir() / trace_id
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    run_handler = logging.FileHandler(str(trace_dir / "run.log"), encoding="utf-8")
+    run_handler.setFormatter(logging.Formatter(
+        "[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logging.getLogger().addHandler(run_handler)
+
     http = HttpClient()
     node_trace: list = []
     try:
@@ -73,6 +81,8 @@ async def analyze(request: AnalysisRequest):
         })
         return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
     finally:
+        logging.getLogger().removeHandler(run_handler)
+        run_handler.close()
         await http.close()
 
 

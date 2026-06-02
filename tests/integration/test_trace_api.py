@@ -77,6 +77,26 @@ async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
 
 
 @pytest.mark.asyncio
+async def test_run_log_created(tmp_path, sample_competitor_profile,
+                               sample_competitive_analysis, sample_final_report):
+    mock_llm, mock_http, mock_parser = _make_mocks(
+        sample_competitor_profile, sample_competitive_analysis, sample_final_report)
+    from src.api.main import app
+    with patch("src.api.routes.LLMClient", return_value=mock_llm), \
+         patch("src.api.routes.HttpClient", return_value=mock_http), \
+         patch("src.api.routes.HtmlParser", return_value=mock_parser), \
+         patch("src.api.routes.runs_dir", lambda: tmp_path):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            post = await ac.post("/api/v1/analyze", json={
+                "competitors": [{"name": "支付宝"}], "analysis_context": "测试"})
+            tid = post.json()["trace_id"]
+    log_file = tmp_path / tid / "run.log"
+    assert log_file.exists()
+    assert "→ collector" in log_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
 async def test_get_trace_404_when_missing(tmp_path):
     from src.api.main import app
     with patch("src.api.routes.runs_dir", lambda: tmp_path):

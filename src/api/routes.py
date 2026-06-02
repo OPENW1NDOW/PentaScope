@@ -28,7 +28,7 @@ async def analyze(request: AnalysisRequest):
         llm = LLMClient()
         parser = HtmlParser()
 
-        graph = build_graph(llm=llm, http=http, parser=parser)
+        graph, _ = build_graph(llm=llm, http=http, parser=parser)
 
         result = await graph.ainvoke({
             "user_input": user_input,

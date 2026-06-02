@@ -9,25 +9,38 @@ from src.agents.inspector import InspectorAgent
 logger = logging.getLogger(__name__)
 
 
-def build_graph(llm, http, parser) -> StateGraph:
-    """构建 LangGraph 状态图"""
+def build_graph(llm, http, parser, trace_writer=None):
+    """构建 LangGraph 状态图，返回 (compiled_graph, node_trace)"""
     collector = CollectorAgent(llm=llm, http=http, parser=parser)
     analyzer = AnalyzerAgent(llm=llm)
     writer = WriterAgent(llm=llm)
     inspector = InspectorAgent(llm=llm)
 
+    # 记录节点执行与路由决策序列（可观测性追溯）
+    node_trace: list = []
+
+    def _save(stage: str, data):
+        # 落盘是辅助能力，trace_writer 为 None 时跳过
+        if trace_writer is not None:
+            trace_writer.save_stage(stage, data)
+
     async def collector_node(state: AnalysisState) -> dict:
         logger.info("[graph] → collector")
+        node_trace.append("collector")
         profiles = await collector.collect(state["user_input"])
+        _save("01_profiles", profiles)
         return {"profiles": profiles, "current_node": "collector"}
 
     async def analyzer_node(state: AnalysisState) -> dict:
         logger.info("[graph] → analyzer")
+        node_trace.append("analyzer")
         analysis = await analyzer.analyze(state["profiles"])
+        _save("02_analysis", analysis)
         return {"analysis": analysis, "current_node": "analyzer"}
 
     async def writer_node(state: AnalysisState) -> dict:
         logger.info("[graph] → writer")
+        node_trace.append("writer")
         competitors = [c.name for c in state["user_input"].competitors]
         report = await writer.write(state["analysis"], competitors)
         # 从采集阶段汇总信息溯源，回填到报告（writer 拿不到 profile，需在此补全）
@@ -38,10 +51,12 @@ def build_graph(llm, http, parser) -> StateGraph:
         })
         if sources:
             report.metadata.data_sources = sources
+        _save("03_report", report)
         return {"report": report, "current_node": "writer"}
 
     async def inspector_node(state: AnalysisState) -> dict:
         logger.info("[graph] → inspector")
+        node_trace.append("inspector")
         report = state["report"]
         feedback = await inspector.inspect(
             report,
@@ -52,6 +67,7 @@ def build_graph(llm, http, parser) -> StateGraph:
         penalty = {"critical": 0.4, "major": 0.2, "minor": 0.05}
         score = max(0.0, 1.0 - sum(penalty[i.severity] for i in feedback.issues))
         report.metadata.quality_score = round(score, 2)
+        _save("04_feedback", feedback)
         return {
             "report": report,
             "feedback": feedback,
@@ -70,13 +86,15 @@ def build_graph(llm, http, parser) -> StateGraph:
 
         if retry_count >= max_retries:
             logger.warning("[graph] 质检打回超限 (%d/%d), 强制结束", retry_count, max_retries)
+            node_trace.append(f"reject->end(retry={retry_count})")
             return "end"
 
         # 根据 issues 中的 agent 字段决定回到哪个节点
         target_agents = {issue.agent for issue in feedback.issues}
-        if "collector" in target_agents:
-            return "collector"
-        return "writer"
+        issues_summary = [f"{i.agent}:{i.severity}:{i.field}" for i in feedback.issues]
+        target = "collector" if "collector" in target_agents else "writer"
+        node_trace.append(f"reject->{target} issues={issues_summary}")
+        return target
 
     # 构建图
     graph = StateGraph(AnalysisState)
@@ -98,4 +116,4 @@ def build_graph(llm, http, parser) -> StateGraph:
         "writer": "writer",
     })
 
-    return graph.compile()
+    return graph.compile(), node_trace

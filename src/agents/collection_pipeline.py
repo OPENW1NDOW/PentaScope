@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 # 规则选页加分关键词（域名/路径）
 _PATH_KEYWORDS = ("pricing", "price", "feature", "product", "docs", "help", "定价", "功能", "产品")
 
+PICK_SYSTEM = (
+    "你是竞品资料筛选助手。给定候选网页列表（url/title/snippet），"
+    "选出最可能含目标竞品官方产品/功能/定价信息的页面。"
+    '只返回 JSON：{"urls": ["选中的url", ...]}，最多选 N 个，按相关度排序。'
+)
+
 
 class CollectionPipeline:
     def __init__(self, llm, http, parser, search_source,
@@ -56,6 +62,27 @@ class CollectionPipeline:
                 break
         return picked
 
+    async def _llm_pick(self, candidates: list[dict], name: str, top_n: int) -> list[dict] | None:
+        """LLM 选页，外层超时；超时/异常/解析失败返回 None（调用方退回规则）。"""
+        listing = "\n".join(
+            f"{i}. {c.get('url')} | {c.get('title', '')} | {c.get('snippet', '')}"
+            for i, c in enumerate(candidates)
+        )
+        user = f"竞品：{name}\n最多选 {top_n} 个。候选：\n{listing}"
+        try:
+            result = await asyncio.wait_for(
+                self.llm.call_json(PICK_SYSTEM, user), timeout=self.pick_timeout
+            )
+        except Exception as e:  # noqa: BLE001 — 含 TimeoutError；任何失败都退回规则选页
+            logger.warning("[pipeline] LLM 选页失败/超时, 退回规则: %s", e)
+            return None
+        urls = result.get("urls") if isinstance(result, dict) else None
+        if not isinstance(urls, list):
+            return None
+        by_url = {c.get("url"): c for c in candidates}
+        picked = [by_url[u] for u in urls if u in by_url][:top_n]
+        return picked or None
+
     async def _fetch_clean(self, url: str) -> str | None:
         """抓取并抽取正文，过质量闸门；低质/失败返回 None。"""
         async with self._semaphore():
@@ -89,8 +116,12 @@ class CollectionPipeline:
         if self.search_source.available():
             trace.append({"step": "search", "provider": self.search_source.name})
             candidates = await self.search_source.search(f"{competitor_name} 产品 功能 定价")
-            picked = self._rule_pick(candidates, competitor_name, self.max_top_n)
-            trace.append({"step": "pick", "method": "rule", "picked": [c["url"] for c in picked]})
+            picked = await self._llm_pick(candidates, competitor_name, self.max_top_n)
+            if picked is not None:
+                trace.append({"step": "pick", "method": "llm", "picked": [c["url"] for c in picked]})
+            else:
+                picked = self._rule_pick(candidates, competitor_name, self.max_top_n)
+                trace.append({"step": "pick", "method": "rule_fallback", "picked": [c["url"] for c in picked]})
             fetched = await asyncio.gather(
                 *[self._fetch_clean(c["url"]) for c in picked], return_exceptions=True
             )

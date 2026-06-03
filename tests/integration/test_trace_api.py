@@ -40,8 +40,9 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
 
 
 @pytest.mark.asyncio
-async def test_analyze_persists_meta(tmp_path, sample_competitor_profile,
+async def test_analyze_persists_meta(monkeypatch, tmp_path, sample_competitor_profile,
                                      sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -61,8 +62,9 @@ async def test_analyze_persists_meta(tmp_path, sample_competitor_profile,
 
 
 @pytest.mark.asyncio
-async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
+async def test_get_trace_returns_stages(monkeypatch, tmp_path, sample_competitor_profile,
                                         sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -85,8 +87,9 @@ async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
 
 
 @pytest.mark.asyncio
-async def test_run_log_created(tmp_path, sample_competitor_profile,
+async def test_run_log_created(monkeypatch, tmp_path, sample_competitor_profile,
                                sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app

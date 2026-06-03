@@ -14,7 +14,8 @@ class TestAPI:
             assert response.json()["status"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_analyze_returns_report(self, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_analyze_returns_report(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},

@@ -31,6 +31,19 @@ async def test_itunes_handles_null_description():
 
 
 @pytest.mark.asyncio
+async def test_itunes_skips_empty_shell_record():
+    raw = {"results": [
+        {"trackName": "", "description": None, "trackViewUrl": "https://x/1"},  # empty shell → skip
+        {"trackName": "支付宝", "description": "有效描述" * 10, "trackViewUrl": "https://x/2"},
+    ]}
+    http = MagicMock()
+    http.get_json = AsyncMock(return_value=raw)
+    results = await ItunesSource(http).collect("支付宝")
+    assert len(results) == 1
+    assert results[0].url == "https://x/2"
+
+
+@pytest.mark.asyncio
 async def test_itunes_empty_results():
     http = MagicMock()
     http.get_json = AsyncMock(return_value={"results": []})

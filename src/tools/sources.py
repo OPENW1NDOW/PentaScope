@@ -35,6 +35,8 @@ class ItunesSource:
         results = []
         for app in data.get("results", []):
             desc = app.get("description") or ""
+            if not desc and not app.get("trackName"):
+                continue
             text = (
                 f"应用：{app.get('trackName', '')}\n"
                 f"价格：{app.get('formattedPrice', '')}\n"

@@ -41,6 +41,7 @@ class HttpClient:
         )
         self._ua_index = 0
         self._last_request: dict[str, float] = {}
+        self._domain_locks: dict[str, asyncio.Lock] = {}
         self._ua_lock = asyncio.Lock()
 
     async def _rotate_ua(self):
@@ -49,13 +50,15 @@ class HttpClient:
             self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
 
     async def _rate_limit(self, url: str):
-        """同域名频率控制"""
+        """同域名频率控制（per-domain 锁串行化 读-睡-写，避免并发击穿）"""
         domain = urlparse(url).netloc
-        if domain in self._last_request:
-            elapsed = time.time() - self._last_request[domain]
-            if elapsed < settings.COLLECT_INTERVAL:
-                await asyncio.sleep(settings.COLLECT_INTERVAL - elapsed)
-        self._last_request[domain] = time.time()
+        lock = self._domain_locks.setdefault(domain, asyncio.Lock())
+        async with lock:
+            if domain in self._last_request:
+                elapsed = time.time() - self._last_request[domain]
+                if elapsed < settings.COLLECT_INTERVAL:
+                    await asyncio.sleep(settings.COLLECT_INTERVAL - elapsed)
+            self._last_request[domain] = time.time()
 
     async def get(self, url: str) -> str | None:
         """GET 请求，失败返回 None"""

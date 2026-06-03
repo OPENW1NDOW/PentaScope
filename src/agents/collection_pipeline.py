@@ -112,7 +112,7 @@ class CollectionPipeline:
         pro_sources = build_pro_sources(category, self.http)
         trace.append({"step": "route", "category": category, "pro_sources": [s.name for s in pro_sources]})
 
-        # 搜索主线：仅在 available 时（本任务用规则选页；LLM 选页在下一任务接）
+        # 搜索主线：仅在搜索源可用时（LLM 选页，失败退规则）
         if self.search_source.available():
             trace.append({"step": "search", "provider": self.search_source.name})
             candidates = await self.search_source.search(f"{competitor_name} 产品 功能 定价")

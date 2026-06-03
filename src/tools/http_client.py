@@ -71,11 +71,14 @@ class HttpClient:
             logger.warning("[http] %s 请求超时", _redact_key(url))
             return None
         except httpx.RequestError as e:
-            logger.warning("[http] %s 请求失败: %s", _redact_key(url), e)
+            logger.warning("[http] %s 请求失败: %s", _redact_key(url), _redact_key(str(e)))
             return None
 
     async def get_json(self, url: str, headers: dict | None = None) -> dict | list | None:
-        """GET 请求并解析 JSON；header 局部传参不污染共享客户端；失败返回 None"""
+        """GET 请求并解析 JSON；header 局部传参不污染共享客户端；失败返回 None。
+
+        与 get() 不同，本方法不轮换 User-Agent —— API 端点用 auth header 标识身份，无需伪装。
+        """
         try:
             await self._rate_limit(url)
             response = await self.client.get(url, headers=headers)
@@ -87,7 +90,7 @@ class HttpClient:
             logger.warning("[http] %s 请求超时", _redact_key(url))
             return None
         except (httpx.RequestError, ValueError) as e:
-            logger.warning("[http] %s 请求/解析失败: %s", _redact_key(url), e)
+            logger.warning("[http] %s 请求/解析失败: %s", _redact_key(url), _redact_key(str(e)))
             return None
 
     async def __aenter__(self):

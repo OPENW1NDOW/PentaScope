@@ -76,6 +76,15 @@ class TestGetJson:
         assert result is None
         await client.close()
 
+    @pytest.mark.asyncio
+    async def test_get_json_returns_none_on_invalid_json(self):
+        client = HttpClient()
+        bad = httpx.Response(200, text="<html>not json</html>")
+        with patch.object(client.client, "get", new_callable=AsyncMock, return_value=bad):
+            result = await client.get_json("https://serpapi.com/search", headers={})
+        assert result is None
+        await client.close()
+
 
 def test_redact_key_masks_query_param():
     out = _redact_key("https://serpapi.com/search?q=x&api_key=SECRET123")

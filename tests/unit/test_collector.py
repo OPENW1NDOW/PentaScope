@@ -14,7 +14,7 @@ class TestCollectorAgent:
             "focus_area": "支付", "output_expectation": "action"
         })
 
-        agent = CollectorAgent(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=mock_llm, pipeline=MagicMock())
         goal = await agent.parse_goal("分析支付宝的支付功能")
         assert goal.goal_type == "feature_iteration"
         assert goal.focus_area == "支付"
@@ -26,7 +26,7 @@ class TestCollectorAgent:
             "competitor_type": "核心竞品", "reason": "目标用户相同"
         })
 
-        agent = CollectorAgent(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=mock_llm, pipeline=MagicMock())
         result = await agent.classify_competitor("支付宝", AnalysisGoal())
         assert result["competitor_type"] == "核心竞品"
 
@@ -34,49 +34,43 @@ class TestCollectorAgent:
     async def test_collect_returns_profiles(self, sample_competitor_profile):
         mock_llm = MagicMock()
         mock_llm.call_json = AsyncMock(side_effect=[
-            # parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
-            # classify
             {"competitor_type": "核心竞品", "reason": "test"},
-            # extract_profile - return raw data without classification and metadata
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
         ])
-
-        mock_http = MagicMock()
-        mock_http.get = AsyncMock(return_value="<html><body>支付宝</body></html>")
-
-        mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "支付宝 移动支付"
-        mock_parser.extract_meta.return_value = {}
-
-        agent = CollectorAgent(llm=mock_llm, http=mock_http, parser=mock_parser)
+        mock_pipeline = MagicMock()
+        mock_pipeline.collect = AsyncMock(return_value=("支付宝 移动支付正文" * 10,
+                                                        ["https://www.alipay.com/features"],
+                                                        [{"step": "route"}]))
+        agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
             competitors=[CompetitorBasic(name="支付宝")],
-            analysis_context="分析支付宝"
+            analysis_context="分析支付宝",
         )
         profiles = await agent.collect(user_input)
         assert len(profiles) == 1
         assert isinstance(profiles[0], CompetitorProfile)
+        assert profiles[0].metadata.pipeline_trace == [{"step": "route"}]
 
     def test_detect_category_uses_input_category(self):
-        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
         comp = CompetitorBasic(name="Notion", category="协作软件")
         assert agent.detect_category(comp) == "saas"
 
     def test_detect_category_default_when_unknown(self):
-        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
         comp = CompetitorBasic(name="某硬件", category="消费电子")
         assert agent.detect_category(comp) == "default"
 
     def test_detect_category_calls_no_llm(self):
         mock_llm = MagicMock()
         mock_llm.call_json = AsyncMock()
-        agent = CollectorAgent(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=mock_llm, pipeline=MagicMock())
         agent.detect_category(CompetitorBasic(name="XX", category="工具"))
         mock_llm.call_json.assert_not_called()
 
     def test_build_placeholder_profile(self):
-        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
         comp = CompetitorBasic(name="某竞品", company="某公司")
         classification = {"competitor_type": "核心竞品", "reason": "占位"}
         profile = agent._build_placeholder_profile(comp, classification, trace=[{"step": "all_empty"}])

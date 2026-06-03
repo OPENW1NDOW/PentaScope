@@ -75,6 +75,7 @@ class ProfileMetadata(BaseModel):
     collected_at: str
     data_sources: list[str] = Field(default_factory=list)
     completeness_score: float = Field(ge=0, le=1, default=0)
+    pipeline_trace: list[dict] = Field(default_factory=list)
 
 
 class CompetitorProfile(BaseModel):

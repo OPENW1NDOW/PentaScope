@@ -45,7 +45,16 @@ class CollectionPipeline:
                 s += 1
             return s
         ranked = sorted(candidates, key=score, reverse=True)
-        return [c for c in ranked if score(c) > 0][:top_n]
+        picked = []
+        seen = set()
+        for c in ranked:
+            url = c.get("url")
+            if score(c) > 0 and url not in seen:
+                picked.append(c)
+                seen.add(url)
+            if len(picked) >= top_n:
+                break
+        return picked
 
     async def _fetch_clean(self, url: str) -> str | None:
         """抓取并抽取正文，过质量闸门；低质/失败返回 None。"""
@@ -58,17 +67,16 @@ class CollectionPipeline:
             return None
         return text
 
-    async def _run_source(self, src):
+    async def _run_source(self, src, name):
         """运行单个专源，独立超时容错。"""
         try:
-            return await asyncio.wait_for(src.collect(self._current_name), timeout=settings.HTTP_TIMEOUT)
+            return await asyncio.wait_for(src.collect(name), timeout=settings.HTTP_TIMEOUT)
         except Exception as e:  # noqa: BLE001
             logger.warning("[pipeline] 专源 %s 失败: %s", getattr(src, "name", "?"), e)
             return []
 
     async def collect(self, competitor_name: str, category: str):
         """返回 (merged_text, sources, pipeline_trace)。"""
-        self._current_name = competitor_name
         trace: list[dict] = []
         texts: list[str] = []
         sources: list[str] = []
@@ -95,7 +103,7 @@ class CollectionPipeline:
             trace.append({"step": "search_skipped", "reason": "no_api_key"})
 
         # 专源并行
-        results_per_source = await asyncio.gather(*[self._run_source(s) for s in pro_sources])
+        results_per_source = await asyncio.gather(*[self._run_source(s, competitor_name) for s in pro_sources])
         for src, results in zip(pro_sources, results_per_source):
             for r in results:
                 if r.url not in seen_urls:

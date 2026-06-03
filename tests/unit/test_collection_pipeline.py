@@ -42,3 +42,36 @@ def test_rule_pick_prefers_official_and_pricing_paths():
     assert "https://alipay.com/pricing" in urls
     assert "https://alipay.com/features" in urls
     assert "https://random-blog.com/post" not in urls
+
+
+@pytest.mark.asyncio
+async def test_concurrent_collect_no_name_crosstalk(monkeypatch):
+    # 同一 pipeline 实例并发 collect 两个竞品，专源必须各收各的名字，不串
+    from src.tools.sources import SourceResult
+
+    received = []
+
+    class RecordingSource:
+        name = "rec"
+        def __init__(self, http):
+            pass
+        async def collect(self, competitor_name):
+            import asyncio
+            await asyncio.sleep(0.01)  # 制造交错
+            received.append(competitor_name)
+            return [SourceResult(url=f"https://x/{competitor_name}", text=f"{competitor_name} 正文" * 30)]
+
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources",
+                        lambda category, http: [RecordingSource(http)])
+    search = MagicMock()
+    search.available.return_value = False
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=search, max_top_n=3, pick_timeout=20, max_concurrency=5)
+    import asyncio
+    (textA, srcA, _), (textB, srcB, _) = await asyncio.gather(
+        pipe.collect("竞品甲", "saas"),
+        pipe.collect("竞品乙", "saas"),
+    )
+    # 各自的源 URL 必须只含自己的名字，不串
+    assert "竞品甲" in textA and "竞品乙" not in textA
+    assert "竞品乙" in textB and "竞品甲" not in textB

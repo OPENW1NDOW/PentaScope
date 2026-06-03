@@ -16,6 +16,29 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-03（数据源拓展：采集管线重构）
+- 完成：
+  - 走完整 brainstorming → 三轮 doubt-driven（每节单模型 + Codex gpt-5.5 跨模型对抗审查）→ writing-plans → subagent-driven 流程
+  - 设计文档 `docs/superpowers/specs/2026-06-03-datasource-expansion-design.md`，实现计划 `docs/superpowers/plans/2026-06-03-datasource-expansion.md`（15 Task）
+  - 采集层从 collector 内 3 个硬编码 URL 源，重构为分层管线 `CollectorAgent(agent) → CollectionPipeline(tool) → sources(插件)`：
+    - 主线两步走：SerpAPI 搜索 → LLM 选页（独立短超时 wait_for，失败退规则）→ 抓正文 → 质量闸门过滤
+    - 结构化专源按 category 路由、可插拔（saas→iTunes；硬件电商源列入未来扩展）
+    - 无 SEARCH_API_KEY 时跳过搜索主线、仅走专源（不退回 SERP 抓取）
+    - 全空时产 completeness=0.0 占位 profile（不调 extract LLM，防幻觉）
+    - 顶层 collect 改部分降级（单竞品失败产占位，不拖垮全局，语义从「快速失败」变更）
+    - pipeline_trace 随 profile.metadata 落盘（与 graph node_trace 分离）
+  - 新增 `src/tools/sources.py`（iTunes+SerpAPI+路由）、`src/agents/collection_pipeline.py`、`src/tools/quality_gate.py`；`HttpClient.get_json`（key 走 header、URL/异常双重脱敏、UA 加锁）；`ProfileMetadata.pipeline_trace`；config 加 4 个可选配置
+  - 117 测试全绿（原 51 → 117）、ruff 全清；TDD + 小步提交（21 commits）
+  - doubt-driven + 代码审查捕获并修复的真实问题：路由原语用错（competitor_type 误当 SaaS/硬件类别）、密钥经 query/异常消息泄漏、CollectionPipeline `_current_name` 实例属性并发数据竞争（A 报告混入 B 数据，改参数传递）、集成测试 6 步序列隐式依赖环境变量为空（显式 monkeypatch 屏蔽）、_rate_limit check-then-act 限速竞态（加 per-domain 锁）、iTunes 空壳记录污染 sources
+  - **重要发现**：subagent 报「集成测试全绿」一度是占位降级路径假象（extract response 未被消费），亲自核实后在 Task15 让集成测试走真实采集路径（saas 路由 + mock get_json + call_index==6 断言锁定）
+- 进行中：无
+- 下一步（新 session）：
+  1. feat/datasource-expansion 合并回 master（本 session 进行中）
+  2. 真实跑通验证：配 `SEARCH_API_KEY`（SerpAPI）验证搜索主线；无 key 验证专源降级路径；Demo 建议用 Notion 类 SaaS（数据源契合）
+  3. 【报告质量，独立课题】沿用 06-02 待办：溯源下沉断链、SWOT 丢失、focus_area 空（与本次数据源拓展无关）
+- 阻塞：无
+- 安全提醒：验收用的 Doubao API Key 在历史对话中明文出现过，务必轮换（沿用历史提醒）；新引入的 SEARCH_API_KEY 走 .env，勿提交
+
 ## 2026-06-02（可观测性与中间产物追溯）
 - 完成：
   - 走完整 brainstorming → doubt-driven（单模型 + Codex 跨模型对抗审查）→ writing-plans → subagent-driven 流程

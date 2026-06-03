@@ -44,3 +44,38 @@ class ItunesSource:
             )
             results.append(SourceResult(url=app.get("trackViewUrl", ""), text=text))
         return results
+
+
+SERPAPI_URL = "https://serpapi.com/search?engine=google&q={query}&num=10"
+
+
+class SerpApiSource:
+    """SerpAPI 搜索源：search(query) -> 候选 [{url,title,snippet}]。key 走 header 不进 query。"""
+
+    name = "serpapi"
+
+    def __init__(self, http, api_key: str):
+        self.http = http
+        self.api_key = api_key
+
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+    async def search(self, query: str) -> list[dict]:
+        if not self.available():
+            return []
+        url = SERPAPI_URL.format(query=quote(query))
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        data = await self.http.get_json(url, headers=headers)
+        if not data or not isinstance(data, dict):
+            return []
+        candidates = []
+        for item in data.get("organic_results", []):
+            link = item.get("link")
+            if link:
+                candidates.append({
+                    "url": link,
+                    "title": item.get("title", ""),
+                    "snippet": item.get("snippet", ""),
+                })
+        return candidates

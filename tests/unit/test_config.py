@@ -1,5 +1,4 @@
 import importlib
-import os
 
 
 def test_search_config_defaults_when_absent(monkeypatch):

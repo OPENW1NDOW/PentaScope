@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 from urllib.parse import urlparse
 
@@ -21,6 +22,13 @@ DEFAULT_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+_KEY_QUERY_RE = re.compile(r"(api_key|apikey|key|token)=([^&\s]+)", re.IGNORECASE)
+
+
+def _redact_key(url: str) -> str:
+    """脱敏 URL 中的 key/token query 参数，用于安全日志。"""
+    return _KEY_QUERY_RE.sub(r"\1=***", url)
+
 
 class HttpClient:
     """异步 HTTP 客户端，带超时、User-Agent 轮换和同域名频率控制"""
@@ -33,10 +41,12 @@ class HttpClient:
         )
         self._ua_index = 0
         self._last_request: dict[str, float] = {}
+        self._ua_lock = asyncio.Lock()
 
-    def _rotate_ua(self):
-        self._ua_index = (self._ua_index + 1) % len(USER_AGENTS)
-        self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
+    async def _rotate_ua(self):
+        async with self._ua_lock:
+            self._ua_index = (self._ua_index + 1) % len(USER_AGENTS)
+            self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
 
     async def _rate_limit(self, url: str):
         """同域名频率控制"""
@@ -51,17 +61,33 @@ class HttpClient:
         """GET 请求，失败返回 None"""
         try:
             await self._rate_limit(url)
-            self._rotate_ua()
+            await self._rotate_ua()
             response = await self.client.get(url)
             if response.status_code == 200:
                 return response.text
-            logger.warning("[http] %s 返回状态码 %d", url, response.status_code)
+            logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
             return None
         except httpx.TimeoutException:
-            logger.warning("[http] %s 请求超时", url)
+            logger.warning("[http] %s 请求超时", _redact_key(url))
             return None
         except httpx.RequestError as e:
-            logger.warning("[http] %s 请求失败: %s", url, e)
+            logger.warning("[http] %s 请求失败: %s", _redact_key(url), e)
+            return None
+
+    async def get_json(self, url: str, headers: dict | None = None) -> dict | list | None:
+        """GET 请求并解析 JSON；header 局部传参不污染共享客户端；失败返回 None"""
+        try:
+            await self._rate_limit(url)
+            response = await self.client.get(url, headers=headers)
+            if response.status_code == 200:
+                return response.json()
+            logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
+            return None
+        except httpx.TimeoutException:
+            logger.warning("[http] %s 请求超时", _redact_key(url))
+            return None
+        except (httpx.RequestError, ValueError) as e:
+            logger.warning("[http] %s 请求/解析失败: %s", _redact_key(url), e)
             return None
 
     async def __aenter__(self):

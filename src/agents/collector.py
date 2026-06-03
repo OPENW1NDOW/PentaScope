@@ -22,7 +22,7 @@ class CollectorAgent:
         signal = comp.category or comp.name or comp.company or ""
         return normalize_category(signal)
 
-    def _build_placeholder_profile(self, comp: CompetitorBasic, classification: dict, trace: list) -> CompetitorProfile:
+    def _build_placeholder_profile(self, comp: CompetitorBasic, classification: dict, trace: list[dict]) -> CompetitorProfile:
         """全空时构造占位 profile：不调 LLM，completeness 显式 0.0。"""
         return CompetitorProfile(
             classification=Classification(**classification),
@@ -65,7 +65,7 @@ class CollectorAgent:
         return result
 
     @staticmethod
-    def _normalize_raw(raw: dict, classification: dict, sources: list[str], pipeline_trace: list) -> dict:
+    def _normalize_raw(raw: dict, classification: dict, sources: list[str], pipeline_trace: list[dict]) -> dict:
         """规整 LLM 输出：补充 classification/metadata，兜底纠正常见结构偏差"""
         # sample_reviews 偶尔被 LLM 填成字符串数组，转成 SampleReview 结构
         reviews = raw.get("user_reviews", {}).get("sample_reviews")
@@ -84,7 +84,7 @@ class CollectorAgent:
         return raw
 
     async def _extract_profile(self, name: str, text: str, classification: dict,
-                               sources: list[str], pipeline_trace: list) -> CompetitorProfile:
+                               sources: list[str], pipeline_trace: list[dict]) -> CompetitorProfile:
         """从文本中抽取结构化竞品画像"""
         prompt = f"竞品名称：{name}\n\n网页文本内容：\n{text[:8000]}"
         raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt),

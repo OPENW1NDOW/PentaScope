@@ -93,3 +93,4 @@ async def test_serpapi_search_empty_when_unavailable():
     http.get_json = AsyncMock(return_value={"organic_results": [{"link": "https://a.com"}]})
     src = SerpApiSource(http=http, api_key="")  # no key
     assert await src.search("x") == []
+    src.http.get_json.assert_not_called()

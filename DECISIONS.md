@@ -15,6 +15,36 @@
 
 ---
 
+## 2026-06-03: 采集层重构为分层管线（collector → pipeline → sources）
+- 选择：采集逻辑从 CollectorAgent 下沉到独立的 `CollectionPipeline`（tool 层），数据源做成 `sources.py` 内可插拔插件；collector 构造器从 `(llm, http, parser)` 改为 `(llm, pipeline)`
+- 理由：原 collector 内联 3 个硬编码 URL 源、职责饱满；新增「搜索→选页→正文→闸门 + 专源路由」会让它膨胀且无法独立单测。下沉后每层单一职责、可独立测试，专源可插拔
+- 备选：在 collector 内线性扩展（排除：膨胀、专源无处安放）、全套配置化插件框架（排除：当前 3-5 源，过度设计）
+
+## 2026-06-03: 两步走采集（搜索 API → LLM 选页 → 正文页）
+- 选择：用专业搜索 API（默认 SerpAPI）拿候选 URL → LLM 选最相关 Top N → 抓正文页 → 质量闸门过滤
+- 理由：原 Bing/搜狗抓的是搜索结果页（SERP）摘要而非内容页正文，信噪比低——这是「质量低」的首要根因。两步走直取官网/文档正文
+- 备选：只加更多搜索源（排除：SERP 噪声依旧）、专源优先（排除：源零散、覆盖不全）
+
+## 2026-06-03: 只实现 SerpAPI，不做 provider 抽象
+- 选择：搜索源只实现 SerpApiSource，key 走 Authorization header（不进 query 防泄漏）；换 provider 列入未来扩展
+- 理由：SerpAPI/Bing/Brave/Google CSE 响应 JSON 结构各不相同，「配置切换 provider」需各写 parser——doubt-driven 判定「config alone 可换」是假承诺。当前 YAGNI 只做一个
+- 备选：provider 可配置抽象（排除：假承诺 + 过度设计）、默认 Bing（排除：微软已宣布退役）
+
+## 2026-06-03: 按 category 路由用独立 detect_category（不复用 competitor_type）
+- 选择：新增零 LLM 的 `detect_category`（规则匹配 category/name/company → saas/default），用于专源路由
+- 理由：doubt-driven 捕获方向性错误——原计划用 `classify_competitor` 的 `competitor_type` 路由，但其枚举是「核心/标杆/间接竞品」（竞争关系），无 SaaS/硬件（产品形态）维度，硬件竞品会被错配到 iTunes
+- 备选：复用 competitor_type（排除：维度不对口）、LLM 判类别（排除：会多一次 LLM 调用，打破集成测试 6 步序列）
+
+## 2026-06-03: 顶层 collect 从「快速失败」改为「部分降级」
+- 选择：顶层 `collect()` 用 `asyncio.gather(return_exceptions=True)`，单竞品彻底失败 → 产 completeness=0.0 占位 profile，其余竞品正常产出
+- 理由：多竞品场景下一颗老鼠屎不该坏一锅汤；质检会诚实反映占位 profile 的低质量。全空也不调 extract LLM（防 LLM 编造画像）
+- 备选：保留快速失败（排除：单竞品失败拖垮整个分析）；注意 parse_goal 失败仍整体中止（公共前置，合理）
+
+## 2026-06-03: 可观测性不阻塞 + 安全脱敏（沿用既有取向）
+- 选择：pipeline_trace 随 profile.metadata 落盘（不碰 graph 闭包 node_trace）；HttpClient 对 URL 和异常消息双重脱敏 key；per-domain 锁串行化限速读-睡-写
+- 理由：trace 进 metadata 避免反向依赖图层、也保证可追溯随产物走；密钥可能经 run.log / /trace 接口 / report.data_sources 泄漏，必须脱敏；并发 fetch 同域名下 check-then-act 会击穿 COLLECT_INTERVAL（合规评分点）
+- 备选：trace 注入闭包（排除：反向依赖 + 污染 node_trace 断言）、仅 URL 脱敏（排除：异常消息也可能含 key）
+
 ## 2026-05-30: 编排框架选型
 - 选择：LangGraph
 - 理由：课题要求质检→采集的反馈闭环（DAG 循环），LangGraph 原生支持条件分支和环路

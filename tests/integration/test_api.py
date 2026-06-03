@@ -14,7 +14,8 @@ class TestAPI:
             assert response.json()["status"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_analyze_returns_report(self, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_analyze_returns_report(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
@@ -35,6 +36,14 @@ class TestAPI:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>test</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
         mock_http.close = AsyncMock()
 
         mock_parser = MagicMock()
@@ -49,7 +58,7 @@ class TestAPI:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post("/api/v1/analyze", json={
-                    "competitors": [{"name": "支付宝"}],
+                    "competitors": [{"name": "支付宝", "category": "金融软件"}],
                     "analysis_context": "分析支付宝"
                 })
 

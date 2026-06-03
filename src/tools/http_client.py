@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 from urllib.parse import urlparse
 
@@ -21,6 +22,13 @@ DEFAULT_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+_KEY_QUERY_RE = re.compile(r"(api_key|apikey|key|token)=([^&\s]+)", re.IGNORECASE)
+
+
+def _redact_key(url: str) -> str:
+    """脱敏 URL 中的 key/token query 参数，用于安全日志。"""
+    return _KEY_QUERY_RE.sub(r"\1=***", url)
+
 
 class HttpClient:
     """异步 HTTP 客户端，带超时、User-Agent 轮换和同域名频率控制"""
@@ -33,35 +41,59 @@ class HttpClient:
         )
         self._ua_index = 0
         self._last_request: dict[str, float] = {}
+        self._domain_locks: dict[str, asyncio.Lock] = {}
+        self._ua_lock = asyncio.Lock()
 
-    def _rotate_ua(self):
-        self._ua_index = (self._ua_index + 1) % len(USER_AGENTS)
-        self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
+    async def _rotate_ua(self):
+        async with self._ua_lock:
+            self._ua_index = (self._ua_index + 1) % len(USER_AGENTS)
+            self.client.headers["User-Agent"] = USER_AGENTS[self._ua_index]
 
     async def _rate_limit(self, url: str):
-        """同域名频率控制"""
+        """同域名频率控制（per-domain 锁串行化 读-睡-写，避免并发击穿）"""
         domain = urlparse(url).netloc
-        if domain in self._last_request:
-            elapsed = time.time() - self._last_request[domain]
-            if elapsed < settings.COLLECT_INTERVAL:
-                await asyncio.sleep(settings.COLLECT_INTERVAL - elapsed)
-        self._last_request[domain] = time.time()
+        lock = self._domain_locks.setdefault(domain, asyncio.Lock())
+        async with lock:
+            if domain in self._last_request:
+                elapsed = time.time() - self._last_request[domain]
+                if elapsed < settings.COLLECT_INTERVAL:
+                    await asyncio.sleep(settings.COLLECT_INTERVAL - elapsed)
+            self._last_request[domain] = time.time()
 
     async def get(self, url: str) -> str | None:
         """GET 请求，失败返回 None"""
         try:
             await self._rate_limit(url)
-            self._rotate_ua()
+            await self._rotate_ua()
             response = await self.client.get(url)
             if response.status_code == 200:
                 return response.text
-            logger.warning("[http] %s 返回状态码 %d", url, response.status_code)
+            logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
             return None
         except httpx.TimeoutException:
-            logger.warning("[http] %s 请求超时", url)
+            logger.warning("[http] %s 请求超时", _redact_key(url))
             return None
         except httpx.RequestError as e:
-            logger.warning("[http] %s 请求失败: %s", url, e)
+            logger.warning("[http] %s 请求失败: %s", _redact_key(url), _redact_key(str(e)))
+            return None
+
+    async def get_json(self, url: str, headers: dict | None = None) -> dict | list | None:
+        """GET 请求并解析 JSON；header 局部传参不污染共享客户端；失败返回 None。
+
+        与 get() 不同，本方法不轮换 User-Agent —— API 端点用 auth header 标识身份，无需伪装。
+        """
+        try:
+            await self._rate_limit(url)
+            response = await self.client.get(url, headers=headers)
+            if response.status_code == 200:
+                return response.json()
+            logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
+            return None
+        except httpx.TimeoutException:
+            logger.warning("[http] %s 请求超时", _redact_key(url))
+            return None
+        except (httpx.RequestError, ValueError) as e:
+            logger.warning("[http] %s 请求/解析失败: %s", _redact_key(url), _redact_key(str(e)))
             return None
 
     async def __aenter__(self):

@@ -24,6 +24,14 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
     mock_llm.call_json = AsyncMock(side_effect=mock_call_json)
     mock_http = MagicMock()
     mock_http.get = AsyncMock(return_value="<html>test</html>")
+    mock_http.get_json = AsyncMock(return_value={
+        "results": [{
+            "trackName": "支付宝", "formattedPrice": "免费",
+            "averageUserRating": 4.7, "userRatingCount": 20000,
+            "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+            "trackViewUrl": "https://apps.apple.com/app/id1",
+        }]
+    })
     mock_http.close = AsyncMock()
     mock_parser = MagicMock()
     mock_parser.extract_text.return_value = "test data"
@@ -32,8 +40,9 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
 
 
 @pytest.mark.asyncio
-async def test_analyze_persists_meta(tmp_path, sample_competitor_profile,
+async def test_analyze_persists_meta(monkeypatch, tmp_path, sample_competitor_profile,
                                      sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -44,7 +53,7 @@ async def test_analyze_persists_meta(tmp_path, sample_competitor_profile,
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.post("/api/v1/analyze", json={
-                "competitors": [{"name": "支付宝"}], "analysis_context": "测试"})
+                "competitors": [{"name": "支付宝", "category": "金融软件"}], "analysis_context": "测试"})
     assert resp.status_code == 200
     tid = resp.json()["trace_id"]
     meta = json.loads((tmp_path / tid / "meta.json").read_text(encoding="utf-8"))
@@ -53,8 +62,9 @@ async def test_analyze_persists_meta(tmp_path, sample_competitor_profile,
 
 
 @pytest.mark.asyncio
-async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
+async def test_get_trace_returns_stages(monkeypatch, tmp_path, sample_competitor_profile,
                                         sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -65,7 +75,7 @@ async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             post = await ac.post("/api/v1/analyze", json={
-                "competitors": [{"name": "支付宝"}], "analysis_context": "测试"})
+                "competitors": [{"name": "支付宝", "category": "金融软件"}], "analysis_context": "测试"})
             tid = post.json()["trace_id"]
             resp = await ac.get(f"/api/v1/trace/{tid}")
     assert resp.status_code == 200
@@ -77,8 +87,9 @@ async def test_get_trace_returns_stages(tmp_path, sample_competitor_profile,
 
 
 @pytest.mark.asyncio
-async def test_run_log_created(tmp_path, sample_competitor_profile,
+async def test_run_log_created(monkeypatch, tmp_path, sample_competitor_profile,
                                sample_competitive_analysis, sample_final_report):
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -89,7 +100,7 @@ async def test_run_log_created(tmp_path, sample_competitor_profile,
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             post = await ac.post("/api/v1/analyze", json={
-                "competitors": [{"name": "支付宝"}], "analysis_context": "测试"})
+                "competitors": [{"name": "支付宝", "category": "金融软件"}], "analysis_context": "测试"})
             tid = post.json()["trace_id"]
     log_file = tmp_path / tid / "run.log"
     assert log_file.exists()

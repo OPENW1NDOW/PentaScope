@@ -7,8 +7,9 @@ from src.tools.trace_writer import TraceWriter
 
 class TestGraphIntegration:
     @pytest.mark.asyncio
-    async def test_full_graph_run(self, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_full_graph_run(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """端到端测试：Mock LLM，验证完整图运行"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         # 构造 LLM 返回序列
         llm_responses = [
             # collector: parse_goal
@@ -36,6 +37,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -44,7 +53,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -58,10 +67,13 @@ class TestGraphIntegration:
         assert "report" in result
         assert result["report"].title != ""
         assert result["feedback"].passed is True
+        # 锁定走真实采集路径（含 extract），而非占位降级：6 个 LLM 响应全部被消费
+        assert call_index[0] == 6
 
     @pytest.mark.asyncio
-    async def test_rejection_triggers_retry(self, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_rejection_triggers_retry(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """测试质检打回后重新执行"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         llm_responses = [
             # collector: parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
@@ -92,6 +104,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -100,7 +120,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -115,8 +135,9 @@ class TestGraphIntegration:
         assert result["retry_count"] >= 1
 
     @pytest.mark.asyncio
-    async def test_graph_persists_stage_artifacts(self, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_graph_persists_stage_artifacts(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """各节点产出落盘：四个 stage 文件都应存在"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
@@ -137,6 +158,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -146,7 +175,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser, trace_writer=trace_writer)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -162,8 +191,9 @@ class TestGraphIntegration:
             assert (trace_dir / fname).exists(), f"缺失落盘文件: {fname}"
 
     @pytest.mark.asyncio
-    async def test_build_graph_returns_node_trace(self, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
+    async def test_build_graph_returns_node_trace(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """build_graph 返回 node_trace，记录路由决策序列"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
@@ -184,6 +214,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -192,7 +230,7 @@ class TestGraphIntegration:
         graph, node_trace = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 

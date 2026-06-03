@@ -112,3 +112,4 @@ collector → analyzer → writer → inspector ─┬─(passed)─────
 - **工具**（`src/tools/`）：`llm_client`（Doubao JSON mode，`response_format={"type":"json_object"}`，带超时/重试）、`http_client`（httpx async，同域名限速 `COLLECT_INTERVAL`，用作 async context manager）、`html_parser`、`validators`。
 - **入口**：后端 `src/api/main.py`（路由 `src/api/routes.py` 的 `POST /api/v1/analyze`，每请求生成 `trace_id` 并构图执行）；前端 `src/frontend/app.py`。
 - **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（评分项之一，勿移除）。
+- **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。追溯接口 `GET /api/v1/trace/{trace_id}`（路由 `src/api/routes.py`，含路径穿越双重防护，`?version=` 取历史版本），前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。

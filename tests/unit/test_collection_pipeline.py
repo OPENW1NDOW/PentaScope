@@ -137,3 +137,24 @@ async def test_no_key_makes_no_llm_call(monkeypatch):
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
     await pipe.collect("X", "default")
     llm.call_json.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_llm_pick_malformed_result_falls_back_to_rule(monkeypatch):
+    # LLM 返回畸形结果（urls 不是 list）→ 退回规则选页
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources", lambda category, http: [])
+    search = MagicMock()
+    search.available.return_value = True
+    search.name = "serpapi"
+    search.search = AsyncMock(return_value=[{"url": "https://a.com/pricing", "title": "", "snippet": ""}])
+    llm = MagicMock()
+    llm.call_json = AsyncMock(return_value={"urls": "notalist"})  # 畸形
+    parser = MagicMock()
+    parser.extract_text.return_value = "有效正文" * 40
+    http = MagicMock()
+    http.get = AsyncMock(return_value="<html>x</html>")
+    pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
+                              max_top_n=3, pick_timeout=20, max_concurrency=5)
+    text, sources, trace = await pipe.collect("X", "default")
+    assert sources == ["https://a.com/pricing"]
+    assert any(t.get("step") == "pick" and t.get("method") == "rule_fallback" for t in trace)

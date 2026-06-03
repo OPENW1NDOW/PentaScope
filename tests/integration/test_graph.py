@@ -36,6 +36,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -44,7 +52,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -58,6 +66,8 @@ class TestGraphIntegration:
         assert "report" in result
         assert result["report"].title != ""
         assert result["feedback"].passed is True
+        # 锁定走真实采集路径（含 extract），而非占位降级：6 个 LLM 响应全部被消费
+        assert call_index[0] == 6
 
     @pytest.mark.asyncio
     async def test_rejection_triggers_retry(self, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
@@ -92,6 +102,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -100,7 +118,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -137,6 +155,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -146,7 +172,7 @@ class TestGraphIntegration:
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser, trace_writer=trace_writer)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 
@@ -184,6 +210,14 @@ class TestGraphIntegration:
 
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
+        mock_http.get_json = AsyncMock(return_value={
+            "results": [{
+                "trackName": "支付宝", "formattedPrice": "免费",
+                "averageUserRating": 4.7, "userRatingCount": 20000,
+                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
+                "trackViewUrl": "https://apps.apple.com/app/id1",
+            }]
+        })
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝 移动支付"
@@ -192,7 +226,7 @@ class TestGraphIntegration:
         graph, node_trace = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
 
         user_input = CompetitorInput(
-            competitors=[CompetitorBasic(name="支付宝")],
+            competitors=[CompetitorBasic(name="支付宝", category="金融软件")],
             analysis_context="分析支付宝"
         )
 

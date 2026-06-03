@@ -158,3 +158,41 @@ async def test_llm_pick_malformed_result_falls_back_to_rule(monkeypatch):
     text, sources, trace = await pipe.collect("X", "default")
     assert sources == ["https://a.com/pricing"]
     assert any(t.get("step") == "pick" and t.get("method") == "rule_fallback" for t in trace)
+
+
+@pytest.mark.asyncio
+async def test_soft404_page_excluded_from_sources(monkeypatch):
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources", lambda category, http: [])
+    search = MagicMock()
+    search.available.return_value = True
+    search.name = "serpapi"
+    search.search = AsyncMock(return_value=[{"url": "https://a.com/404page", "title": "", "snippet": ""}])
+    llm = MagicMock()
+    llm.call_json = AsyncMock(return_value={"urls": ["https://a.com/404page"]})
+    parser = MagicMock()
+    parser.extract_text.return_value = "404 页面不存在"  # soft-404, gate drops it
+    http = MagicMock()
+    http.get = AsyncMock(return_value="<html>404</html>")
+    pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
+                              max_top_n=3, pick_timeout=20, max_concurrency=5)
+    text, sources, trace = await pipe.collect("X", "default")
+    assert sources == []
+    assert "页面不存在" not in text
+
+
+@pytest.mark.asyncio
+async def test_sources_dedup(monkeypatch):
+    from src.tools.sources import SourceResult
+    fake = MagicMock()
+    fake.name = "itunes"
+    fake.collect = AsyncMock(return_value=[
+        SourceResult(url="https://dup.com", text="正文一" * 30),
+        SourceResult(url="https://dup.com", text="正文二" * 30),
+    ])
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources", lambda category, http: [fake])
+    search = MagicMock()
+    search.available.return_value = False
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=search, max_top_n=3, pick_timeout=20, max_concurrency=5)
+    text, sources, trace = await pipe.collect("X", "saas")
+    assert sources == ["https://dup.com"]

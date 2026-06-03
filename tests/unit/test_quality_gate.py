@@ -27,3 +27,9 @@ def test_empty_is_low_quality():
 
 def test_min_content_len_is_positive():
     assert MIN_CONTENT_LEN > 0
+
+
+def test_long_content_with_404_substring_kept():
+    # 长正文（>320 字符）偶含 "404" 不应被软404规则误杀
+    text = "支付宝提供扫码支付、转账、理财、信用服务等功能，错误码 404 仅为示例。" * 10
+    assert is_low_quality(text) is False

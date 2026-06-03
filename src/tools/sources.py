@@ -79,3 +79,24 @@ class SerpApiSource:
                     "snippet": item.get("snippet", ""),
                 })
         return candidates
+
+
+_SAAS_KEYWORDS = ("软件", "saas", "app", "应用", "工具", "平台", "service")
+
+
+def normalize_category(category: str) -> str:
+    """自由文本 category 规范化到路由键：saas / default。"""
+    if not category:
+        return "default"
+    lowered = category.lower()
+    if any(k in lowered for k in _SAAS_KEYWORDS):
+        return "saas"
+    return "default"
+
+
+def build_pro_sources(category: str, http) -> list:
+    """按规范化 category 返回结构化专源列表。硬件电商源列入未来扩展。"""
+    key = normalize_category(category)
+    if key == "saas":
+        return [ItunesSource(http)]
+    return []

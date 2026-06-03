@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.tools.sources import ItunesSource, SourceResult
 from src.tools.sources import SerpApiSource
+from src.tools.sources import build_pro_sources, normalize_category
 
 
 @pytest.mark.asyncio
@@ -94,3 +95,29 @@ async def test_serpapi_search_empty_when_unavailable():
     src = SerpApiSource(http=http, api_key="")  # no key
     assert await src.search("x") == []
     src.http.get_json.assert_not_called()
+
+
+def test_normalize_category_saas():
+    assert normalize_category("SaaS 工具") == "saas"
+    assert normalize_category("协作软件") == "saas"
+
+
+def test_normalize_category_default_for_unknown():
+    assert normalize_category("金融科技") == "default"
+    assert normalize_category("") == "default"
+
+
+def test_build_pro_sources_saas_has_itunes():
+    sources = build_pro_sources("saas", http=MagicMock())
+    assert any(isinstance(s, ItunesSource) for s in sources)
+
+
+def test_build_pro_sources_default_empty():
+    assert build_pro_sources("default", http=MagicMock()) == []
+
+
+def test_build_pro_sources_freetext_category_routed():
+    # build_pro_sources 接收的是原始 category，内部应规范化
+    sources = build_pro_sources("协作软件", http=MagicMock())
+    assert any(isinstance(s, ItunesSource) for s in sources)
+    assert build_pro_sources("金融科技", http=MagicMock()) == []

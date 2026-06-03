@@ -4,7 +4,8 @@ import logging
 from datetime import datetime, timezone
 from pydantic import ValidationError
 from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
-from src.schemas.profile import CompetitorProfile
+from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata
+from src.tools.sources import normalize_category
 from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,24 @@ class CollectorAgent:
         self.llm = llm
         self.http = http
         self.parser = parser
+
+    def detect_category(self, comp: CompetitorBasic) -> str:
+        """零 LLM 判断产品形态（saas/default），供专源路由。"""
+        signal = comp.category or comp.name or comp.company or ""
+        return normalize_category(signal)
+
+    def _build_placeholder_profile(self, comp: CompetitorBasic, classification: dict, trace: list) -> CompetitorProfile:
+        """全空时构造占位 profile：不调 LLM，completeness 显式 0.0。"""
+        return CompetitorProfile(
+            classification=Classification(**classification),
+            basic_info=BasicInfo(name=comp.name, company=comp.company or ""),
+            metadata=ProfileMetadata(
+                collected_at=datetime.now(timezone.utc).isoformat(),
+                data_sources=[],
+                completeness_score=0.0,
+                pipeline_trace=trace,
+            ),
+        )
 
     async def parse_goal(self, context: str) -> AnalysisGoal:
         """从自然语言描述中解析分析目标"""

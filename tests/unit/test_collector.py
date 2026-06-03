@@ -57,3 +57,31 @@ class TestCollectorAgent:
         profiles = await agent.collect(user_input)
         assert len(profiles) == 1
         assert isinstance(profiles[0], CompetitorProfile)
+
+    def test_detect_category_uses_input_category(self):
+        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        comp = CompetitorBasic(name="Notion", category="协作软件")
+        assert agent.detect_category(comp) == "saas"
+
+    def test_detect_category_default_when_unknown(self):
+        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        comp = CompetitorBasic(name="某硬件", category="消费电子")
+        assert agent.detect_category(comp) == "default"
+
+    def test_detect_category_calls_no_llm(self):
+        mock_llm = MagicMock()
+        mock_llm.call_json = AsyncMock()
+        agent = CollectorAgent(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+        agent.detect_category(CompetitorBasic(name="XX", category="工具"))
+        mock_llm.call_json.assert_not_called()
+
+    def test_build_placeholder_profile(self):
+        agent = CollectorAgent(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+        comp = CompetitorBasic(name="某竞品", company="某公司")
+        classification = {"competitor_type": "核心竞品", "reason": "占位"}
+        profile = agent._build_placeholder_profile(comp, classification, trace=[{"step": "all_empty"}])
+        assert isinstance(profile, CompetitorProfile)
+        assert profile.metadata.completeness_score == 0.0
+        assert profile.metadata.data_sources == []
+        assert profile.basic_info.name == "某竞品"
+        assert profile.metadata.pipeline_trace == [{"step": "all_empty"}]

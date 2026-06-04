@@ -41,7 +41,8 @@ class TestCollectorAgent:
         mock_pipeline = MagicMock()
         mock_pipeline.collect = AsyncMock(return_value=("支付宝 移动支付正文" * 10,
                                                         ["https://www.alipay.com/features"],
-                                                        [{"step": "route"}]))
+                                                        [{"step": "route"}],
+                                                        "【来源: https://www.alipay.com/features】\n" + "支付宝 移动支付正文" * 10))
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
             competitors=[CompetitorBasic(name="支付宝")],
@@ -92,7 +93,8 @@ class TestCollectorAgent:
             RuntimeError("B classify 炸了"),
         ])
         mock_pipeline = MagicMock()
-        mock_pipeline.collect = AsyncMock(return_value=("有效正文" * 30, ["https://a.com"], []))
+        mock_pipeline.collect = AsyncMock(return_value=("有效正文" * 30, ["https://a.com"], [],
+                                                        "【来源: https://a.com】\n" + "有效正文" * 30))
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
             competitors=[CompetitorBasic(name="甲竞品"), CompetitorBasic(name="乙竞品")],
@@ -110,7 +112,7 @@ class TestCollectorAgent:
             {"competitor_type": "核心竞品", "reason": "ok"},
         ])  # only parse_goal + classify, NO extract
         mock_pipeline = MagicMock()
-        mock_pipeline.collect = AsyncMock(return_value=("", [], [{"step": "all_empty"}]))  # empty
+        mock_pipeline.collect = AsyncMock(return_value=("", [], [{"step": "all_empty"}], ""))  # empty
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
             competitors=[CompetitorBasic(name="空竞品")], analysis_context="x",
@@ -118,3 +120,30 @@ class TestCollectorAgent:
         profiles = await agent.collect(user_input)
         assert profiles[0].metadata.completeness_score == 0.0
         assert mock_llm.call_json.call_count == 2  # extract NOT called (else side_effect StopIteration)
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_labeled_text_and_binds_source_url():
+    """_extract_profile 把 labeled_text 传给 LLM，LLM 填的 feature source_url 被保留。"""
+    captured = {}
+
+    class _LLM:
+        async def call_json(self, system, user):
+            captured["user"] = user
+            return {
+                "basic_info": {"name": "X", "company": ""},
+                "feature_tree": [{"module": "M", "features": [
+                    {"name": "f1", "description": "d", "source_url": "https://a.com"}
+                ]}],
+                "pricing": {"model": "免费", "tiers": []},
+                "user_reviews": {"rating": 0, "total_reviews": 0, "sample_reviews": []},
+                "recent_updates": [],
+            }
+
+    agent = CollectorAgent(llm=_LLM(), pipeline=None)
+    profile = await agent._extract_profile(
+        "X", "【来源: https://a.com】\n正文", {"competitor_type": "核心竞品", "reason": "r"},
+        ["https://a.com"], [],
+    )
+    assert "【来源: https://a.com】" in captured["user"]
+    assert profile.feature_tree[0].features[0].source_url == "https://a.com"

@@ -76,11 +76,9 @@ class AnalyzerAgent:
         """对采集数据进行结构化分析"""
         logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
 
-        # 序列化完整 profile 数据
+        # 序列化完整 profile 数据（不截断，依赖 256K 上下文）
         profiles_data = [p.model_dump() for p in profiles]
         profiles_text = json.dumps(profiles_data, ensure_ascii=False, indent=2)
-        if len(profiles_text) > 12000:
-            profiles_text = profiles_text[:12000] + "\n...(数据已截断)"
 
         prompt = f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
         result = self._backfill_source_urls(

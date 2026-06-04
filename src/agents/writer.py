@@ -32,14 +32,11 @@ class WriterAgent:
         return result
 
     async def write(self, analysis: CompetitiveAnalysis, competitors: list[str]) -> FinalReport:
-        """基于分析结果生成最终报告"""
+        """基于分析结果生成最终报告（结构化字段由代码透传，不赌 LLM）"""
         logger.info("[writer] 开始撰写报告, 竞品: %s", competitors)
 
-        # 序列化完整分析数据
         analysis_data = analysis.model_dump()
         analysis_text = json.dumps(analysis_data, ensure_ascii=False, indent=2)
-        if len(analysis_text) > 8000:
-            analysis_text = analysis_text[:8000] + "\n...(数据已截断)"
 
         prompt = f"请基于以下分析数据撰写竞品报告：\n\n竞品列表：{competitors}\n\n分析数据：\n{analysis_text}"
         result = self._normalize(await self.llm.call_json(WRITER_SYSTEM, prompt), competitors)
@@ -54,6 +51,11 @@ class WriterAgent:
             except ValidationError as e2:
                 logger.error("[writer] 重试后仍然失败: %s, raw=%s", e2, result)
                 raise ValueError(f"Writer output validation failed after retry: {e2}") from e2
+
+        # 结构化产物由代码直接透传，100% 不丢（不依赖 LLM 输出）
+        report.swot = analysis.swot
+        report.radar_scores = analysis.radar_scores
+        report.feature_matrix = analysis.feature_matrix
 
         logger.info("[writer] 报告撰写完成: %s", report.title)
         return report

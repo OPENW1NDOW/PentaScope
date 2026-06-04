@@ -59,3 +59,22 @@ def test_backfill_does_not_overwrite_nonempty():
     result = {"positioning": {"per_competitor": [], "source_urls": ["https://llm-picked.com"]}}
     out = AnalyzerAgent._backfill_source_urls(result, [profile])
     assert out["positioning"]["source_urls"] == ["https://llm-picked.com"]
+
+
+def test_backfill_feature_matrix_entry_source_urls():
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata
+    result = {
+        "feature_matrix": [
+            {"feature": "登录", "source_urls": []},
+            {"feature": "导出", "source_urls": ["https://already.com"]},
+        ]
+    }
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="X"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=["https://fb.com"]),
+    )
+    out = AnalyzerAgent._backfill_source_urls(result, [profile])
+    assert out["feature_matrix"][0]["source_urls"] == ["https://fb.com"]
+    assert out["feature_matrix"][1]["source_urls"] == ["https://already.com"]

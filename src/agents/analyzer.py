@@ -58,7 +58,7 @@ class AnalyzerAgent:
         """维度级 source_urls 兜底：LLM 漏填则用所有 profile 的 data_sources 回填。"""
         all_urls = sorted({
             u for p in profiles
-            for u in (p.metadata.data_sources if hasattr(p, "metadata") else [])
+            for u in p.metadata.data_sources
         })
         if not all_urls:
             return result
@@ -69,6 +69,7 @@ class AnalyzerAgent:
         for entry in result.get("feature_matrix", []):
             if isinstance(entry, dict) and not entry.get("source_urls"):
                 entry["source_urls"] = list(all_urls)
+        # swot 各 entry 的 source_urls 不做粗粒度兜底（推断性结论，留给 LLM 按需填）
         return result
 
     async def analyze(self, profiles: list[CompetitorProfile]) -> CompetitiveAnalysis:

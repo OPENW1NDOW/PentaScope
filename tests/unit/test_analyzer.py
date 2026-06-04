@@ -18,3 +18,44 @@ class TestAnalyzerAgent:
         assert isinstance(result, CompetitiveAnalysis)
         assert len(result.feature_matrix) == 1
         assert len(result.radar_scores) == 1
+
+
+def test_backfill_dimension_source_urls_from_profiles():
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.profile import (
+        CompetitorProfile, Classification, BasicInfo, ProfileMetadata,
+        FeatureTree, Feature, Pricing,
+    )
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="X"),
+        feature_tree=[FeatureTree(module="M", features=[
+            Feature(name="f", source_url="https://a.com")])],
+        pricing=Pricing(model="免费", source_url="https://b.com"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=["https://a.com", "https://b.com"]),
+    )
+    result = {
+        "positioning": {"per_competitor": [], "source_urls": []},
+        "feature_matrix": [],
+        "business_model": {"per_competitor": [], "source_urls": []},
+        "operations": {"per_competitor": [], "source_urls": []},
+        "user_sentiment": {"summary": "", "per_competitor": {}, "source_urls": []},
+        "swot": {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []},
+        "radar_scores": [],
+    }
+    out = AnalyzerAgent._backfill_source_urls(result, [profile])
+    assert set(out["positioning"]["source_urls"]) == {"https://a.com", "https://b.com"}
+    assert set(out["business_model"]["source_urls"]) == {"https://a.com", "https://b.com"}
+
+
+def test_backfill_does_not_overwrite_nonempty():
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="X"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=["https://fallback.com"]),
+    )
+    result = {"positioning": {"per_competitor": [], "source_urls": ["https://llm-picked.com"]}}
+    out = AnalyzerAgent._backfill_source_urls(result, [profile])
+    assert out["positioning"]["source_urls"] == ["https://llm-picked.com"]

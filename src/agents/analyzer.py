@@ -53,6 +53,24 @@ class AnalyzerAgent:
                     )
         return result
 
+    @staticmethod
+    def _backfill_source_urls(result: dict, profiles: list) -> dict:
+        """维度级 source_urls 兜底：LLM 漏填则用所有 profile 的 data_sources 回填。"""
+        all_urls = sorted({
+            u for p in profiles
+            for u in (p.metadata.data_sources if hasattr(p, "metadata") else [])
+        })
+        if not all_urls:
+            return result
+        for dim_key in ("positioning", "business_model", "operations", "user_sentiment"):
+            dim = result.get(dim_key)
+            if isinstance(dim, dict) and not dim.get("source_urls"):
+                dim["source_urls"] = list(all_urls)
+        for entry in result.get("feature_matrix", []):
+            if isinstance(entry, dict) and not entry.get("source_urls"):
+                entry["source_urls"] = list(all_urls)
+        return result
+
     async def analyze(self, profiles: list[CompetitorProfile]) -> CompetitiveAnalysis:
         """对采集数据进行结构化分析"""
         logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
@@ -64,13 +82,19 @@ class AnalyzerAgent:
             profiles_text = profiles_text[:12000] + "\n...(数据已截断)"
 
         prompt = f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
-        result = self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt))
+        result = self._backfill_source_urls(
+            self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt)),
+            profiles,
+        )
 
         try:
             analysis = CompetitiveAnalysis(**result)
         except ValidationError as e:
             logger.warning("[analyzer] Pydantic 校验失败, 重试: %s", e)
-            result = self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt))
+            result = self._backfill_source_urls(
+                self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt)),
+                profiles,
+            )
             try:
                 analysis = CompetitiveAnalysis(**result)
             except ValidationError as e2:

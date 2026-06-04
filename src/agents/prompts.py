@@ -44,23 +44,25 @@ COLLECTOR_EXTRACT_SYSTEM = """你是一个竞品信息抽取助手。从给定�
 
 注意：sample_reviews 的每个元素必须是对象，含 content、rating（1-5 整数）、source、source_url 字段，不能是纯字符串。每条信息的 source_url 必须来自输入文本里出现过的【来源】URL，禁止编造未出现的链接。"""
 
-ANALYZER_SYSTEM = """你是一个竞品分析师。基于提供的竞品画像数据，进行四维度结构化分析。
+ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品画像数据，进行四维度结构化深度分析。
+
+要求：每个维度的结论必须做横向对比（竞品之间、竞品与"我方"之间），用画像里的具体数据/功能/评分举证，不要泛泛而谈。每个维度填写 source_urls：把你引用的画像信息对应的 source_url 收集进去（画像各 fact 带 source_url）。
 
 必须返回 JSON 格式：
 {
-  "positioning": {"per_competitor": [{"name": "", "target_users": "", "core_scenario": "", "pain_points": "", "value_proposition": ""}]},
-  "feature_matrix": [{"feature": "", "our_product": "无", "competitors": {"竞品名": "有/无/部分支持"}, "gap_level": "领先/持平/落后/差异化", "evidence": ""}],
-  "business_model": {"per_competitor": [{"name": "", "revenue_model": "", "pricing_details": "", "free_vs_paid": ""}]},
-  "operations": {"per_competitor": [{"name": "", "growth_strategy": "", "marketing_channels": "", "content_strategy": ""}]},
-  "user_sentiment": {"summary": "", "per_competitor": {"竞品名": ""}},
+  "positioning": {"per_competitor": [{"name": "", "target_users": "", "core_scenario": "", "pain_points": "", "value_proposition": ""}], "source_urls": []},
+  "feature_matrix": [{"feature": "", "our_product": "无", "competitors": {"竞品名": "有/无/部分支持"}, "gap_level": "领先/持平/落后/差异化", "evidence": "引用具体数据", "source_urls": []}],
+  "business_model": {"per_competitor": [{"name": "", "revenue_model": "", "pricing_details": "", "free_vs_paid": ""}], "source_urls": []},
+  "operations": {"per_competitor": [{"name": "", "growth_strategy": "", "marketing_channels": "", "content_strategy": ""}], "source_urls": []},
+  "user_sentiment": {"summary": "", "per_competitor": {"竞品名": ""}, "source_urls": []},
   "swot": {
-    "strengths": [{"point": "", "evidence": "", "dimension": "positioning/feature/business/operations"}],
+    "strengths": [{"point": "", "evidence": "", "dimension": "positioning/feature/business/operations", "source_urls": []}],
     "weaknesses": [...], "opportunities": [...], "threats": [...]
   },
   "radar_scores": [{"competitor": "", "dimensions": {"feature_breadth": 0, "usability": 0, "cost_effectiveness": 0, "stability": 0, "design_quality": 0}}]
 }
 
-每条结论的 evidence 字段必须引用具体数据。radar_scores 的 dimensions 每项 0-5 分。"""
+每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。"""
 
 WRITER_SYSTEM = """你是一个竞品报告撰写助手。基于竞品分析数据，撰写结构化的竞品分析报告。
 

@@ -90,7 +90,7 @@ def build_graph(llm, http, parser, trace_writer=None):
         }
 
     def should_continue(state: AnalysisState) -> str:
-        """质检通过→结束，不通过且未超限→回到 writer，超限→强制结束"""
+        """质检通过→结束；不通过且未超限→按 issue.agent 打回 collector/analyzer/writer（优先级：collector > analyzer > writer，打回越上游越能顺带解决下游 issue）；超限→强制结束"""
         feedback = state.get("feedback")
         if feedback is None or feedback.passed:
             return "end"

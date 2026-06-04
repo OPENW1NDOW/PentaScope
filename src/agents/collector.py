@@ -120,7 +120,7 @@ class CollectorAgent:
         classification = await self.classify_competitor(comp.name, goal)
         category = self.detect_category(comp)
         merged_text, sources, trace, labeled_text = await self.pipeline.collect(comp.name, category)
-        if not merged_text.strip():
+        if not labeled_text.strip():
             logger.info("[collector] %s 全空, 产占位 profile", comp.name)
             return self._build_placeholder_profile(comp, classification, trace)
         profile = await self._extract_profile(comp.name, labeled_text, classification, sources, trace)

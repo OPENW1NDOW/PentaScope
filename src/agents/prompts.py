@@ -31,15 +31,15 @@ COLLECTOR_CLASSIFY_SYSTEM = """你是一个竞品分类助手。给定目标产�
 
 COLLECTOR_EXTRACT_SYSTEM = """你是一个竞品信息抽取助手。从给定的网页文本中提取结构化的竞品信息。
 
-输入文本中每段正文前有【来源: URL】标记，标识该段内容来自哪个网页。提取每条信息时，必须把它所在段落的来源 URL 填入对应的 source_url 字段——这是信息溯源的依据，不可编造、不可留空（除非该信息确实跨多段无法定位）。
+输入文本中每段正文前有【来源: URL】标记，标识该段内容来自哪个网页。提取每条信息时，必须把它所在段落的来源 URL 填入对应的 source_url 字段——这是信息溯源的依据。规则：source_url 只能填输入文本里实际出现过的【来源】URL，不可编造；无法定位来源时填空字符串 ""，不要填描述性文字。
 
 必须返回 JSON 格式（无法提取的字段留空字符串或空列表）：
 {
   "basic_info": {"name": "", "company": "", "version": "", "release_date": "", "platform": []},
-  "feature_tree": [{"module": "", "features": [{"name": "", "description": "", "is_new": false, "source_url": "该功能所在段落的【来源】URL"}]}],
-  "pricing": {"model": "", "tiers": [{"name": "", "price": "", "features": []}], "source_url": "定价信息所在段落的【来源】URL"},
-  "user_reviews": {"rating": 0, "total_reviews": 0, "positive_summary": "", "negative_summary": "", "sample_reviews": [{"content": "", "rating": 3, "source": "", "source_url": "该评论所在段落的【来源】URL"}]},
-  "recent_updates": [{"date": "", "title": "", "summary": "", "source_url": "该更新所在段落的【来源】URL"}]
+  "feature_tree": [{"module": "", "features": [{"name": "", "description": "", "is_new": false, "source_url": ""}]}],
+  "pricing": {"model": "", "tiers": [{"name": "", "price": "", "features": []}], "source_url": ""},
+  "user_reviews": {"rating": 0, "total_reviews": 0, "positive_summary": "", "negative_summary": "", "sample_reviews": [{"content": "", "rating": 3, "source": "", "source_url": ""}]},
+  "recent_updates": [{"date": "", "title": "", "summary": "", "source_url": ""}]
 }
 
 注意：sample_reviews 的每个元素必须是对象，含 content、rating（1-5 整数）、source、source_url 字段，不能是纯字符串。每条信息的 source_url 必须来自输入文本里出现过的【来源】URL，禁止编造未出现的链接。"""

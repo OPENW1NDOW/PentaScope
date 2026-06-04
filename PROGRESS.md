@@ -16,6 +16,33 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-04（报告质量提升：方案C 溯源为脉，加工层全链路改造）
+- 完成：
+  - 走完整 brainstorming → 两轮 doubt-driven（单模型 general-purpose + Codex gpt-5.5 跨模型对抗审查，**20 条命中**证伪原方案前提）→ writing-plans → subagent-driven（每 Task 派 implementer + spec/quality 两阶段 review）
+  - 设计文档 `docs/superpowers/specs/2026-06-04-report-quality-design.md`、实现计划 `docs/superpowers/plans/2026-06-04-report-quality.md`
+  - **关键认知翻转**：原以为「报告溯源断链只需改 writer 做机械下沉」，doubt-driven 核对源码后证伪——根因在**采集层**（collector 抽取 prompt 只给 sample_reviews 留 source_url、正文 merge 成无【来源】锚点 blob、analyzer prompt 无 source_urls 输出槽），不碰采集层修不了「每条结论可溯源」。重排为「事实-URL 绑定链」贯穿全链路
+  - 9 个 Task 全部实现（feat/report-quality 分支，136 测试全绿 + ruff 全清，16 commits）：
+    - pipeline 输出带【来源:url】标记的 labeled_text；collector 抽取时绑定每条 fact 的 source_url
+    - analyzer 补各维度 source_urls 输出槽 + 代码兜底回填（维度+竞品级）
+    - writer 机械透传 SWOT/雷达/功能矩阵（100% 不丢，不赌 LLM）+ 按 dimension 下沉 source_refs + 过滤幻觉 URL + prompt 思考式
+    - inspector 补 SWOT/雷达/矩阵/溯源程序化硬查 + severity 分级 pass/fail（只 critical/major 阻断）
+    - graph 打通 focus_area 回填 + inspector 传竞品名单 + should_continue 认 analyzer 回边
+    - 前端渲染 SWOT 四象限/雷达表/功能矩阵/章节溯源链接
+    - 全链路删截断（collector/analyzer/writer/inspector），依赖 256K 上下文
+  - 真实跑通验证（语雀 vs 飞书）：四项验收达成——质检硬伤归零、报告丰满、SWOT/雷达/矩阵结构完整、章节溯源链接可见、focus_area 填充
+- **本次验证暴露的数据层瓶颈（下一课题，非本工程范围）**：
+  - 采集质量是报告天花板。实证（runs/20260604-230835-8c4c1d）：飞书只抓到一个法务页（feishu.cn/legal/pricing-adjustment-subtitle）→ completeness=0.0 → 功能矩阵全「无」、雷达全低（误判，飞书实际功能全面、市占远胜语雀）；语雀有效源仅 1 个第三方页（partnershare.cn），官网页+知乎页未用上（知乎 403、LLM 选页超时退规则）
+  - 真实采集缺陷：① LLM 选页频繁超时（PICK_LLM_TIMEOUT=20s 太短，飞书两轮都退规则选页）② 知乎等站点反爬 403 ③ 规则选页质量差（选到法务页）④ 只 top3、单源依赖、覆盖窄
+- 进行中：feat/report-quality 合并回 master（本 session 进行中）
+- 下一步（新 session，独立课题：数据层增厚 + 交互优化）：
+  1. **采集能力增强**（优先）：接 AI 搜索 API（Tavily/Exa，直接返回干净正文、绕开抓取+反爬）；或修现有管线（选页超时调长、抓取重试/换UA、规则选页官网优先、top3→top5、多源融合）。注：collector 是 Doubao 纯 Python agent，不能直接挂 MCP（MCP 是给 Claude 这类 agent 的工具协议）；若要 MCP 驱动采集需架构级换成 MCP-capable agent
+  2. **前端输入优化**：让用户可填竞品官网 URL/已知信息/指定数据源，减少对盲搜依赖
+  3. **溯源粒度增强**：维度+竞品级 → per-entry（需改 analysis schema 结构）
+  4. **analyzer 回边定向修复**：重打 analyzer 时把 feedback.issues 附加进 prompt（从随机重采变定向修复）
+  5. 其他 Minor（最终 review 提）：inspector LLM issue 解析加逐条容错、前端 SWOT 补展示 evidence/source_urls
+- 阻塞：无
+- 安全提醒：DOUBAO_API_KEY、SEARCH_API_KEY（SerpAPI）务必轮换（历史对话/日志多处出现过），均走 .env、勿提交
+
 ## 2026-06-04（数据源拓展真实跑通验证 + SerpAPI 鉴权 bug 修复）
 - 完成：
   - 走 brainstorming → doubt-driven（单模型 + Codex gpt-5.5 跨模型对抗审查，捕获 B1 import 固化/B4 主线成败混淆等盲点）定稿验证方案 `docs/superpowers/specs/2026-06-04-datasource-verification-design.md`

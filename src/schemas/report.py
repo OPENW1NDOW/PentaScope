@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Literal
 from src.schemas.input import AnalysisGoal
+from src.schemas.analysis import Swot, RadarScore, FeatureMatrixEntry
 
 
 class ExecutiveSummary(BaseModel):
@@ -15,6 +16,10 @@ class ReportSection(BaseModel):
     """报告章节"""
     title: str
     content: str = ""
+    dimension: Literal[
+        "positioning", "feature_matrix", "business_model",
+        "operations", "user_sentiment", "swot", "overview"
+    ] = "overview"
     source_refs: list[str] = Field(default_factory=list)
 
 
@@ -48,5 +53,8 @@ class FinalReport(BaseModel):
     title: str
     executive_summary: ExecutiveSummary = Field(default_factory=ExecutiveSummary)
     sections: list[ReportSection] = Field(default_factory=list)
+    swot: Swot = Field(default_factory=Swot)
+    radar_scores: list[RadarScore] = Field(default_factory=list)
+    feature_matrix: list[FeatureMatrixEntry] = Field(default_factory=list)
     action_items: ActionItems = Field(default_factory=ActionItems)
     metadata: ReportMetadata = Field(default_factory=ReportMetadata)

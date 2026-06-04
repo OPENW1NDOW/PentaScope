@@ -85,8 +85,8 @@ class CollectorAgent:
 
     async def _extract_profile(self, name: str, text: str, classification: dict,
                                sources: list[str], pipeline_trace: list[dict]) -> CompetitorProfile:
-        """从文本中抽取结构化竞品画像"""
-        prompt = f"竞品名称：{name}\n\n网页文本内容：\n{text[:8000]}"
+        """从带来源标记的文本中抽取结构化竞品画像（不截断，依赖 256K 上下文）"""
+        prompt = f"竞品名称：{name}\n\n网页文本内容（每段前有【来源: URL】标记）：\n{text}"
         raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt),
                                   classification, sources, pipeline_trace)
         try:
@@ -119,11 +119,11 @@ class CollectorAgent:
         """采集单个竞品：分类 → 类别路由 → 管线采集 → 抽取/占位。"""
         classification = await self.classify_competitor(comp.name, goal)
         category = self.detect_category(comp)
-        merged_text, sources, trace = await self.pipeline.collect(comp.name, category)
-        if not merged_text.strip():
+        merged_text, sources, trace, labeled_text = await self.pipeline.collect(comp.name, category)
+        if not labeled_text.strip():
             logger.info("[collector] %s 全空, 产占位 profile", comp.name)
             return self._build_placeholder_profile(comp, classification, trace)
-        profile = await self._extract_profile(comp.name, merged_text, classification, sources, trace)
+        profile = await self._extract_profile(comp.name, labeled_text, classification, sources, trace)
         logger.info("[collector] %s 采集完成, completeness=%.2f", comp.name, profile.metadata.completeness_score)
         return profile
 
@@ -144,4 +144,4 @@ class CollectorAgent:
                     comp, {"competitor_type": "核心竞品", "reason": "采集失败占位"},
                     trace=[{"step": "collect_failed", "error": str(r)}],
                 ))
-        return profiles
+        return profiles, goal

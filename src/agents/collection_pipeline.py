@@ -103,11 +103,20 @@ class CollectionPipeline:
             return []
 
     async def collect(self, competitor_name: str, category: str):
-        """返回 (merged_text, sources, pipeline_trace)。"""
+        """返回 (merged_text, sources, pipeline_trace, labeled_text)。
+
+        labeled_text 在每段正文前加【来源: url】标记，供 collector 抽取时绑定来源。
+        merged_text 保持原样（无标记），向后兼容既有消费方。
+        """
         trace: list[dict] = []
         texts: list[str] = []
+        labeled_parts: list[str] = []
         sources: list[str] = []
         seen_urls: set[str] = set()
+
+        def _add(text: str, url: str):
+            texts.append(text)
+            labeled_parts.append(f"【来源: {url or '未知'}】\n{text}")
 
         pro_sources = build_pro_sources(category, self.http)
         trace.append({"step": "route", "category": category, "pro_sources": [s.name for s in pro_sources]})
@@ -127,7 +136,7 @@ class CollectionPipeline:
             )
             for c, t in zip(picked, fetched):
                 if isinstance(t, str) and t and c["url"] not in seen_urls:
-                    texts.append(t)
+                    _add(t, c["url"])
                     sources.append(c["url"])
                     seen_urls.add(c["url"])
         else:
@@ -138,11 +147,12 @@ class CollectionPipeline:
         for src, results in zip(pro_sources, results_per_source):
             for r in results:
                 if r.url not in seen_urls:
-                    texts.append(r.text)
+                    _add(r.text, r.url)
                     if r.url:
                         sources.append(r.url)
                         seen_urls.add(r.url)
             trace.append({"step": "pro_source", "name": src.name, "results": len(results)})
 
         merged_text = "\n\n".join(texts)
-        return merged_text, sources, trace
+        labeled_text = "\n\n".join(labeled_parts)
+        return merged_text, sources, trace, labeled_text

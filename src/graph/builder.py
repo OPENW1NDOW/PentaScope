@@ -36,9 +36,9 @@ def build_graph(llm, http, parser, trace_writer=None):
     async def collector_node(state: AnalysisState) -> dict:
         logger.info("[graph] → collector")
         node_trace.append("collector")
-        profiles = await collector.collect(state["user_input"])
+        profiles, goal = await collector.collect(state["user_input"])
         _save("01_profiles", profiles)
-        return {"profiles": profiles, "current_node": "collector"}
+        return {"profiles": profiles, "analysis_goal": goal, "current_node": "collector"}
 
     async def analyzer_node(state: AnalysisState) -> dict:
         logger.info("[graph] → analyzer")
@@ -60,6 +60,9 @@ def build_graph(llm, http, parser, trace_writer=None):
         })
         if sources:
             report.metadata.data_sources = sources
+        goal = state.get("analysis_goal")
+        if goal is not None:
+            report.metadata.analysis_goal = goal
         _save("03_report", report)
         return {"report": report, "current_node": "writer"}
 
@@ -67,8 +70,10 @@ def build_graph(llm, http, parser, trace_writer=None):
         logger.info("[graph] → inspector")
         node_trace.append("inspector")
         report = state["report"]
+        competitors = [c.name for c in state["user_input"].competitors]
         feedback = await inspector.inspect(
             report,
+            competitors=competitors,
             retry_count=state.get("retry_count", 0),
             max_retries=state.get("max_retries", 2),
         )
@@ -85,7 +90,7 @@ def build_graph(llm, http, parser, trace_writer=None):
         }
 
     def should_continue(state: AnalysisState) -> str:
-        """质检通过→结束，不通过且未超限→回到 writer，超限→强制结束"""
+        """质检通过→结束；不通过且未超限→按 issue.agent 打回 collector/analyzer/writer（优先级：collector > analyzer > writer，打回越上游越能顺带解决下游 issue）；超限→强制结束"""
         feedback = state.get("feedback")
         if feedback is None or feedback.passed:
             return "end"
@@ -101,7 +106,12 @@ def build_graph(llm, http, parser, trace_writer=None):
         # 根据 issues 中的 agent 字段决定回到哪个节点
         target_agents = {issue.agent for issue in feedback.issues}
         issues_summary = [f"{i.agent}:{i.severity}:{i.field}" for i in feedback.issues]
-        target = "collector" if "collector" in target_agents else "writer"
+        if "collector" in target_agents:
+            target = "collector"
+        elif "analyzer" in target_agents:
+            target = "analyzer"
+        else:
+            target = "writer"
         node_trace.append(f"reject->{target} issues={issues_summary}")
         return target
 
@@ -122,6 +132,7 @@ def build_graph(llm, http, parser, trace_writer=None):
     graph.add_conditional_edges("inspector", should_continue, {
         "end": END,
         "collector": "collector",
+        "analyzer": "analyzer",
         "writer": "writer",
     })
 

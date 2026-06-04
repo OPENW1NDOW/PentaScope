@@ -1,5 +1,5 @@
 from typing import TypedDict
-from src.schemas.input import CompetitorInput
+from src.schemas.input import CompetitorInput, AnalysisGoal
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
 from src.schemas.report import FinalReport
@@ -13,6 +13,8 @@ class AnalysisState(TypedDict, total=False):
 
     # 采集 Agent 输出
     profiles: list[CompetitorProfile]
+    # 采集阶段解析的分析目标（供 focus_area 回填报告）
+    analysis_goal: AnalysisGoal
 
     # 分析 Agent 输出
     analysis: CompetitiveAnalysis

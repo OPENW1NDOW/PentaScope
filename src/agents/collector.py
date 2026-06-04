@@ -144,4 +144,4 @@ class CollectorAgent:
                     comp, {"competitor_type": "核心竞品", "reason": "采集失败占位"},
                     trace=[{"step": "collect_failed", "error": str(r)}],
                 ))
-        return profiles
+        return profiles, goal

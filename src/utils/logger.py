@@ -39,6 +39,10 @@ def init_logging(log_file=None, level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
+    # httpx/httpcore 的 INFO 会打完整请求 URL（含 api_key 等敏感 query），压到 WARNING 防泄漏
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     formatter = logging.Formatter(
         "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",

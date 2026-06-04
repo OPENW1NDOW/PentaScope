@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-06-04: SerpAPI 鉴权从 Bearer header 反转为 api_key query 参数
+- 选择：`SerpApiSource.search` 用 `&api_key=<quote(key)>` query 参数鉴权，去掉 `Authorization: Bearer` header（**反转 06-03「key 走 header 防泄漏」决策**）
+- 理由：真实跑通验证发现 SerpAPI 用 Bearer header 鉴权时，**遇非 ASCII（中文）query 返回 401「Invalid API key」**——竞品名恒为中文，导致搜索主线在真实场景 100% 失效（systematic-debugging 证伪 env/激活/编码/headers 后锁定）。api_key query 是 SerpAPI 标准用法，中文 query 正常
+- 防泄漏补偿：query 参数的 key 由 `HttpClient._redact_key` 在自有日志脱敏为 `api_key=***`；并把 httpx/httpcore 日志压到 WARNING（其 INFO 会绕过脱敏、明文打完整请求 URL）——见下条
+- 备选：保留 Bearer + 对中文 query 做特殊处理（排除：SerpAPI 服务端行为不可控，治标不治本）
+
+## 2026-06-04: httpx/httpcore 日志级别压到 WARNING（防 key 泄漏）
+- 选择：`init_logging` 内 `logging.getLogger("httpx"/"httpcore").setLevel(WARNING)`
+- 理由：httpx 的 INFO 日志会打 `HTTP Request: GET <完整URL>`，含 query 里的 api_key——这条不经过我们的 `_redact_key`，会明文落 run.log/app.log。压到 WARNING 后不打请求行，但保留真实错误（WARNING/ERROR）
+- 备选：自写 httpx event hook 脱敏（排除：过度工程，压级别已足够）
+
 ## 2026-06-03: 采集层重构为分层管线（collector → pipeline → sources）
 - 选择：采集逻辑从 CollectorAgent 下沉到独立的 `CollectionPipeline`（tool 层），数据源做成 `sources.py` 内可插拔插件；collector 构造器从 `(llm, http, parser)` 改为 `(llm, pipeline)`
 - 理由：原 collector 内联 3 个硬编码 URL 源、职责饱满；新增「搜索→选页→正文→闸门 + 专源路由」会让它膨胀且无法独立单测。下沉后每层单一职责、可独立测试，专源可插拔

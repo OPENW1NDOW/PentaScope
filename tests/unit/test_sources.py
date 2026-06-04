@@ -72,7 +72,8 @@ async def test_serpapi_available_with_key():
 
 
 @pytest.mark.asyncio
-async def test_serpapi_search_parses_candidates_and_uses_header():
+async def test_serpapi_search_parses_candidates_and_uses_query_key():
+    # SerpAPI 用 api_key query 参数鉴权（Bearer header 遇非 ASCII query 会 401）
     payload = {"organic_results": [
         {"link": "https://a.com", "title": "A", "snippet": "sa"},
         {"link": "https://b.com", "title": "B", "snippet": "sb"},
@@ -89,8 +90,27 @@ async def test_serpapi_search_parses_candidates_and_uses_header():
     src = SerpApiSource(http=http, api_key="SECRET")
     cands = await src.search("支付宝 定价")
     assert [c["url"] for c in cands] == ["https://a.com", "https://b.com"]
-    assert "SECRET" not in captured["url"]
-    assert captured["headers"]["Authorization"] == "Bearer SECRET"
+    # key 走 query 参数，不走 Authorization header
+    assert "api_key=SECRET" in captured["url"]
+    assert captured["headers"] is None or "Authorization" not in captured["headers"]
+
+
+@pytest.mark.asyncio
+async def test_serpapi_search_chinese_query_encoded():
+    # 回归：中文 query 必须 URL 编码（裸非 ASCII 会触发 SerpAPI 401）
+    http = MagicMock()
+    captured = {}
+
+    async def fake_get_json(url, headers=None):
+        captured["url"] = url
+        return {"organic_results": []}
+
+    http.get_json = AsyncMock(side_effect=fake_get_json)
+    src = SerpApiSource(http=http, api_key="K")
+    await src.search("语雀 定价")
+    # query 经过编码，不含裸中文字符
+    assert "语雀" not in captured["url"]
+    assert "%E8%AF%AD%E9%9B%80" in captured["url"]
 
 
 @pytest.mark.asyncio

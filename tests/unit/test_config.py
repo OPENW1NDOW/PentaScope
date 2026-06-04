@@ -4,6 +4,8 @@ import importlib
 def test_search_config_defaults_when_absent(monkeypatch):
     for k in ("SEARCH_API_KEY", "SEARCH_TOP_N", "PICK_LLM_TIMEOUT", "MAX_FETCH_CONCURRENCY"):
         monkeypatch.delenv(k, raising=False)
+    # 屏蔽 load_dotenv，避免 reload 时从 .env 重新读入真实 key（测试隔离）
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     import src.utils.config as cfg
     importlib.reload(cfg)
     assert cfg.settings.SEARCH_API_KEY == ""

@@ -16,6 +16,27 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-04（数据源拓展真实跑通验证 + SerpAPI 鉴权 bug 修复）
+- 完成：
+  - 走 brainstorming → doubt-driven（单模型 + Codex gpt-5.5 跨模型对抗审查，捕获 B1 import 固化/B4 主线成败混淆等盲点）定稿验证方案 `docs/superpowers/specs/2026-06-04-datasource-verification-design.md`
+  - 三路径端到端真实冒烟（非补单测；逻辑分支已 117 单测覆盖，本次只验真实环境契合度），证据看落盘 01_profiles.json 的 pipeline_trace + run.log：
+    - 路径 A（语雀 vs 飞书，无 key）：search_skipped/no_api_key + saas→itunes 路由 + 真实 trackViewUrl，completeness 0.9；run.log 确认无 search/pick LLM 日志
+    - 路径 A'（小米 vs OPPO，无 key）：default→空专源 + completeness=0.0 占位、不调 extract LLM、零数据源 HTTP（仅 Doubao）
+    - 路径 B（语雀 vs 飞书，有 key）：修复后 SerpAPI 200、pick method=llm picked=3、抓到真实官网（feishu.cn/partnershare.cn），主线全打通
+  - **systematic-debugging 抓出真实 bug（修复前主线在中文场景 100% 失效）**：SerpAPI 用 `Authorization: Bearer` header 鉴权时，遇非 ASCII（中文）query 返回 401「Invalid API key」（误导性极强）。证伪 4 个假设（env 污染/key 激活延迟/二次编码/headers 干扰），用同脚本同时刻 ASCII vs 中文对比锁定根因
+  - TDD 修复（119 测试全绿 + ruff 清）：
+    - `sources.py`：SerpAPI 鉴权改 `api_key=` query 参数（去掉 Bearer header）；新增中文 query 编码回归测试
+    - `logger.py`：httpx/httpcore 日志压到 WARNING——其 INFO 会明文打含 api_key 的完整 URL（防泄漏）；新增防泄漏测试
+    - `test_config.py`：修预存测试隔离 bug（reload 时 load_dotenv 重读 .env 真实 key 致 SEARCH_API_KEY 断言失败，monkeypatch 屏蔽 load_dotenv）
+  - 安全核查：.gitignore 已覆盖 .env/logs/runs/.claude，别人 clone 看不到含 key 文件；清理本地历史明文泄漏（app.log + 旧 trace），残留=0
+  - **关键认知**：报告 quality_score 由 inspector 按 issue 严重度倒推回填（builder.py:602），全链路真正的质量分只有「采集 completeness_score」+「质检倒推 quality_score」两处；analyzer/writer 不自评。报告质量低与数据源好坏无关，由 writer 加工缺陷决定（课题②）
+- 进行中：无
+- 下一步（新 session）：
+  1. 【报告质量，独立课题②】沿用待办：抓 04_feedback 完整 issues 确认是否仍是三老问题（source_refs 下沉断链 / SWOT 丢失 / focus_area 空），debug writer + collector
+  2. iTunes 同名 App 污染（搜「语雀」带出 flomo/石墨；搜「飞书文档」带出腾讯文档/石墨）——top3 混入同赛道他家，profile 可能混入别家信息，可考虑结果过滤或 limit 调整
+- 阻塞：无
+- 安全提醒：**SEARCH_API_KEY（SerpAPI）本 session 在终端/日志多处明文出现过，务必轮换**；Doubao API Key 同样务必轮换（沿用历史提醒）。两者均走 .env、勿提交
+
 ## 2026-06-03（数据源拓展：采集管线重构）
 - 完成：
   - 走完整 brainstorming → 三轮 doubt-driven（每节单模型 + Codex gpt-5.5 跨模型对抗审查）→ writing-plans → subagent-driven 流程

@@ -52,7 +52,11 @@ SERPAPI_URL = "https://serpapi.com/search?engine=google&q={query}&num=10"
 
 
 class SerpApiSource:
-    """SerpAPI 搜索源：search(query) -> 候选 [{url,title,snippet}]。key 走 header 不进 query。"""
+    """SerpAPI 搜索源：search(query) -> 候选 [{url,title,snippet}]。
+
+    key 走 api_key query 参数（SerpAPI 标准用法；Bearer header 遇非 ASCII query 会 401）。
+    日志由 HttpClient._redact_key 脱敏 api_key，不明文泄漏。
+    """
 
     name = "serpapi"
 
@@ -66,9 +70,8 @@ class SerpApiSource:
     async def search(self, query: str) -> list[dict]:
         if not self.available():
             return []
-        url = SERPAPI_URL.format(query=quote(query))
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        data = await self.http.get_json(url, headers=headers)
+        url = SERPAPI_URL.format(query=quote(query)) + f"&api_key={quote(self.api_key)}"
+        data = await self.http.get_json(url)
         if not data or not isinstance(data, dict):
             return []
         candidates = []

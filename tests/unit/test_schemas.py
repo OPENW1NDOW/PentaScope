@@ -142,3 +142,24 @@ class TestAgentMessage:
             timestamp="2026-05-31T10:00:00", trace_id="abc-123"
         )
         assert m.from_agent == "collector"
+
+
+def test_final_report_has_structured_fields_with_defaults():
+    from src.schemas.report import FinalReport
+    report = FinalReport(title="t")
+    assert report.swot.strengths == []
+    assert report.radar_scores == []
+    assert report.feature_matrix == []
+
+
+def test_report_section_dimension_defaults_overview():
+    from src.schemas.report import ReportSection
+    sec = ReportSection(title="概览")
+    assert sec.dimension == "overview"
+
+
+def test_report_section_dimension_accepts_analysis_keys():
+    from src.schemas.report import ReportSection
+    for d in ["positioning", "feature_matrix", "business_model",
+              "operations", "user_sentiment", "swot", "overview"]:
+        assert ReportSection(title="x", dimension=d).dimension == d

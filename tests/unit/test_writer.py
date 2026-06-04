@@ -54,3 +54,34 @@ async def test_writer_mechanically_transfers_structured_fields():
     assert report.swot.strengths[0].point == "强"
     assert report.radar_scores[0].competitor == "X"
     assert report.feature_matrix[0].feature == "f"
+
+
+def test_downpour_maps_dimension_to_source_refs():
+    from src.agents.writer import WriterAgent
+    from src.schemas.analysis import CompetitiveAnalysis, Positioning, BusinessModel
+    from src.schemas.report import FinalReport, ReportSection
+    analysis = CompetitiveAnalysis(
+        positioning=Positioning(source_urls=["https://pos.com"]),
+        business_model=BusinessModel(source_urls=["https://biz.com"]),
+    )
+    report = FinalReport(title="t", sections=[
+        ReportSection(title="定位", dimension="positioning"),
+        ReportSection(title="商业", dimension="business_model"),
+        ReportSection(title="综述", dimension="overview"),
+    ])
+    WriterAgent._downpour_source_refs(report, analysis)
+    assert report.sections[0].source_refs == ["https://pos.com"]
+    assert report.sections[1].source_refs == ["https://biz.com"]
+    assert set(report.sections[2].source_refs) == {"https://pos.com", "https://biz.com"}
+
+
+def test_filter_hallucinated_action_item_urls():
+    from src.agents.writer import WriterAgent
+    from src.schemas.analysis import CompetitiveAnalysis, Positioning
+    from src.schemas.report import FinalReport, ActionItems, ActionItem
+    analysis = CompetitiveAnalysis(positioning=Positioning(source_urls=["https://real.com"]))
+    report = FinalReport(title="t", action_items=ActionItems(
+        immediate=[ActionItem(priority="高", description="d",
+                              source_urls=["https://real.com", "https://fake.com"])]))
+    WriterAgent._downpour_source_refs(report, analysis)
+    assert report.action_items.immediate[0].source_urls == ["https://real.com"]

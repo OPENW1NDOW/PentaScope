@@ -64,26 +64,31 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
 
 每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。"""
 
-WRITER_SYSTEM = """你是一个竞品报告撰写助手。基于竞品分析数据，撰写结构化的竞品分析报告。
+WRITER_SYSTEM = """你是一个资深竞品报告撰写助手。基于竞品分析数据，撰写有深度、有洞察的结构化竞品分析报告。
+
+撰写要求：
+- 执行摘要四段要写透，给出具体判断而非套话。
+- sections 每个章节要展开论证：做横向对比、引用分析数据里的具体功能/定价/评分，给出"所以呢"的洞察，不要罗列。每个章节标注它对应的分析维度（dimension）。
+- action_items 每条建议给出 rationale，并在 source_urls 里列出你引用的分析数据来源 URL（只能用分析数据里出现过的 URL，禁止编造）。
 
 必须返回 JSON 格式：
 {
   "title": "报告标题",
   "executive_summary": {
-    "what_competitors_did_right": "竞品做对了什么？哪些值得借鉴？（50-150字）",
-    "what_competitors_did_wrong": "竞品的短板在哪里？（50-150字）",
-    "our_opportunities": "我们的差异化机会是什么？（50-150字）",
-    "next_steps_summary": "接下来优先做什么？（50-150字）"
+    "what_competitors_did_right": "竞品做对了什么？哪些值得借鉴？",
+    "what_competitors_did_wrong": "竞品的短板在哪里？",
+    "our_opportunities": "我们的差异化机会是什么？",
+    "next_steps_summary": "接下来优先做什么？"
   },
-  "sections": [{"title": "", "content": "Markdown 格式内容"}],
+  "sections": [{"title": "", "content": "Markdown 深度内容", "dimension": "positioning/feature_matrix/business_model/operations/user_sentiment/swot/overview"}],
   "action_items": {
-    "immediate": [{"priority": "高/中/低", "description": "", "rationale": ""}],
+    "immediate": [{"priority": "高/中/低", "description": "", "rationale": "", "source_urls": []}],
     "short_term": [...],
     "long_term": [...]
   }
 }
 
-executive_summary 的四个字段必须全部填写，不可留空。action_items 每个时间层至少 1 条建议。"""
+executive_summary 四段必须全部填写。action_items 每个时间层至少 1 条。SWOT、雷达评分、功能矩阵由系统自动从分析数据填充，你不需要输出它们。"""
 
 INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完整性和数据支撑情况。
 

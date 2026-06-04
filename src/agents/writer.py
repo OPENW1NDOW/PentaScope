@@ -16,6 +16,40 @@ class WriterAgent:
         self.llm = llm
 
     @staticmethod
+    def _collect_analysis_urls(analysis) -> dict:
+        """收集 analysis 各维度的 source_urls，返回 {dimension_key: [urls]}。"""
+        return {
+            "positioning": list(analysis.positioning.source_urls),
+            "business_model": list(analysis.business_model.source_urls),
+            "operations": list(analysis.operations.source_urls),
+            "user_sentiment": list(analysis.user_sentiment.source_urls),
+            "feature_matrix": sorted({u for e in analysis.feature_matrix for u in e.source_urls}),
+            "swot": sorted({
+                u for key in ("strengths", "weaknesses", "opportunities", "threats")
+                for entry in getattr(analysis.swot, key)
+                for u in entry.source_urls
+            }),
+        }
+
+    @classmethod
+    def _downpour_source_refs(cls, report, analysis) -> None:
+        """按 section.dimension 下沉 source_refs；过滤 action_item 幻觉 URL（原地修改）。"""
+        dim_urls = cls._collect_analysis_urls(analysis)
+        all_urls = sorted({u for urls in dim_urls.values() for u in urls})
+        for sec in report.sections:
+            if sec.source_refs:
+                continue  # LLM 已填则尊重
+            if sec.dimension == "overview":
+                sec.source_refs = list(all_urls)
+            else:
+                sec.source_refs = list(dim_urls.get(sec.dimension, []))
+        pool = set(all_urls)
+        for layer in (report.action_items.immediate, report.action_items.short_term,
+                      report.action_items.long_term):
+            for item in layer:
+                item.source_urls = [u for u in item.source_urls if u in pool]
+
+    @staticmethod
     def _normalize(result: dict, competitors: list[str]) -> dict:
         """规整 action_items 的 priority 枚举，补充 metadata"""
         allowed = ["高", "中", "低"]
@@ -56,6 +90,9 @@ class WriterAgent:
         report.swot = analysis.swot
         report.radar_scores = analysis.radar_scores
         report.feature_matrix = analysis.feature_matrix
+
+        # 按 dimension 下沉 source_refs，过滤 action_item 幻觉 URL
+        self._downpour_source_refs(report, analysis)
 
         logger.info("[writer] 报告撰写完成: %s", report.title)
         return report

@@ -6,7 +6,7 @@ from src.agents.prompts import INSPECTOR_SYSTEM
 logger = logging.getLogger(__name__)
 
 
-def _MINOR_ONLY_PASS(issues) -> bool:
+def _minor_only_pass(issues) -> bool:
     """只有 minor issue（或无 issue）时视为通过；critical/major 阻断。"""
     return all(i.severity == "minor" for i in issues)
 
@@ -66,7 +66,8 @@ class InspectorAgent:
 
         # 雷达：每个竞品一条
         radar_comps = {r.competitor for r in report.radar_scores}
-        if not all(c in radar_comps for c in competitors):
+        # competitors 为空时（如未传入）跳过雷达 cardinality 检查
+        if competitors and not all(c in radar_comps for c in competitors):
             issues.append(FeedbackIssue(
                 agent="analyzer", field="radar_scores",
                 severity="major", reason="雷达评分缺竞品",
@@ -122,7 +123,7 @@ class InspectorAgent:
                 seen.add(key)
                 unique_issues.append(issue)
 
-        passed = _MINOR_ONLY_PASS(unique_issues)
+        passed = _minor_only_pass(unique_issues)
 
         feedback = RejectionFeedback(
             passed=passed,
@@ -130,5 +131,6 @@ class InspectorAgent:
             retry_count=retry_count,
             max_retries=max_retries,
         )
-        logger.info("[inspector] 质检完成, passed=%s, issues=%d", passed, len(unique_issues))
+        minor_cnt = sum(1 for i in unique_issues if i.severity == "minor")
+        logger.info("[inspector] 质检完成, passed=%s, issues=%d (minor=%d)", passed, len(unique_issues), minor_cnt)
         return feedback

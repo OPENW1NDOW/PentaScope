@@ -13,7 +13,7 @@ class TestInspectorAgent:
         agent = InspectorAgent(llm=mock_llm)
         report = FinalReport(**sample_final_report)
 
-        result = await agent.inspect(report)
+        result = await agent.inspect(report, competitors=["支付宝"])
         assert result.passed is True
         assert len(result.issues) == 0
 
@@ -78,12 +78,13 @@ async def test_inspector_hard_checks_swot_radar_matrix_traceability():
     assert "radar_scores" in fields
     assert "feature_matrix" in fields
     assert any("source_refs" in f for f in fields)
+    assert fb.passed is False
 
 
 def test_minor_issues_do_not_block_pass():
-    from src.agents.inspector import _MINOR_ONLY_PASS
+    from src.agents.inspector import _minor_only_pass
     from src.schemas.feedback import FeedbackIssue
     issues = [FeedbackIssue(agent="writer", field="x", severity="minor", reason="r")]
-    assert _MINOR_ONLY_PASS(issues) is True
+    assert _minor_only_pass(issues) is True
     issues2 = [FeedbackIssue(agent="writer", field="y", severity="major", reason="r")]
-    assert _MINOR_ONLY_PASS(issues2) is False
+    assert _minor_only_pass(issues2) is False

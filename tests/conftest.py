@@ -208,6 +208,34 @@ def sample_final_report():
                 "source_refs": ["1", "2"],
             }
         ],
+        "swot": {
+            "strengths": [{"point": "生态完善", "evidence": "覆盖多场景", "dimension": "positioning", "source_urls": []}],
+            "weaknesses": [{"point": "广告过多", "evidence": "用户反馈", "dimension": "feature", "source_urls": []}],
+            "opportunities": [{"point": "海外市场", "evidence": "东南亚增长", "dimension": "operations", "source_urls": []}],
+            "threats": [{"point": "微信竞争", "evidence": "份额增长", "dimension": "positioning", "source_urls": []}],
+        },
+        "radar_scores": [
+            {
+                "competitor": "支付宝",
+                "dimensions": {
+                    "feature_breadth": 4.5,
+                    "usability": 4.0,
+                    "cost_effectiveness": 4.2,
+                    "stability": 4.8,
+                    "design_quality": 4.0,
+                },
+            }
+        ],
+        "feature_matrix": [
+            {
+                "feature": "扫码支付",
+                "our_product": "有",
+                "competitors": {"支付宝": "有"},
+                "gap_level": "落后",
+                "evidence": "支付宝体验更流畅",
+                "source_urls": [],
+            }
+        ],
         "action_items": {
             "immediate": [
                 {

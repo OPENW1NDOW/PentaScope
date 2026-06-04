@@ -89,6 +89,43 @@ if st.button("开始分析", type="primary"):
                     for section in report.get("sections", []):
                         st.subheader(section.get("title", ""))
                         st.markdown(section.get("content", ""))
+                        refs = section.get("source_refs", [])
+                        if refs:
+                            st.caption("来源：" + " ".join(f"[{i+1}]({u})" for i, u in enumerate(refs)))
+
+                    # 功能矩阵
+                    fm = report.get("feature_matrix", [])
+                    if fm:
+                        st.header("功能矩阵")
+                        st.dataframe([
+                            {"功能": e.get("feature", ""), "我方": e.get("our_product", ""),
+                             "差距": e.get("gap_level", ""),
+                             **{k: v for k, v in (e.get("competitors") or {}).items()}}
+                            for e in fm
+                        ])
+
+                    # SWOT
+                    swot = report.get("swot", {})
+                    if any(swot.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats")):
+                        st.header("SWOT 分析")
+                        sc1, sc2 = st.columns(2)
+                        for col, key, label in [
+                            (sc1, "strengths", "优势 S"), (sc2, "weaknesses", "劣势 W"),
+                            (sc1, "opportunities", "机会 O"), (sc2, "threats", "威胁 T"),
+                        ]:
+                            with col:
+                                st.subheader(label)
+                                for entry in swot.get(key, []):
+                                    st.markdown(f"- {entry.get('point', '')}")
+
+                    # 雷达评分
+                    radar = report.get("radar_scores", [])
+                    if radar:
+                        st.header("雷达评分（0-5）")
+                        st.dataframe([
+                            {"竞品": r.get("competitor", ""), **r.get("dimensions", {})}
+                            for r in radar
+                        ])
 
                     # 元数据
                     with st.expander("元数据"):

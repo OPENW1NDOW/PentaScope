@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-06-04: 报告质量提升走「溯源为脉」而非「只改 writer」（方案 C）
+- 选择：报告质量提升以「事实-URL 绑定链」为主线贯穿全链路——pipeline 输出带【来源】标记文本 → collector 抽取时绑定每条 fact 的 source_url → analyzer 透传维度 source_urls（代码兜底）→ writer 机械透传 SWOT/雷达/功能矩阵 + 按 dimension 下沉 source_refs → inspector 程序化硬查 + severity 分级 pass/fail
+- 理由：最初设想「只改 writer 做机械下沉」，两轮 doubt-driven（单模型 + Codex gpt-5.5 跨模型，20 条命中）核对源码后证伪——溯源断链的真正根因在**采集层**：collector 抽取 prompt 只给 sample_reviews 留 source_url、正文被 merge 成无【来源】锚点的 blob，导致 analysis 各维度 source_urls 恒空。不碰采集层就修不了「每条结论可溯源」（课题 35% 评分核心 + 引用强制反幻觉）
+- 关键设计原则：**能用代码保证的结构与溯源不赌 LLM**——SWOT/雷达/功能矩阵由 writer 代码透传（100% 不丢），溯源由代码机械下沉，LLM 只负责写散文深度
+- 溯源粒度：维度+竞品级（不追 per-entry，per-entry 需改 analysis schema 结构，留作增强）
+- severity 分级 pass/fail：从「有任何 issue 就 fail」改为「只 critical/major 阻断，minor 放行」——因 action_item 溯源等只能软查，硬查会逼成假闭环（无限重试耗尽）
+- 备选：纯 prompt 工程不加代码兜底（排除：溯源/SWOT 仍可能丢，时灵时不灵）；writer 分章多次 LLM 生成（排除：调用成倍、耗时长，Cooper 选单次增强）
+
+## 2026-06-04: 删除全链路文本截断，依赖 Doubao 256K 上下文
+- 选择：删掉 analyzer(12000)/writer(8000)/inspector(15000) 的序列化文本截断，全量入参
+- 理由：Doubao-Seed-2.0-lite 至少 256K context，analysis/profile 序列化通常几万字符远小于上限；截断会逐级丢信息（writer 8000 最致命，常导致没看到 SWOT/雷达就开写）。删截断是最简方案，无需结构化瘦身/分片模块（YAGNI）
+- 已知 trade-off：llm_client 无 max_tokens，超长输入「迷失在中间」可能损害引用准确率——验证阶段实测观察，必要时回调
+- 备选：上下文分片管理器（排除：256K 下根本触发不了，为答辩话术造无用模块）
+
+## 2026-06-04: analyzer 反馈回边为「保险」，当前效用有限
+- 选择：should_continue 认 analyzer 类 issue 并加 graph 回边（inspector→analyzer），但不作为主路径
+- 理由：SWOT/雷达/功能矩阵现由 writer 代码透传 + analyzer 兜底保证，正常流程不该触发 analyzer 打回；回边是保险。但 analyzer 重跑读相同 profiles，重采相同 prompt → 大概率产出相同结果，效用有限（最终 code review 指出）
+- 待增强：重打 analyzer 时把 feedback.issues 附加进 prompt（「上次 SWOT 缺 X，请补全」），让回边从「随机重采」变「定向修复」——留作下一课题
+- 备选：不加 analyzer 回边（排除：analyzer 类 issue 会被静默打给 writer，writer 改不了上游 → 假闭环）
+
 ## 2026-06-04: SerpAPI 鉴权从 Bearer header 反转为 api_key query 参数
 - 选择：`SerpApiSource.search` 用 `&api_key=<quote(key)>` query 参数鉴权，去掉 `Authorization: Bearer` header（**反转 06-03「key 走 header 防泄漏」决策**）
 - 理由：真实跑通验证发现 SerpAPI 用 Bearer header 鉴权时，**遇非 ASCII（中文）query 返回 401「Invalid API key」**——竞品名恒为中文，导致搜索主线在真实场景 100% 失效（systematic-debugging 证伪 env/激活/编码/headers 后锁定）。api_key query 是 SerpAPI 标准用法，中文 query 正常

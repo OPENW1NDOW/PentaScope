@@ -69,7 +69,7 @@ def test_downpour_maps_dimension_to_source_refs():
         ReportSection(title="商业", dimension="business_model"),
         ReportSection(title="综述", dimension="overview"),
     ])
-    WriterAgent._downpour_source_refs(report, analysis)
+    WriterAgent._fill_section_source_refs(report, analysis)
     assert report.sections[0].source_refs == ["https://pos.com"]
     assert report.sections[1].source_refs == ["https://biz.com"]
     assert set(report.sections[2].source_refs) == {"https://pos.com", "https://biz.com"}
@@ -83,5 +83,51 @@ def test_filter_hallucinated_action_item_urls():
     report = FinalReport(title="t", action_items=ActionItems(
         immediate=[ActionItem(priority="高", description="d",
                               source_urls=["https://real.com", "https://fake.com"])]))
-    WriterAgent._downpour_source_refs(report, analysis)
+    WriterAgent._fill_section_source_refs(report, analysis)
     assert report.action_items.immediate[0].source_urls == ["https://real.com"]
+
+
+def test_fill_skips_overwrites_existing_valid_refs():
+    """section 已填且 URL 有效时，保留 LLM 填的（仍是它）。"""
+    from src.agents.writer import WriterAgent
+    from src.schemas.analysis import CompetitiveAnalysis, Positioning
+    from src.schemas.report import FinalReport, ReportSection
+    analysis = CompetitiveAnalysis(positioning=Positioning(source_urls=["https://pos.com", "https://extra.com"]))
+    report = FinalReport(title="t", sections=[
+        ReportSection(title="定位", dimension="positioning", source_refs=["https://pos.com"]),
+    ])
+    WriterAgent._fill_section_source_refs(report, analysis)
+    assert report.sections[0].source_refs == ["https://pos.com"]  # 有效，保留 LLM 填的
+
+
+def test_fill_filters_hallucinated_section_refs():
+    """section 已填但全是幻觉 URL 时，回退到机械下沉。"""
+    from src.agents.writer import WriterAgent
+    from src.schemas.analysis import CompetitiveAnalysis, Positioning
+    from src.schemas.report import FinalReport, ReportSection
+    analysis = CompetitiveAnalysis(positioning=Positioning(source_urls=["https://real.com"]))
+    report = FinalReport(title="t", sections=[
+        ReportSection(title="定位", dimension="positioning", source_refs=["https://fake.com"]),
+    ])
+    WriterAgent._fill_section_source_refs(report, analysis)
+    assert report.sections[0].source_refs == ["https://real.com"]  # 幻觉过滤后回退机械下沉
+
+
+def test_fill_maps_swot_and_feature_matrix_dimensions():
+    """swot 和 feature_matrix 维度的 URL 聚合下沉正确。"""
+    from src.agents.writer import WriterAgent
+    from src.schemas.analysis import (
+        CompetitiveAnalysis, Swot, SwotEntry, FeatureMatrixEntry,
+    )
+    analysis = CompetitiveAnalysis(
+        swot=Swot(strengths=[SwotEntry(point="p", source_urls=["https://swot.com"])]),
+        feature_matrix=[FeatureMatrixEntry(feature="f", source_urls=["https://fm.com"])],
+    )
+    from src.schemas.report import FinalReport, ReportSection
+    report = FinalReport(title="t", sections=[
+        ReportSection(title="SWOT", dimension="swot"),
+        ReportSection(title="功能", dimension="feature_matrix"),
+    ])
+    WriterAgent._fill_section_source_refs(report, analysis)
+    assert report.sections[0].source_refs == ["https://swot.com"]
+    assert report.sections[1].source_refs == ["https://fm.com"]

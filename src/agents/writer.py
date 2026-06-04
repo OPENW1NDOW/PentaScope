@@ -32,18 +32,19 @@ class WriterAgent:
         }
 
     @classmethod
-    def _downpour_source_refs(cls, report, analysis) -> None:
-        """按 section.dimension 下沉 source_refs；过滤 action_item 幻觉 URL（原地修改）。"""
+    def _fill_section_source_refs(cls, report, analysis) -> None:
+        """按 section.dimension 下沉 source_refs；过滤幻觉 URL（原地修改）。"""
         dim_urls = cls._collect_analysis_urls(analysis)
         all_urls = sorted({u for urls in dim_urls.values() for u in urls})
-        for sec in report.sections:
-            if sec.source_refs:
-                continue  # LLM 已填则尊重
-            if sec.dimension == "overview":
-                sec.source_refs = list(all_urls)
-            else:
-                sec.source_refs = list(dim_urls.get(sec.dimension, []))
         pool = set(all_urls)
+        for sec in report.sections:
+            candidate = list(all_urls) if sec.dimension == "overview" else list(dim_urls.get(sec.dimension, []))
+            if sec.source_refs:
+                # LLM 已填：只保留在 analysis URL 池里的，过滤幻觉；全过滤掉则回退机械下沉
+                filtered = [u for u in sec.source_refs if u in pool]
+                sec.source_refs = filtered or candidate
+            else:
+                sec.source_refs = candidate
         for layer in (report.action_items.immediate, report.action_items.short_term,
                       report.action_items.long_term):
             for item in layer:
@@ -91,8 +92,8 @@ class WriterAgent:
         report.radar_scores = analysis.radar_scores
         report.feature_matrix = analysis.feature_matrix
 
-        # 按 dimension 下沉 source_refs，过滤 action_item 幻觉 URL
-        self._downpour_source_refs(report, analysis)
+        # 按 dimension 下沉 source_refs，过滤幻觉 URL
+        self._fill_section_source_refs(report, analysis)
 
         logger.info("[writer] 报告撰写完成: %s", report.title)
         return report

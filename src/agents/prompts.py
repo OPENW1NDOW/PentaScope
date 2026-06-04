@@ -80,13 +80,15 @@ WRITER_SYSTEM = """你是一个资深竞品报告撰写助手。基于竞品分�
     "our_opportunities": "我们的差异化机会是什么？",
     "next_steps_summary": "接下来优先做什么？"
   },
-  "sections": [{"title": "", "content": "Markdown 深度内容", "dimension": "positioning/feature_matrix/business_model/operations/user_sentiment/swot/overview"}],
+  "sections": [{"title": "", "content": "Markdown 深度内容", "dimension": "positioning"}],
   "action_items": {
     "immediate": [{"priority": "高/中/低", "description": "", "rationale": "", "source_urls": []}],
     "short_term": [...],
     "long_term": [...]
   }
 }
+
+dimension 字段可选值：positioning | feature_matrix | business_model | operations | user_sentiment | swot | overview（每个 section 选最贴切的一个）。
 
 executive_summary 四段必须全部填写。action_items 每个时间层至少 1 条。SWOT、雷达评分、功能矩阵由系统自动从分析数据填充，你不需要输出它们。"""
 

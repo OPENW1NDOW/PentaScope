@@ -25,7 +25,7 @@ async def test_no_key_skips_search_uses_pro_sources(monkeypatch):
                         lambda category, http: [fake_source])
 
     pipe = _pipeline(search_available=False)
-    text, sources, trace = await pipe.collect("支付宝", "saas")
+    text, sources, trace, _ = await pipe.collect("支付宝", "saas")
     assert "支付宝介绍" in text
     assert "https://x.com/app" in sources
     assert any(t.get("step") == "search_skipped" for t in trace)
@@ -69,7 +69,7 @@ async def test_concurrent_collect_no_name_crosstalk(monkeypatch):
     pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
                               search_source=search, max_top_n=3, pick_timeout=20, max_concurrency=5)
     import asyncio
-    (textA, srcA, _), (textB, srcB, _) = await asyncio.gather(
+    (textA, srcA, _, _), (textB, srcB, _, _) = await asyncio.gather(
         pipe.collect("竞品甲", "saas"),
         pipe.collect("竞品乙", "saas"),
     )
@@ -96,7 +96,7 @@ async def test_llm_pick_used_when_key_present(monkeypatch):
     http.get = AsyncMock(return_value="<html>x</html>")
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
-    text, sources, trace = await pipe.collect("X", "default")
+    text, sources, trace, _ = await pipe.collect("X", "default")
     assert sources == ["https://b.com/y"]
     assert any(t.get("step") == "pick" and t.get("method") == "llm" for t in trace)
 
@@ -120,7 +120,7 @@ async def test_llm_pick_timeout_falls_back_to_rule(monkeypatch):
     http.get = AsyncMock(return_value="<html>x</html>")
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=0.05, max_concurrency=5)
-    text, sources, trace = await pipe.collect("X", "default")
+    text, sources, trace, _ = await pipe.collect("X", "default")
     assert sources == ["https://a.com/pricing"]
     assert any(t.get("step") == "pick" and t.get("method") == "rule_fallback" for t in trace)
 
@@ -155,7 +155,7 @@ async def test_llm_pick_malformed_result_falls_back_to_rule(monkeypatch):
     http.get = AsyncMock(return_value="<html>x</html>")
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
-    text, sources, trace = await pipe.collect("X", "default")
+    text, sources, trace, _ = await pipe.collect("X", "default")
     assert sources == ["https://a.com/pricing"]
     assert any(t.get("step") == "pick" and t.get("method") == "rule_fallback" for t in trace)
 
@@ -175,7 +175,7 @@ async def test_soft404_page_excluded_from_sources(monkeypatch):
     http.get = AsyncMock(return_value="<html>404</html>")
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
-    text, sources, trace = await pipe.collect("X", "default")
+    text, sources, trace, _ = await pipe.collect("X", "default")
     assert sources == []
     assert "页面不存在" not in text
 
@@ -194,5 +194,37 @@ async def test_sources_dedup(monkeypatch):
     search.available.return_value = False
     pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
                               search_source=search, max_top_n=3, pick_timeout=20, max_concurrency=5)
-    text, sources, trace = await pipe.collect("X", "saas")
+    text, sources, trace, _ = await pipe.collect("X", "saas")
     assert sources == ["https://dup.com"]
+
+
+@pytest.mark.asyncio
+async def test_collect_returns_labeled_text(monkeypatch):
+    from src.agents.collection_pipeline import CollectionPipeline
+    from src.tools.sources import SourceResult
+
+    class _NoSearch:
+        name = "nosearch"
+        def available(self): return False
+        async def search(self, q): return []
+
+    class _Src:
+        name = "fake"
+        async def collect(self, name):
+            return [
+                SourceResult(url="https://a.com", text="正文A"),
+                SourceResult(url="", text="正文B无源"),
+            ]
+
+    pipe = CollectionPipeline(llm=None, http=None, parser=None, search_source=_NoSearch())
+    monkeypatch.setattr(
+        "src.agents.collection_pipeline.build_pro_sources",
+        lambda category, http: [_Src()],
+    )
+
+    merged, sources, trace, labeled = await pipe.collect("X", "saas")
+    assert "正文A" in merged and "正文B无源" in merged
+    assert "【来源: https://a.com】" in labeled
+    assert "正文A" in labeled
+    assert "【来源: 未知】" in labeled
+    assert sources == ["https://a.com"]

@@ -97,8 +97,7 @@ async def test_llm_pick_used_when_key_present(monkeypatch):
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
     text, sources, trace, _ = await pipe.collect("X", "default")
-    # 选中 b.com/y 在前，池中其余候选 a.com/x 递补凑数（均可抓成）
-    assert sources == ["https://b.com/y", "https://a.com/x"]
+    assert sources == ["https://b.com/y"]
     assert any(t.get("step") == "pick" and t.get("method") == "llm" for t in trace)
 
 
@@ -270,3 +269,20 @@ async def test_replenish_degrades_below_n_when_pool_exhausted(monkeypatch):
     pipe._fetch_clean = AsyncMock(return_value=None)
     text, sources, trace, labeled = await pipe.collect("X", "default")
     assert sources == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_does_not_pad_beyond_picked(monkeypatch):
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources",
+                        lambda category, http: [])
+    search = MagicMock()
+    search.available.return_value = True
+    search.name = "serpapi"
+    cands = [{"url": f"https://s/{i}", "title": "", "snippet": ""} for i in range(6)]
+    search.search = AsyncMock(return_value=cands)
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=search, max_top_n=5, pick_timeout=20, max_concurrency=5)
+    pipe._llm_pick = AsyncMock(return_value=[cands[0], cands[1]])
+    pipe._fetch_clean = AsyncMock(return_value="正文" * 30)
+    text, sources, trace, labeled = await pipe.collect("X", "default")
+    assert sources == ["https://s/0", "https://s/1"]

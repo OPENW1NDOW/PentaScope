@@ -48,7 +48,7 @@ class ItunesSource:
         return results
 
 
-SERPAPI_URL = "https://serpapi.com/search?engine=google&q={query}&num=10"
+SERPAPI_URL = "https://serpapi.com/search?engine=google&q={query}&num=20"
 
 
 class SerpApiSource:

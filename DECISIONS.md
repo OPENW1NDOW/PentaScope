@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-06-06: 移除 iTunes 专源（修正 06-01「数据源含 iTunes」）
+- 选择：删除 ItunesSource 及其 category 路由机制（build_pro_sources/normalize_category）；采集只保留 SerpAPI/Tavily 搜索主线
+- 理由：iTunes Search API 按关键词搜索会带回同名/相近无关 App（实测搜「飞书」带出豆包、千问，搜「语雀」带出 flomo、石墨），且代码无差别将三条结果全并入分析语料，污染结论（analyzer 可能拿豆包数据当飞书分析）。其当初引入的三类价值中，定价/描述已被 Tavily 抓官网取代（飞书抓到 7 个真实套餐 tier，远超 iTunes 的「免费」一条），仅剩 App 评分是独家——但评分一项不值得背同名污染风险。且 iTunes 仅对软件类竞品有效，硬件竞品用不上。将来确需 App 评分可从 git 历史恢复
+- 备选：加同名过滤只取第 1 条（排除原因：评分边际价值低，不值得维护匹配逻辑）、保留骨架返回空（排除原因：留死分支，不如删干净靠 git 历史找回）
+
+## 2026-06-06: TavilySource 鉴权用 POST + Bearer header
+- 选择：Tavily 调用走 POST + JSON body，api_key 放 Authorization: Bearer header（新增 HttpClient.post_json，header 局部传参不污染共享客户端）
+- 理由：Tavily 官方契约是 POST/Bearer；最初误实现为 GET + api_key query 参数导致真实调用 401（doubt-driven 时 Codex 已预警 GET 写法，实现时误判）。key 走 header 不进 URL，日志不泄漏
+- 备选：GET + api_key query（排除原因：返回 401，非官方契约）
+
 ## 2026-06-04: 报告质量提升走「溯源为脉」而非「只改 writer」（方案 C）
 - 选择：报告质量提升以「事实-URL 绑定链」为主线贯穿全链路——pipeline 输出带【来源】标记文本 → collector 抽取时绑定每条 fact 的 source_url → analyzer 透传维度 source_urls（代码兜底）→ writer 机械透传 SWOT/雷达/功能矩阵 + 按 dimension 下沉 source_refs → inspector 程序化硬查 + severity 分级 pass/fail
 - 理由：最初设想「只改 writer 做机械下沉」，两轮 doubt-driven（单模型 + Codex gpt-5.5 跨模型，20 条命中）核对源码后证伪——溯源断链的真正根因在**采集层**：collector 抽取 prompt 只给 sample_reviews 留 source_url、正文被 merge 成无【来源】锚点的 blob，导致 analysis 各维度 source_urls 恒空。不碰采集层就修不了「每条结论可溯源」（课题 35% 评分核心 + 引用强制反幻觉）

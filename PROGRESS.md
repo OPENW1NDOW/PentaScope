@@ -16,6 +16,24 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-06（采集能力增强：接 Tavily 搜索源 + 移除 iTunes 同名污染源）
+- 完成（feat/collector-enhancement 分支，14 commits，三环境 139 测试全绿 + ruff 全清）：
+  - **采集配置增强**：P1 超时 20→45s、SEARCH_TOP_N 3→5、新增 SEARCH_PROVIDER/TAVILY_API_KEY 配置
+  - **http get 故障分类重试**：超时/5xx 重试 1 次、4xx 直接弃
+  - **候选池递补**：抓挂才补、上限=picked 数（尊重 LLM 选页，不硬凑）+ SerpAPI num 20
+  - **新增 TavilySource**：一次调用返回结果+清洗正文，吃掉搜索+选页+抓取+清洗；collect 按 returns_bodies 分叉 tavily 主线，builder 按 SEARCH_PROVIDER 注入；Tavily max_results 联动 SEARCH_TOP_N
+  - **修 Tavily 401**：改用 POST + JSON body + Authorization: Bearer header（官方契约），新增 HttpClient.post_json
+  - **修集成测试 .env 污染**：conftest autouse fixture 锁定 SEARCH_PROVIDER=serpapi，不受本地 .env 影响
+  - **移除 iTunes 专源**：实测同名污染（搜飞书带出豆包/千问，搜语雀带出 flomo/石墨），无差别并入语料污染分析；独家价值仅剩评分、不值得背污染风险，删干净（连带 category 路由），集成测试改走 SerpAPI 主线
+  - 真实端到端验收（语雀 vs 飞书，SEARCH_PROVIDER=tavily）：Tavily 生效（飞书抓 4 条官方页）、completeness 语雀 1.0/飞书 0.85、报告 5 section/quality 0.9
+  - 设计 spec `docs/superpowers/specs/2026-06-06-collector-enhancement-design.md`、计划 `docs/superpowers/plans/2026-06-06-collector-enhancement.md`
+- 进行中：feat/collector-enhancement 合并回 master（本 session 收尾中）
+- 下一步（新 session，承接 06-04 未尽事项）：
+  1. **前端输入优化**：让用户填竞品官网 URL/已知信息/指定数据源，减少盲搜依赖
+  2. **溯源粒度增强**：维度+竞品级 → per-entry（需改 analysis schema 结构）
+  3. 验收暴露的 analyzer/writer 质量项（独立于采集）：溯源张冠李戴（给数据配错来源链接）、雷达图缺我方产品评分、用户评价样本说明缺失
+- 阻塞：无
+
 ## 2026-06-04（报告质量提升：方案C 溯源为脉，加工层全链路改造）
 - 完成：
   - 走完整 brainstorming → 两轮 doubt-driven（单模型 general-purpose + Codex gpt-5.5 跨模型对抗审查，**20 条命中**证伪原方案前提）→ writing-plans → subagent-driven（每 Task 派 implementer + spec/quality 两阶段 review）

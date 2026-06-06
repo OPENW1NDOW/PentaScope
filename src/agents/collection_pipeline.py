@@ -153,9 +153,9 @@ class CollectionPipeline:
 
         # 搜索主线：仅在搜索源可用时
         if self.search_source.available():
+            trace.append({"step": "search", "provider": self.search_source.name})
             if getattr(self.search_source, "returns_bodies", False) is True:
                 # Tavily 路径：直接拿带正文结果，跳过选页+抓取，仍过质量闸门 + 去重
-                trace.append({"step": "search", "provider": self.search_source.name})
                 tav_results = await self.search_source.search(
                     f"{competitor_name} 产品 功能 定价")
                 valid = 0
@@ -168,7 +168,6 @@ class CollectionPipeline:
                 trace.append({"step": "tavily", "results": valid})
             else:
                 # SerpAPI 路径：搜索→选页（失败退规则）→ 抓挂才补
-                trace.append({"step": "search", "provider": self.search_source.name})
                 candidates = await self.search_source.search(f"{competitor_name} 产品 功能 定价")
                 picked = await self._llm_pick(candidates, competitor_name, self.max_top_n)
                 if picked is not None:

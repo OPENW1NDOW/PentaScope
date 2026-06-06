@@ -86,6 +86,41 @@ class SerpApiSource:
         return candidates
 
 
+TAVILY_URL = "https://api.tavily.com/search?query={query}&search_depth=advanced&include_raw_content=true&max_results=5"
+
+
+class TavilySource:
+    """Tavily 搜索源：一次调用返回结果 + 每条清洗正文，吃掉搜索+选页+抓取+清洗。
+
+    与 SerpApiSource 不同：search() 直接返回带正文的 SourceResult（非候选 dict）。
+    key 走 api_key query 参数，日志由 HttpClient._redact_key 脱敏。
+    """
+
+    name = "tavily"
+
+    def __init__(self, http, api_key: str):
+        self.http = http
+        self.api_key = api_key
+
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+    async def search(self, query: str) -> list[SourceResult]:
+        if not self.available():
+            return []
+        url = TAVILY_URL.format(query=quote(query)) + f"&api_key={quote(self.api_key)}"
+        data = await self.http.get_json(url)
+        if not data or not isinstance(data, dict):
+            return []
+        results = []
+        for item in data.get("results", []):
+            text = item.get("raw_content") or item.get("content") or ""
+            link = item.get("url", "")
+            if text and link:
+                results.append(SourceResult(url=link, text=text))
+        return results
+
+
 _SAAS_KEYWORDS = ("软件", "saas", "app", "应用", "工具", "平台", "service")
 
 

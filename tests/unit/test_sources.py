@@ -154,3 +154,38 @@ def test_build_pro_sources_freetext_category_routed():
     sources = build_pro_sources("协作软件", http=MagicMock())
     assert any(isinstance(s, ItunesSource) for s in sources)
     assert build_pro_sources("金融科技", http=MagicMock()) == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_parses_results_with_body():
+    from src.tools.sources import TavilySource
+    raw = {"results": [
+        {"url": "https://feishu.cn/docs", "raw_content": "飞书功能介绍" * 30, "content": "短摘要"},
+        {"url": "https://feishu.cn/pricing", "raw_content": "", "content": "飞书定价说明" * 30},
+    ]}
+    http = MagicMock()
+    http.get_json = AsyncMock(return_value=raw)
+    results = await TavilySource(http, api_key="k").search("飞书 产品 功能 定价")
+    assert len(results) == 2
+    assert isinstance(results[0], SourceResult)
+    assert "飞书功能介绍" in results[0].text
+    assert "飞书定价说明" in results[1].text
+    assert results[0].url == "https://feishu.cn/docs"
+
+
+@pytest.mark.asyncio
+async def test_tavily_unavailable_without_key():
+    from src.tools.sources import TavilySource
+    src = TavilySource(MagicMock(), api_key="")
+    assert src.available() is False
+    results = await src.search("x")
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_returns_empty_on_request_failure():
+    from src.tools.sources import TavilySource
+    http = MagicMock()
+    http.get_json = AsyncMock(return_value=None)
+    results = await TavilySource(http, api_key="k").search("x")
+    assert results == []

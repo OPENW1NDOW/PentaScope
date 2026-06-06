@@ -151,21 +151,36 @@ class CollectionPipeline:
         pro_sources = build_pro_sources(category, self.http)
         trace.append({"step": "route", "category": category, "pro_sources": [s.name for s in pro_sources]})
 
-        # 搜索主线：仅在搜索源可用时（LLM 选页，失败退规则）
+        # 搜索主线：仅在搜索源可用时
         if self.search_source.available():
-            trace.append({"step": "search", "provider": self.search_source.name})
-            candidates = await self.search_source.search(f"{competitor_name} 产品 功能 定价")
-            picked = await self._llm_pick(candidates, competitor_name, self.max_top_n)
-            if picked is not None:
-                trace.append({"step": "pick", "method": "llm", "picked": [c["url"] for c in picked]})
+            if getattr(self.search_source, "returns_bodies", False) is True:
+                # Tavily 路径：直接拿带正文结果，跳过选页+抓取，仍过质量闸门 + 去重
+                trace.append({"step": "search", "provider": self.search_source.name})
+                tav_results = await self.search_source.search(
+                    f"{competitor_name} 产品 功能 定价")
+                valid = 0
+                for r in tav_results:
+                    if r.url and r.url not in seen_urls and not is_low_quality(r.text):
+                        _add(r.text, r.url)
+                        sources.append(r.url)
+                        seen_urls.add(r.url)
+                        valid += 1
+                trace.append({"step": "tavily", "results": valid})
             else:
-                picked = self._rule_pick(candidates, competitor_name, self.max_top_n)
-                trace.append({"step": "pick", "method": "rule_fallback", "picked": [c["url"] for c in picked]})
-            fetched = await self._fetch_with_backfill(picked, candidates, seen_urls)
-            for url, t in fetched:
-                _add(t, url)
-                sources.append(url)
-            trace.append({"step": "fetch", "valid": len(fetched), "picked": len(picked)})
+                # SerpAPI 路径：搜索→选页（失败退规则）→ 抓挂才补
+                trace.append({"step": "search", "provider": self.search_source.name})
+                candidates = await self.search_source.search(f"{competitor_name} 产品 功能 定价")
+                picked = await self._llm_pick(candidates, competitor_name, self.max_top_n)
+                if picked is not None:
+                    trace.append({"step": "pick", "method": "llm", "picked": [c["url"] for c in picked]})
+                else:
+                    picked = self._rule_pick(candidates, competitor_name, self.max_top_n)
+                    trace.append({"step": "pick", "method": "rule_fallback", "picked": [c["url"] for c in picked]})
+                fetched = await self._fetch_with_backfill(picked, candidates, seen_urls)
+                for url, t in fetched:
+                    _add(t, url)
+                    sources.append(url)
+                trace.append({"step": "fetch", "valid": len(fetched), "picked": len(picked)})
         else:
             trace.append({"step": "search_skipped", "reason": "no_api_key"})
 

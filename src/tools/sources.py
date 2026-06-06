@@ -97,6 +97,7 @@ class TavilySource:
     """
 
     name = "tavily"
+    returns_bodies = True  # search() 直接返回带正文 SourceResult，collect 据此跳过选页+抓取
 
     def __init__(self, http, api_key: str):
         self.http = http

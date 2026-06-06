@@ -286,3 +286,26 @@ async def test_backfill_does_not_pad_beyond_picked(monkeypatch):
     pipe._fetch_clean = AsyncMock(return_value="正文" * 30)
     text, sources, trace, labeled = await pipe.collect("X", "default")
     assert sources == ["https://s/0", "https://s/1"]
+
+
+@pytest.mark.asyncio
+async def test_tavily_mainline_skips_pick_and_fetch(monkeypatch):
+    from src.tools.sources import SourceResult
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources",
+                        lambda category, http: [])
+    tav = MagicMock()
+    tav.available.return_value = True
+    tav.name = "tavily"
+    tav.returns_bodies = True
+    tav.search = AsyncMock(return_value=[
+        SourceResult(url="https://feishu.cn/a", text="飞书正文" * 30),
+        SourceResult(url="https://feishu.cn/b", text="短"),  # quality_gate 挡掉
+    ])
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=tav, max_top_n=5, pick_timeout=20, max_concurrency=5)
+    pipe._llm_pick = AsyncMock(side_effect=AssertionError("不应调用选页"))
+    pipe._fetch_with_backfill = AsyncMock(side_effect=AssertionError("不应调用抓取"))
+    text, sources, trace, labeled = await pipe.collect("飞书", "saas")
+    assert "飞书正文" in text
+    assert sources == ["https://feishu.cn/a"]
+    assert any(t.get("step") == "tavily" for t in trace)

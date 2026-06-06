@@ -2,6 +2,19 @@
 
 import pytest
 
+from src.utils.config import settings
+
+
+@pytest.fixture(autouse=True)
+def lock_search_provider(monkeypatch):
+    """锁定 SEARCH_PROVIDER=serpapi，使集成测试不受本地 .env 影响。
+
+    集成测试的 LLM mock 序列按 serpapi 路径（含选页调用）编排，
+    若本地 .env=tavily 会改变 build_graph 注入的 source 导致调用次数错位。
+    tavily 专项测试各自显式构造 TavilySource，不读此配置，不受影响。
+    """
+    monkeypatch.setattr(settings, "SEARCH_PROVIDER", "serpapi")
+
 
 @pytest.fixture
 def sample_competitor_basic():

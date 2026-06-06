@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from urllib.parse import quote
 
+from src.utils.config import settings
+
 logger = logging.getLogger(__name__)
 
 ITUNES_API_URL = "https://itunes.apple.com/search?term={name}&country=cn&entity=software&limit=3"
@@ -86,7 +88,7 @@ class SerpApiSource:
         return candidates
 
 
-TAVILY_URL = "https://api.tavily.com/search?query={query}&search_depth=advanced&include_raw_content=true&max_results=5"
+TAVILY_URL = "https://api.tavily.com/search?query={query}&search_depth=advanced&include_raw_content=true"
 
 
 class TavilySource:
@@ -109,7 +111,11 @@ class TavilySource:
     async def search(self, query: str) -> list[SourceResult]:
         if not self.available():
             return []
-        url = TAVILY_URL.format(query=quote(query)) + f"&api_key={quote(self.api_key)}"
+        url = (
+            TAVILY_URL.format(query=quote(query))
+            + f"&max_results={settings.SEARCH_TOP_N}"
+            + f"&api_key={quote(self.api_key)}"
+        )
         data = await self.http.get_json(url)
         if not data or not isinstance(data, dict):
             return []

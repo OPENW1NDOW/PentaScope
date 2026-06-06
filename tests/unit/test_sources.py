@@ -189,3 +189,19 @@ async def test_tavily_returns_empty_on_request_failure():
     http.get_json = AsyncMock(return_value=None)
     results = await TavilySource(http, api_key="k").search("x")
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_url_uses_search_top_n(monkeypatch):
+    from src.tools.sources import TavilySource
+    monkeypatch.setattr("src.tools.sources.settings.SEARCH_TOP_N", 7)
+    captured = {}
+
+    async def fake_get_json(url):
+        captured["url"] = url
+        return {"results": []}
+
+    http = MagicMock()
+    http.get_json = fake_get_json
+    await TavilySource(http, api_key="k").search("x")
+    assert "max_results=7" in captured["url"]

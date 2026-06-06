@@ -117,6 +117,13 @@ if st.button("开始分析", type="primary"):
                                 st.subheader(label)
                                 for entry in swot.get(key, []):
                                     st.markdown(f"- {entry.get('point', '')}")
+                                    evidence = entry.get("evidence", "")
+                                    if evidence:
+                                        st.caption(f"依据：{evidence}")
+                                    refs = entry.get("source_urls", [])
+                                    if refs:
+                                        st.caption("来源：" + " ".join(
+                                            f"[{i+1}]({u})" for i, u in enumerate(refs)))
 
                     # 雷达评分
                     radar = report.get("radar_scores", [])

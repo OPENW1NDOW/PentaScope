@@ -43,7 +43,9 @@ def build_graph(llm, http, parser, trace_writer=None):
     async def analyzer_node(state: AnalysisState) -> dict:
         logger.info("[graph] → analyzer")
         node_trace.append("analyzer")
-        analysis = await analyzer.analyze(state["profiles"])
+        feedback = state.get("feedback")
+        issues = feedback.issues if feedback is not None else None
+        analysis = await analyzer.analyze(state["profiles"], feedback_issues=issues)
         _save("02_analysis", analysis)
         return {"analysis": analysis, "current_node": "analyzer"}
 

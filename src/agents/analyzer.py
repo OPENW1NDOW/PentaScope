@@ -3,6 +3,7 @@ import logging
 from pydantic import ValidationError
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
+from src.schemas.feedback import FeedbackIssue
 from src.agents.prompts import ANALYZER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -72,15 +73,41 @@ class AnalyzerAgent:
         # swot 各 entry 的 source_urls 不做粗粒度兜底（推断性结论，留给 LLM 按需填）
         return result
 
-    async def analyze(self, profiles: list[CompetitorProfile]) -> CompetitiveAnalysis:
-        """对采集数据进行结构化分析"""
+    @staticmethod
+    def _format_feedback(issues: list[FeedbackIssue] | None) -> str:
+        """把上一轮质检中归属 analyzer 的 issue 格式化为定向修正指令；无则返回空串。"""
+        if not issues:
+            return ""
+        analyzer_issues = [i for i in issues if i.agent == "analyzer"]
+        if not analyzer_issues:
+            return ""
+        lines = []
+        for i in analyzer_issues:
+            line = f"- [{i.severity}] {i.field}: {i.reason}"
+            if i.suggestion:
+                line += f"（建议：{i.suggestion}）"
+            lines.append(line)
+        return (
+            "\n\n【上一轮质检发现的本环节问题，请在本次分析中针对性修正】\n"
+            + "\n".join(lines)
+        )
+
+    async def analyze(
+        self,
+        profiles: list[CompetitorProfile],
+        feedback_issues: list[FeedbackIssue] | None = None,
+    ) -> CompetitiveAnalysis:
+        """对采集数据进行结构化分析；feedback_issues 非空时附加定向修正指令（回边重跑）"""
         logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
 
         # 序列化完整 profile 数据（不截断，依赖 256K 上下文）
         profiles_data = [p.model_dump() for p in profiles]
         profiles_text = json.dumps(profiles_data, ensure_ascii=False, indent=2)
 
-        prompt = f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
+        prompt = (
+            f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
+            + self._format_feedback(feedback_issues)
+        )
         result = self._backfill_source_urls(
             self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt)),
             profiles,

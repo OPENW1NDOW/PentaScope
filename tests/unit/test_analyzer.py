@@ -61,6 +61,48 @@ def test_backfill_does_not_overwrite_nonempty():
     assert out["positioning"]["source_urls"] == ["https://llm-picked.com"]
 
 
+def test_format_feedback_filters_analyzer_issues():
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.feedback import FeedbackIssue
+    issues = [
+        FeedbackIssue(agent="analyzer", field="swot.threats", severity="major",
+                      reason="威胁象限为空", suggestion="补充竞品对我方威胁"),
+        FeedbackIssue(agent="writer", field="sections", severity="minor", reason="章节偏短"),
+        FeedbackIssue(agent="collector", field="pricing", severity="critical", reason="定价缺失"),
+    ]
+    text = AnalyzerAgent._format_feedback(issues)
+    assert "swot.threats" in text
+    assert "威胁象限为空" in text
+    assert "补充竞品对我方威胁" in text
+    # 非 analyzer 的 issue 不应进入
+    assert "sections" not in text
+    assert "定价缺失" not in text
+
+
+def test_format_feedback_empty_when_no_analyzer_issue():
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.feedback import FeedbackIssue
+    assert AnalyzerAgent._format_feedback(None) == ""
+    assert AnalyzerAgent._format_feedback([]) == ""
+    only_writer = [FeedbackIssue(agent="writer", field="x", severity="minor", reason="r")]
+    assert AnalyzerAgent._format_feedback(only_writer) == ""
+
+
+@pytest.mark.asyncio
+async def test_analyze_appends_feedback_to_prompt(sample_competitor_profile, sample_competitive_analysis):
+    from src.schemas.profile import CompetitorProfile
+    from src.schemas.feedback import FeedbackIssue
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(return_value=sample_competitive_analysis)
+    agent = AnalyzerAgent(llm=mock_llm)
+    profiles = [CompetitorProfile(**sample_competitor_profile)]
+    issues = [FeedbackIssue(agent="analyzer", field="swot.threats",
+                            severity="major", reason="威胁象限为空")]
+    await agent.analyze(profiles, feedback_issues=issues)
+    sent_prompt = mock_llm.call_json.call_args[0][1]
+    assert "威胁象限为空" in sent_prompt
+
+
 def test_backfill_feature_matrix_entry_source_urls():
     from src.agents.analyzer import AnalyzerAgent
     from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata

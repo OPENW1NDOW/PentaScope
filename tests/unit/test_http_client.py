@@ -124,6 +124,49 @@ class TestGetJson:
         await client.close()
 
 
+class TestPostJson:
+    @pytest.mark.asyncio
+    async def test_post_json_sends_body_and_headers(self):
+        client = HttpClient()
+        payload = {"results": [{"url": "https://x.com", "raw_content": "正文"}]}
+        mock_resp = httpx.Response(200, json=payload)
+        captured = {}
+
+        async def fake_post(url, json=None, headers=None):
+            captured["url"] = url
+            captured["json"] = json
+            captured["headers"] = headers
+            return mock_resp
+
+        with patch.object(client.client, "post", side_effect=fake_post):
+            result = await client.post_json(
+                "https://api.tavily.com/search",
+                {"query": "x"},
+                headers={"Authorization": "Bearer K"},
+            )
+        assert result == payload
+        assert captured["json"] == {"query": "x"}
+        assert captured["headers"] == {"Authorization": "Bearer K"}
+        assert "Authorization" not in client.client.headers
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_post_json_returns_none_on_non_200(self):
+        client = HttpClient()
+        with patch.object(client.client, "post", new_callable=AsyncMock, return_value=httpx.Response(401)):
+            result = await client.post_json("https://api.tavily.com/search", {"query": "x"}, headers={})
+        assert result is None
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_post_json_returns_none_on_timeout(self):
+        client = HttpClient()
+        with patch.object(client.client, "post", new_callable=AsyncMock, side_effect=httpx.TimeoutException("t")):
+            result = await client.post_json("https://api.tavily.com/search", {"query": "x"}, headers={})
+        assert result is None
+        await client.close()
+
+
 def test_redact_key_masks_query_param():
     out = _redact_key("https://serpapi.com/search?q=x&api_key=SECRET123")
     assert "SECRET123" not in out

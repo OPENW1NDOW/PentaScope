@@ -88,14 +88,15 @@ class SerpApiSource:
         return candidates
 
 
-TAVILY_URL = "https://api.tavily.com/search?query={query}&search_depth=advanced&include_raw_content=true"
+TAVILY_URL = "https://api.tavily.com/search"
 
 
 class TavilySource:
     """Tavily 搜索源：一次调用返回结果 + 每条清洗正文，吃掉搜索+选页+抓取+清洗。
 
     与 SerpApiSource 不同：search() 直接返回带正文的 SourceResult（非候选 dict）。
-    key 走 api_key query 参数，日志由 HttpClient._redact_key 脱敏。
+    按 Tavily 官方契约：POST + JSON body，key 走 Authorization: Bearer header。
+    key 在 header 中、不进 URL，日志不会明文打出。
     """
 
     name = "tavily"
@@ -111,12 +112,14 @@ class TavilySource:
     async def search(self, query: str) -> list[SourceResult]:
         if not self.available():
             return []
-        url = (
-            TAVILY_URL.format(query=quote(query))
-            + f"&max_results={settings.SEARCH_TOP_N}"
-            + f"&api_key={quote(self.api_key)}"
-        )
-        data = await self.http.get_json(url)
+        body = {
+            "query": query,
+            "search_depth": "advanced",
+            "include_raw_content": True,
+            "max_results": settings.SEARCH_TOP_N,
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        data = await self.http.post_json(TAVILY_URL, body, headers=headers)
         if not data or not isinstance(data, dict):
             return []
         results = []

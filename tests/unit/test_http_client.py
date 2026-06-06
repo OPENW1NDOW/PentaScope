@@ -40,6 +40,44 @@ class TestHttpClient:
             assert result is None
         await client.close()
 
+    @pytest.mark.asyncio
+    async def test_get_retries_once_on_timeout_then_succeeds(self):
+        client = HttpClient()
+        ok = httpx.Response(200, text="<html>ok</html>")
+        with patch.object(
+            client.client, "get", new_callable=AsyncMock,
+            side_effect=[httpx.TimeoutException("t"), ok],
+        ) as m:
+            result = await client.get("https://example.com")
+            assert result == "<html>ok</html>"
+            assert m.call_count == 2
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_get_retries_once_on_5xx_then_gives_up(self):
+        client = HttpClient()
+        resp500 = httpx.Response(500)
+        with patch.object(
+            client.client, "get", new_callable=AsyncMock,
+            side_effect=[resp500, resp500],
+        ) as m:
+            result = await client.get("https://example.com")
+            assert result is None
+            assert m.call_count == 2
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_get_does_not_retry_on_403(self):
+        client = HttpClient()
+        resp403 = httpx.Response(403)
+        with patch.object(
+            client.client, "get", new_callable=AsyncMock, return_value=resp403,
+        ) as m:
+            result = await client.get("https://example.com")
+            assert result is None
+            assert m.call_count == 1
+        await client.close()
+
 
 class TestGetJson:
     @pytest.mark.asyncio

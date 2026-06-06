@@ -61,21 +61,27 @@ class HttpClient:
             self._last_request[domain] = time.time()
 
     async def get(self, url: str) -> str | None:
-        """GET 请求，失败返回 None"""
-        try:
-            await self._rate_limit(url)
-            await self._rotate_ua()
-            response = await self.client.get(url)
-            if response.status_code == 200:
-                return response.text
-            logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
-            return None
-        except httpx.TimeoutException:
-            logger.warning("[http] %s 请求超时", _redact_key(url))
-            return None
-        except httpx.RequestError as e:
-            logger.warning("[http] %s 请求失败: %s", _redact_key(url), _redact_key(str(e)))
-            return None
+        """GET 请求，失败返回 None。超时/连接错误/5xx 重试 1 次；4xx 不重试。"""
+        for attempt in range(2):  # 共 2 次尝试
+            try:
+                await self._rate_limit(url)
+                await self._rotate_ua()
+                response = await self.client.get(url)
+                if response.status_code == 200:
+                    return response.text
+                logger.warning("[http] %s 返回状态码 %d", _redact_key(url), response.status_code)
+                if response.status_code >= 500 and attempt == 0:
+                    continue  # 5xx 重试
+                return None  # 4xx 或重试后仍 5xx
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                logger.warning("[http] %s 请求超时/连接失败: %s", _redact_key(url), _redact_key(str(e)))
+                if attempt == 0:
+                    continue
+                return None
+            except httpx.RequestError as e:
+                logger.warning("[http] %s 请求失败: %s", _redact_key(url), _redact_key(str(e)))
+                return None
+        return None
 
     async def get_json(self, url: str, headers: dict | None = None) -> dict | list | None:
         """GET 请求并解析 JSON；header 局部传参不污染共享客户端；失败返回 None。

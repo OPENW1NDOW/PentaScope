@@ -97,7 +97,8 @@ async def test_llm_pick_used_when_key_present(monkeypatch):
     pipe = CollectionPipeline(llm=llm, http=http, parser=parser, search_source=search,
                               max_top_n=3, pick_timeout=20, max_concurrency=5)
     text, sources, trace, _ = await pipe.collect("X", "default")
-    assert sources == ["https://b.com/y"]
+    # 选中 b.com/y 在前，池中其余候选 a.com/x 递补凑数（均可抓成）
+    assert sources == ["https://b.com/y", "https://a.com/x"]
     assert any(t.get("step") == "pick" and t.get("method") == "llm" for t in trace)
 
 
@@ -228,3 +229,44 @@ async def test_collect_returns_labeled_text(monkeypatch):
     assert "正文A" in labeled
     assert "【来源: 未知】" in labeled
     assert sources == ["https://a.com"]
+
+
+@pytest.mark.asyncio
+async def test_replenish_fills_from_pool_when_picked_fail(monkeypatch):
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources",
+                        lambda category, http: [])
+    search = MagicMock()
+    search.available.return_value = True
+    search.name = "serpapi"
+    cands = [{"url": f"https://s/{i}", "title": "", "snippet": ""} for i in range(5)]
+    search.search = AsyncMock(return_value=cands)
+
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=search, max_top_n=2, pick_timeout=20, max_concurrency=5)
+    pipe._llm_pick = AsyncMock(return_value=[cands[0], cands[1]])
+
+    async def fake_fetch(url):
+        idx = int(url.rsplit("/", 1)[1])
+        return None if idx < 2 else f"正文{idx}" * 30
+    pipe._fetch_clean = AsyncMock(side_effect=fake_fetch)
+
+    text, sources, trace, labeled = await pipe.collect("X", "default")
+    assert len(sources) == 2
+    assert all("https://s/" in s for s in sources)
+
+
+@pytest.mark.asyncio
+async def test_replenish_degrades_below_n_when_pool_exhausted(monkeypatch):
+    monkeypatch.setattr("src.agents.collection_pipeline.build_pro_sources",
+                        lambda category, http: [])
+    search = MagicMock()
+    search.available.return_value = True
+    search.name = "serpapi"
+    cands = [{"url": f"https://s/{i}", "title": "", "snippet": ""} for i in range(3)]
+    search.search = AsyncMock(return_value=cands)
+    pipe = CollectionPipeline(llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+                              search_source=search, max_top_n=5, pick_timeout=20, max_concurrency=5)
+    pipe._llm_pick = AsyncMock(return_value=cands)
+    pipe._fetch_clean = AsyncMock(return_value=None)
+    text, sources, trace, labeled = await pipe.collect("X", "default")
+    assert sources == []

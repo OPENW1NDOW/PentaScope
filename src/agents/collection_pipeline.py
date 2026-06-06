@@ -94,6 +94,38 @@ class CollectionPipeline:
             return None
         return text
 
+    def _build_pool(self, picked: list[dict], candidates: list[dict]) -> list[dict]:
+        """候选池 = 选中的在前 + 其余候选按原序兜底（去重 URL）。"""
+        seen = set()
+        pool = []
+        for c in list(picked) + list(candidates):
+            u = c.get("url")
+            if u and u not in seen:
+                pool.append(c)
+                seen.add(u)
+        return pool
+
+    async def _replenish_fetch(self, pool: list[dict], need: int, seen_urls: set):
+        """从候选池并发批次抓取，凑够 need 个有效正文（过闸门 + 去重）就停。
+        返回 [(url, text), ...]，最多 need 个。"""
+        collected: list[tuple[str, str]] = []
+        i = 0
+        while len(collected) < need and i < len(pool):
+            remaining = need - len(collected)
+            batch_size = min(remaining + 2, self.max_concurrency)
+            batch = pool[i:i + batch_size]
+            i += len(batch)
+            fetched = await asyncio.gather(
+                *[self._fetch_clean(c["url"]) for c in batch], return_exceptions=True
+            )
+            for c, t in zip(batch, fetched):
+                if isinstance(t, str) and t and c["url"] not in seen_urls:
+                    collected.append((c["url"], t))
+                    seen_urls.add(c["url"])
+                    if len(collected) >= need:
+                        break
+        return collected[:need]
+
     async def _run_source(self, src, name):
         """运行单个专源，独立超时容错。"""
         try:
@@ -131,14 +163,12 @@ class CollectionPipeline:
             else:
                 picked = self._rule_pick(candidates, competitor_name, self.max_top_n)
                 trace.append({"step": "pick", "method": "rule_fallback", "picked": [c["url"] for c in picked]})
-            fetched = await asyncio.gather(
-                *[self._fetch_clean(c["url"]) for c in picked], return_exceptions=True
-            )
-            for c, t in zip(picked, fetched):
-                if isinstance(t, str) and t and c["url"] not in seen_urls:
-                    _add(t, c["url"])
-                    sources.append(c["url"])
-                    seen_urls.add(c["url"])
+            pool = self._build_pool(picked, candidates)
+            replenished = await self._replenish_fetch(pool, self.max_top_n, seen_urls)
+            for url, t in replenished:
+                _add(t, url)
+                sources.append(url)
+            trace.append({"step": "fetch", "valid": len(replenished), "target": self.max_top_n})
         else:
             trace.append({"step": "search_skipped", "reason": "no_api_key"})
 

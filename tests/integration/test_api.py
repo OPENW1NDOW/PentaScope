@@ -15,10 +15,11 @@ class TestAPI:
 
     @pytest.mark.asyncio
     async def test_analyze_returns_report(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
+            {"urls": ["https://alipay.com/pricing"]},
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
             sample_competitive_analysis,
             sample_final_report,
@@ -37,17 +38,12 @@ class TestAPI:
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>test</html>")
         mock_http.get_json = AsyncMock(return_value={
-            "results": [{
-                "trackName": "支付宝", "formattedPrice": "免费",
-                "averageUserRating": 4.7, "userRatingCount": 20000,
-                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
-                "trackViewUrl": "https://apps.apple.com/app/id1",
-            }]
+            "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
         mock_http.close = AsyncMock()
 
         mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "test data"
+        mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
         mock_parser.extract_meta.return_value = {}
 
         with patch("src.api.routes.LLMClient", return_value=mock_llm), \

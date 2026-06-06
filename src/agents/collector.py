@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
 from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata
-from src.tools.sources import normalize_category
 from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -16,11 +15,6 @@ class CollectorAgent:
     def __init__(self, llm, pipeline):
         self.llm = llm
         self.pipeline = pipeline
-
-    def detect_category(self, comp: CompetitorBasic) -> str:
-        """零 LLM 判断产品形态（saas/default），供专源路由。"""
-        signal = comp.category or comp.name or comp.company or ""
-        return normalize_category(signal)
 
     def _build_placeholder_profile(self, comp: CompetitorBasic, classification: dict, trace: list[dict]) -> CompetitorProfile:
         """全空时构造占位 profile：不调 LLM，completeness 显式 0.0。"""
@@ -118,8 +112,7 @@ class CollectorAgent:
     async def _collect_single(self, comp: CompetitorBasic, goal: AnalysisGoal) -> CompetitorProfile:
         """采集单个竞品：分类 → 类别路由 → 管线采集 → 抽取/占位。"""
         classification = await self.classify_competitor(comp.name, goal)
-        category = self.detect_category(comp)
-        merged_text, sources, trace, labeled_text = await self.pipeline.collect(comp.name, category)
+        merged_text, sources, trace, labeled_text = await self.pipeline.collect(comp.name)
         if not labeled_text.strip():
             logger.info("[collector] %s 全空, 产占位 profile", comp.name)
             return self._build_placeholder_profile(comp, classification, trace)

@@ -7,8 +7,6 @@ import asyncio
 import logging
 
 from src.tools.quality_gate import is_low_quality
-from src.tools.sources import build_pro_sources
-from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -124,15 +122,7 @@ class CollectionPipeline:
                             break
         return collected[:target]
 
-    async def _run_source(self, src, name):
-        """运行单个专源，独立超时容错。"""
-        try:
-            return await asyncio.wait_for(src.collect(name), timeout=settings.HTTP_TIMEOUT)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[pipeline] 专源 %s 失败: %s", getattr(src, "name", "?"), e)
-            return []
-
-    async def collect(self, competitor_name: str, category: str):
+    async def collect(self, competitor_name: str):
         """返回 (merged_text, sources, pipeline_trace, labeled_text)。
 
         labeled_text 在每段正文前加【来源: url】标记，供 collector 抽取时绑定来源。
@@ -147,9 +137,6 @@ class CollectionPipeline:
         def _add(text: str, url: str):
             texts.append(text)
             labeled_parts.append(f"【来源: {url or '未知'}】\n{text}")
-
-        pro_sources = build_pro_sources(category, self.http)
-        trace.append({"step": "route", "category": category, "pro_sources": [s.name for s in pro_sources]})
 
         # 搜索主线：仅在搜索源可用时
         if self.search_source.available():
@@ -182,17 +169,6 @@ class CollectionPipeline:
                 trace.append({"step": "fetch", "valid": len(fetched), "picked": len(picked)})
         else:
             trace.append({"step": "search_skipped", "reason": "no_api_key"})
-
-        # 专源并行
-        results_per_source = await asyncio.gather(*[self._run_source(s, competitor_name) for s in pro_sources])
-        for src, results in zip(pro_sources, results_per_source):
-            for r in results:
-                if r.url not in seen_urls:
-                    _add(r.text, r.url)
-                    if r.url:
-                        sources.append(r.url)
-                        seen_urls.add(r.url)
-            trace.append({"step": "pro_source", "name": src.name, "results": len(results)})
 
         merged_text = "\n\n".join(texts)
         labeled_text = "\n\n".join(labeled_parts)

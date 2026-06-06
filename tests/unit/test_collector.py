@@ -53,23 +53,6 @@ class TestCollectorAgent:
         assert isinstance(profiles[0], CompetitorProfile)
         assert profiles[0].metadata.pipeline_trace == [{"step": "route"}]
 
-    def test_detect_category_uses_input_category(self):
-        agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
-        comp = CompetitorBasic(name="Notion", category="协作软件")
-        assert agent.detect_category(comp) == "saas"
-
-    def test_detect_category_default_when_unknown(self):
-        agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
-        comp = CompetitorBasic(name="某硬件", category="消费电子")
-        assert agent.detect_category(comp) == "default"
-
-    def test_detect_category_calls_no_llm(self):
-        mock_llm = MagicMock()
-        mock_llm.call_json = AsyncMock()
-        agent = CollectorAgent(llm=mock_llm, pipeline=MagicMock())
-        agent.detect_category(CompetitorBasic(name="XX", category="工具"))
-        mock_llm.call_json.assert_not_called()
-
     def test_build_placeholder_profile(self):
         agent = CollectorAgent(llm=MagicMock(), pipeline=MagicMock())
         comp = CompetitorBasic(name="某竞品", company="某公司")

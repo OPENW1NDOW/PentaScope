@@ -8,14 +8,16 @@ from src.tools.trace_writer import TraceWriter
 class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_full_graph_run(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        """端到端测试：Mock LLM，验证完整图运行"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
+        """端到端测试：Mock LLM，验证完整图运行（走 SerpAPI 搜索主线）"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
         # 构造 LLM 返回序列
         llm_responses = [
             # collector: parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             # collector: classify
             {"competitor_type": "核心竞品", "reason": "test"},
+            # collector: pipeline 选页（SerpAPI 主线）
+            {"urls": ["https://alipay.com/pricing"]},
             # collector: extract_profile (对每个竞品)
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
             # analyzer
@@ -38,16 +40,11 @@ class TestGraphIntegration:
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
         mock_http.get_json = AsyncMock(return_value={
-            "results": [{
-                "trackName": "支付宝", "formattedPrice": "免费",
-                "averageUserRating": 4.7, "userRatingCount": 20000,
-                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
-                "trackViewUrl": "https://apps.apple.com/app/id1",
-            }]
+            "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
 
         mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "支付宝 移动支付"
+        mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
         mock_parser.extract_meta.return_value = {}
 
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
@@ -67,18 +64,20 @@ class TestGraphIntegration:
         assert "report" in result
         assert result["report"].title != ""
         assert result["feedback"].passed is True
-        # 锁定走真实采集路径（含 extract），而非占位降级：6 个 LLM 响应全部被消费
-        assert call_index[0] == 6
+        # 锁定走真实采集路径（含选页+extract），而非占位降级：7 个 LLM 响应全部被消费
+        assert call_index[0] == 7
 
     @pytest.mark.asyncio
     async def test_rejection_triggers_retry(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        """测试质检打回后重新执行"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
+        """测试质检打回后重新执行（走 SerpAPI 搜索主线）"""
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
         llm_responses = [
             # collector: parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             # collector: classify
             {"competitor_type": "核心竞品", "reason": "test"},
+            # collector: pipeline 选页（SerpAPI 主线）
+            {"urls": ["https://alipay.com/pricing"]},
             # collector: extract_profile
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
             # analyzer
@@ -105,16 +104,11 @@ class TestGraphIntegration:
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
         mock_http.get_json = AsyncMock(return_value={
-            "results": [{
-                "trackName": "支付宝", "formattedPrice": "免费",
-                "averageUserRating": 4.7, "userRatingCount": 20000,
-                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
-                "trackViewUrl": "https://apps.apple.com/app/id1",
-            }]
+            "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
 
         mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "支付宝 移动支付"
+        mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
         mock_parser.extract_meta.return_value = {}
 
         graph, _ = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)
@@ -137,10 +131,11 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_graph_persists_stage_artifacts(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """各节点产出落盘：四个 stage 文件都应存在"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
+            {"urls": ["https://alipay.com/pricing"]},
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
             sample_competitive_analysis,
             sample_final_report,
@@ -159,16 +154,11 @@ class TestGraphIntegration:
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
         mock_http.get_json = AsyncMock(return_value={
-            "results": [{
-                "trackName": "支付宝", "formattedPrice": "免费",
-                "averageUserRating": 4.7, "userRatingCount": 20000,
-                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
-                "trackViewUrl": "https://apps.apple.com/app/id1",
-            }]
+            "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
 
         mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "支付宝 移动支付"
+        mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
         mock_parser.extract_meta.return_value = {}
 
         trace_writer = TraceWriter("graph-1", base_dir=tmp_path)
@@ -193,10 +183,11 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_build_graph_returns_node_trace(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """build_graph 返回 node_trace，记录路由决策序列"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "", raising=False)
+        monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
             {"competitor_type": "核心竞品", "reason": "test"},
+            {"urls": ["https://alipay.com/pricing"]},
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
             sample_competitive_analysis,
             sample_final_report,
@@ -215,16 +206,11 @@ class TestGraphIntegration:
         mock_http = MagicMock()
         mock_http.get = AsyncMock(return_value="<html>支付宝</html>")
         mock_http.get_json = AsyncMock(return_value={
-            "results": [{
-                "trackName": "支付宝", "formattedPrice": "免费",
-                "averageUserRating": 4.7, "userRatingCount": 20000,
-                "sellerName": "Ant", "description": "移动支付平台介绍" * 10,
-                "trackViewUrl": "https://apps.apple.com/app/id1",
-            }]
+            "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
 
         mock_parser = MagicMock()
-        mock_parser.extract_text.return_value = "支付宝 移动支付"
+        mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
         mock_parser.extract_meta.return_value = {}
 
         graph, node_trace = build_graph(llm=mock_llm, http=mock_http, parser=mock_parser)

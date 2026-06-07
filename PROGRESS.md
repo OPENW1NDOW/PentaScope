@@ -16,6 +16,53 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-08（晚）（作废 D+F 进度，切换到单 session 单线方案）
+- 完成（commit 2db622c：revert D+F + cherry-pick 保留资产）：
+  - **作废 D+F**：revert commit 508c56a（D+F 实现）+ a7408f6（D+F PROGRESS/DECISIONS 同步）。理由：原 plan 假设 D（Graph）+ F（Inspector）与 E（Writer）+ G（前端）跨 worktree 文件无冲突可并行，实际 E↔F / E↔D / E↔G 三条都是强契约依赖。worktree A 留下大量隐含接口假设（writer.py NotImplementedError 桩、builder.writer_node 的 pass、AnalysisState 字段路径、inspector 已写好的硬查路径），worktree B 接过这些假设继续做会处处踩雷
+  - **保留资产**：cherry-pick 进 master：
+    - `ef07717` E.19 5 套 normalizers（s1-s5 + _common）+ 25 个测试全绿（与 D+F 假设无关，消费的是 schemas/scenarios/，A+B+C 已定的契约）
+    - `bea03d2` Task 20/21 v2 设计文档 `docs/superpowers/specs/2026-06-08-task20-21-writer-orchestrator-design.md`（doubt-driven 双轮审过，含 1 critical + 5 major + 8 minor 待修订条目）
+  - **协作模型切换**：从「双 worktree 并行」切换到「单 session 单线」。Cooper 拍板理由：worktree A 完成开发后留下太多隐含接口假设，B 接手风险大于全部重做的代价
+  - **清理**：worktree-scenario-schemas-graph + worktree-scenario-writer-frontend 两个本地 worktree + 分支删除；远程同名分支可选删（push 历史保留作记录）
+- 进行中：本 session 起步推 v3 spec 修订 + D/E/F/G/H 重做
+- 下一步（按 v2 设计文档接手备忘的执行顺序，但单 session 串行）：
+  1. v3 spec 修订（`docs/superpowers/specs/2026-06-08-task20-21-writer-orchestrator-design.md` 的 1 critical + 5 major + 8 minor 升级到 v3）
+  2. E.20 prompts 拆文件 + 5 套 4 阶段 prompt
+  3. E.21 WriterOrchestrator 4 阶段编排实现
+  4. E.22 替换旧 WriterAgent 为薄封装
+  5. D 重做（state 字段 / recommender / builder 路由 / scenario_picker）
+  6. F 重做（inspector 按 scenario 分支硬查 + quality_score 三项加权）
+  7. G 重做（前端 5 场景渲染分支 + Plotly 图表）
+  8. H 端到端集成测试 + 手动验收
+- 阻塞：无
+- 安全提醒：无（本次纯 git 历史调整，无 key 引入）
+
+---
+
+## 2026-06-08（D+F 落地：graph recommender 路由 + inspector 5 套硬查 + quality_score 三项加权）【已作废，见 06-08 晚】
+- 完成（30 task plan 中 +5 个 task / 单 commit 508c56a / worktree-scenario-schemas-graph 分支）：
+  - **协作模型迁移**：把 worktree 方案从「项目自管 .worktrees/」迁到 Claude Code 原生模式（路径在 `.claude/worktrees/<name>/`，已被 `.claude/` 规则覆盖），加 `.worktreeinclude` 让新 worktree 自动复制 .env，PROGRESS 06-07 启动指引同步更新（commit fcd21eb）
+  - **D Step 0（A+B+C 遗留 followup 修复）**：A+B+C session 只删了 schemas 层 FinalReport，graph + agents 层（state.py / writer.py / inspector.py）还在 import 它，运行时全崩。本 commit 一次修齐：
+    - `src/graph/state.py` 改 import BaseReport + ScenarioInput + CompetitorRecommendations + Optional prior_report_data 字段
+    - `src/agents/writer.py` 改桩（保留 class WriterAgent 文件壳 + NotImplementedError），E 大类 WriterOrchestrator 实现后整文件重写
+    - `src/agents/inspector.py` 这道直接和 Task 23 合并（避免桩级中间态）
+  - **D Task 15**：AnalysisState 加 user_input(ScenarioInput) / competitor_recommendations(Optional) / prior_report_data(Optional dict) 字段
+  - **D Task 16**：新增 `src/agents/recommender.py`（S2 专用：search → LLM → CompetitorRecommendations）+ prompts.py 加 RECOMMENDER_SYSTEM；2 单测全绿
+  - **D Task 17**：`src/graph/builder.py` 加 recommender_node + `set_conditional_entry_point` 按 scenario 分支；S2 走 recommender → collector，其他场景直接 collector；writer_node 暂 pass（Cooper 决策 Q2=b：等 E 大类 WriterOrchestrator 接入再做真实产出）；inspector_node 加 None 兜底；删除 builder 内重复 quality_score 回填（已挪到 inspector）
+  - **D Task 18**：新增 `src/tools/scenario_picker.py`（SCENARIO_PICKER_SYSTEM + ai_pick_scenario async 函数）；前端接通由 G 大类（worktree-scenario-writer-frontend）负责；2 单测全绿
+  - **F Task 23**：inspector.py 重写为 _check_common + _check_s1..s5 dispatcher 模式；新增 `src/agents/quality_score.py` 实现 spec Part 4.5 三项加权（source_coverage 递归遍历 BaseModel 字段 + confidence_avg 数值化 high/medium/low + inspector_pass_rate 严重度加权和）；calc_quality_score 落到 metadata.quality_score + calculation_note；S1/S2 测试用现有 schema fixture（vendor_profiles 缺竞品 / market_sizing 全 unknown / dispatcher 路由 / LLM 畸形 issue 容错），S3/S4/S5 通过 dispatcher 路由测试覆盖（具体规则覆盖留 H 大类端到端，Cooper 决策 Q2=A 但优化测试范围 b 方案）；14 单测全绿
+  - **测试**：18 个新单测全绿（recommender 2 + scenario_picker 2 + inspector 14）；总 153 passed / 6 skipped (A+B+C 留的旧测试过渡 skip) / 2 xfailed (analyzer fixture)；ruff 全清
+  - 协作模型决策：本 worktree 只跑 inspector 单测，graph 端到端测试等 E 合回再跑（Cooper 决策 Q2=b 引出的边界澄清）
+- 进行中：D+F 已 push 远程分支 worktree-scenario-schemas-graph，本 session 收尾中（合 master + push 待执行）
+- 下一步：
+  1. 本 session 合 master + push 后，E+G session（worktree-scenario-writer-frontend）rebase 到新 master 再开干 E 大类 writer 4 阶段编排 + G 大类前端 5 场景渲染分支
+  2. E+G 完成合回后，跑 H 大类（5 场景端到端集成测试 + 手动验收）
+  3. H 大类时把 D+F 留下的 6 个 skipped 旧测试文件清理（test_writer/inspector/schemas/api/graph/trace_api 重写为 BaseReport 版本）
+- 阻塞：无
+- 安全提醒：无（本次仅 D+F 重构，未引入 key）
+
+---
+
 ## 2026-06-07（晚）（A+B+C 公共层落地：BaseReport + 5 场景 payload + ScenarioInput）
 - 完成（30 task plan 中 14 个 task / 4 commit / worktree-scenario-foundation 分支已合 master）：
   - **A 大类**（Task 1-5，commit 77ce4ca）：建立 BaseReport 通用骨架 + 公共 schema

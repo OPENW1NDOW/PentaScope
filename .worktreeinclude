@@ -1,0 +1,5 @@
+# 这些文件 .gitignore 排除、但新 worktree 必须带上才能跑通
+# 语法同 .gitignore（claude --worktree 自动按此清单复制）
+
+.env
+.env.local

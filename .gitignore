@@ -36,5 +36,4 @@ logs/
 # Runtime artifacts
 runs/
 
-# Git worktrees (本地多窗口并行开发用，不入库)
-.worktrees/
+# Claude Code worktrees 落在 .claude/worktrees/，已被上面的 .claude/ 规则覆盖

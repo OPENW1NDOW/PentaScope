@@ -40,8 +40,8 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
     - writer 单次 LLM 4-5K 字 vs 报告 7-8K 字目标 → Part 6 写 4 阶段编排方案（骨架→payload→narrative→合并，~8 次 LLM 调用）
     - AnalysisSection.section_type 漏列 S3/S4/S5 → 补 15 个枚举值
   - **协作模型固化**：Cooper（产品 PM）+ 我（研发负责人）。技术约束我承担，产品决策 Cooper 拍板，冲突时分 4 类处理（完全放弃/部分放弃/换思路/推迟）
-- 进行中：本 session 已调 writing-plans skill 出 task list（设计阶段终止）
-- 下一步（**新 session 开发阶段**，Cooper 拍板用 git worktree 并行 2 session）：
+- 进行中：本 session 已调 writing-plans skill 出 task list（设计阶段终止）；本 session 顺手把 worktree 方案从「项目自管 .worktrees/」迁移到「Claude Code 原生 worktree 模式」，加 .worktreeinclude 让新 worktree 自动带 .env，PROGRESS 同步更新启动指引
+- 下一步（**新 session 开发阶段**，Cooper 拍板用 Claude Code 原生 worktree 并行 2 session）：
 
   ### 新 session 启动指引
   1. **必读**（顺序）：
@@ -52,10 +52,15 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
   2. **跳读**（按需）：
      - 设计文档 Part 1（BaseReport）/ Part 2-3（S1+S2）/ Part 7-9（S3+S4+S5）—— 写哪块代码看哪块
      - `docs/superpowers/research/2026-06-07-report-templates-research.md` —— 写 prompt 时参考业界框架细节
-  3. **执行**：
-     - 用 git worktree 新建 2 个 worktree（参考 .gitignore 已忽略 .worktrees/）
+  3. **执行（Claude Code 原生 worktree 模式）**：
+     - **不要再手动 `git worktree add`**。改用 Claude Code 内置：每个 worktree 落在 `.claude/worktrees/<name>/`，分支自动叫 `worktree-<name>`，从 `origin/HEAD` 起步（干净状态）；`.claude/` 已整体进 .gitignore，无需额外忽略
+     - 启动方式（两个独立终端各跑一条）：
+       - 终端 1：`claude --worktree scenario-schemas-graph`
+       - 终端 2：`claude --worktree scenario-writer-frontend`
+     - `.worktreeinclude` 已加 `.env`，新 worktree 自动复制（无需手动 cp）
      - 按 task list 分大类并行：worktree A（Schema+Graph） / worktree B（Writer+前端）
      - 每个大类完成时跑测试 + commit（Cooper 决策 Q3=b）
+     - 退出 session 时按 keep（保留下次回来）/ remove（连未提交改动一起丢）选择；Cooper 一般选 keep 直到合回 master 后再 remove
 
   ### 关键约束（写代码前必读）
   - **协作模型**：Cooper 是产品 PM 决定做什么，Claude 是研发评估技术可行；冲突时分 4 类处理（完全放弃/部分放弃/换思路/推迟），不擅自决策

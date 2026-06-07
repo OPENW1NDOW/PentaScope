@@ -848,7 +848,7 @@ from pydantic import ValidationError
 from src.schemas.scenarios.s2 import (
     S2MarketEntryPayload, MarketSizing, MarketValue, FiveForces, Force,
     MarketPlayer, ConsumerSegment, Trend, EntryStrategy, Risk, Phase,
-    CompetitorRecommendations, RecommendedCompetitor, PESTEL,
+    CompetitorRecommendations, RecommendedCompetitor, PESTEL, PESTELFactor,
 )
 
 
@@ -891,7 +891,6 @@ def _make_minimal_s2_payload():
             tam=MarketValue(value_basis="unknown"),
             sam=MarketValue(value_basis="unknown"),
             som=MarketValue(value_basis="unknown"),
-            methodology="top_down",
         ),
         five_forces=FiveForces(
             artifact_id="ff1",
@@ -1233,7 +1232,7 @@ Expected: ImportError
 - [ ] **Step 3: 实现 src/schemas/scenarios/s4.py（按 spec Part 8.4 完整代码）**
 
 复制 spec Part 8.3 + 8.4 全部类到 s4.py。包含：
-- `S4MonitoringPayload`（含 3 个 model_validator：竞品名一致性 + 首次 baseline + 跨期变化）
+- `S4MonitoringPayload`（含 2 个 model_validator：竞品名一致性 + 首次 baseline）
 - `ReviewPeriod`（含 `prior_trace_id`、`newly_added_competitors`、`dropped_competitors`）
 - `FIATuple`（fact 必填，impact + act Optional）
 - `_BaseChange`（共享基类）+ `FeatureChange`/`PricingChange`/`MessagingChange`/`NewsEvent`/`OrgChange`（都继承 `_BaseChange + ArtifactBase`）

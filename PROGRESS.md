@@ -40,13 +40,33 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
     - writer 单次 LLM 4-5K 字 vs 报告 7-8K 字目标 → Part 6 写 4 阶段编排方案（骨架→payload→narrative→合并，~8 次 LLM 调用）
     - AnalysisSection.section_type 漏列 S3/S4/S5 → 补 15 个枚举值
   - **协作模型固化**：Cooper（产品 PM）+ 我（研发负责人）。技术约束我承担，产品决策 Cooper 拍板，冲突时分 4 类处理（完全放弃/部分放弃/换思路/推迟）
-- 进行中：执行 writing-plans skill（基于设计文档制定实现计划）
-- 下一步（本 session 内）：
-  1. writing-plans skill 出 task list（覆盖 schema 落码 / writer 重构 / scenario_input 改造 / graph 加 recommender 节点 / 5 套 prompt / 前端按 scenario 切表单）
-  2. build skill 实现，6/10 前交付完整 5 场景能跑
+- 进行中：本 session 已调 writing-plans skill 出 task list（设计阶段终止）
+- 下一步（**新 session 开发阶段**，Cooper 拍板用 git worktree 并行 2 session）：
+
+  ### 新 session 启动指引
+  1. **必读**（顺序）：
+     - PROGRESS.md 06-07 段（本段，了解协作模型 + 决策汇总）
+     - DECISIONS.md 06-07 章节（理解 R2 架构 / computed_field 派生 / 5 场景共骨架等关键决策）
+     - `docs/superpowers/specs/2026-06-07-scenario-schemas-design.md` Part 5 + Part 10 评审记录（看双模型审过的 41 条问题处理记录）
+     - `docs/superpowers/plans/2026-06-07-*.md` task list（writing-plans skill 产出的实现计划）
+  2. **跳读**（按需）：
+     - 设计文档 Part 1（BaseReport）/ Part 2-3（S1+S2）/ Part 7-9（S3+S4+S5）—— 写哪块代码看哪块
+     - `docs/superpowers/research/2026-06-07-report-templates-research.md` —— 写 prompt 时参考业界框架细节
+  3. **执行**：
+     - 用 git worktree 新建 2 个 worktree（参考 .gitignore 已忽略 .worktrees/）
+     - 按 task list 分大类并行：worktree A（Schema+Graph） / worktree B（Writer+前端）
+     - 每个大类完成时跑测试 + commit（Cooper 决策 Q3=b）
+
+  ### 关键约束（写代码前必读）
+  - **协作模型**：Cooper 是产品 PM 决定做什么，Claude 是研发评估技术可行；冲突时分 4 类处理（完全放弃/部分放弃/换思路/推迟），不擅自决策
+  - **R2 架构**：BaseReport + scenario discriminated union（不是 5 套独立 schema）
+  - **computed_field 派生**：weighted_scores / wave_position / mq_quadrant / quadrant / overall_score_pct / last_updated_at / full_statement_text / scenario / weight / overall_score_pct 全部 LLM 不填，代码计算
+  - **场景前缀枚举**：永远不出现裸 leader/challenger（用 wave_leader/mq_leader/market_challenger）
+  - **source_refs 协议**：禁止 source_urls/sources/evidence_url 命名分歧（除 FeatureScore.evidence_url 因特殊语义保留）
+  - **writer 4 阶段编排**（Part 6）：单次 LLM 4-5K 字 → 拆 8 次调用产 7-8K 字。失败局部重试，结构由代码透传
+  - **一步到位废除旧 schema**（无渐进过渡）：废除 FinalReport/ActionItem(s)/旧 ExecutiveSummary 4 段；前端按 metadata.schema_version 分支
 - 阻塞：无
 - 安全提醒：本 session 未涉及 API key
-- 设计文档/研究文档体量大但结构清晰，新 session 进来读 PROGRESS 这一段 + 跳读设计文档 Part 5 / Part 10 评审记录即可恢复上下文
 
 ## 2026-06-06（采集能力增强：接 Tavily 搜索源 + 移除 iTunes 同名污染源）
 - 完成（feat/collector-enhancement 分支，14 commits，三环境 139 测试全绿 + ruff 全清）：

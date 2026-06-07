@@ -16,6 +16,38 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-07（分场景输出报告：5 套场景 schema 设计 + 双模型 doubt-driven 审查）
+- 完成（设计阶段，未写代码）：
+  - **场景拆分**：从原"通用 4 Agent 报告"改为按使用目的拆 5 场景：S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位。Cooper 选 5 场景全做（选项 A）
+  - **架构决策**：R2（BaseReport 通用骨架 + scenario discriminated union），不是 R1 的 5 套独立 schema。理由：调研显示 13 通用元素是 5/5 咨询机构（McKinsey/BCG/Bain/Gartner/Forrester）共识
+  - **前置研究**：4 个并行 agent 调研（S1+S5 / S2+S3 / S4 / 通用骨架），落盘 `docs/superpowers/research/2026-06-07-report-templates-research.md`（约 600 行，覆盖 Forrester Wave/Gartner MQ/McKinsey 行业报告/CB Insights/Simon-Kucher/OSCOM/IndustryLens 标杆 + 9 个业界框架）
+  - **设计文档**：`docs/superpowers/specs/2026-06-07-scenario-schemas-design.md`（约 1100 行，11 Part）
+  - **第 1 批 doubt-driven 双模型审查（BaseReport + S1 + S2）**：单模型 + codex(gpt-5.5) 跨模型对抗审查，合并去重 19 条问题。Cooper 拍板 12 条产品决策（含 SWOT 5 场景全保留 / 雷达 S1+S5 都保留 / S2 Top 5 / 删 BattleCard / 章节数 5-6 / timeline+priority 双字段 / JTBD 简化只留 JobStatement / Methodology 1000+ 字 / PESTEL 留结构 + Optional / competitive_alternatives 推迟 / consumer_segments Optional / 报告字数 7000-8000）
+  - **第 2 批 doubt-driven 双模型审查（S3 + S4 + S5）**：合并去重 22 条问题。Cooper 拍板 5 条产品决策：
+    - 13a：S4 prior_trace_id 保留 + 首次降级模式（schema_version 字段 + writer 校验 prior 报告 scenario）
+    - 14a+d：S5 PerceptualMap 加 confidence + score_rationale 必填 + display_watermark
+    - 15a：S3 ObservedCompetitorTier 每条 source_refs 必填（防价格幻觉）
+    - 16b：S5 简化版 MQ 二轴总分（execute_score + vision_score + computed mq_quadrant），不拆 15 子项
+    - 17a：S4 FIATuple fact 必填，impact + act Optional（防弱信号编造行动）
+  - **关键技术修复**（doubt-driven 暴露的真实问题）：
+    - discriminator 字段三处不一致 → BaseReport.scenario 改 computed_field 派生 + model_validator 校验
+    - 旧 schema 废除清单缺失 → Part 0 显式列出 FinalReport/SwotEntry/RadarScore 等去向
+    - S2 必填字段成幻觉发动机 → MarketValue 加 amount Optional + value_basis + currency + unit + year + geography
+    - 跨场景 leader/challenger 语义碰撞 → 加场景前缀 wave_position(S1) / mq_quadrant(S5) / market_role(S2)
+    - evidence_url 软强制 → score=2 必填 evidence_url、ObservedCompetitorTier 每条 source_refs 必填
+    - S5 model_validator bug（map_names 重复 union 自身 + canvas_names 未用 + is_self 未约束唯一）→ 整段重写
+    - S5 ERRCGrid raise_ alias 序列化坑 → 改名 raise_level
+    - writer 单次 LLM 4-5K 字 vs 报告 7-8K 字目标 → Part 6 写 4 阶段编排方案（骨架→payload→narrative→合并，~8 次 LLM 调用）
+    - AnalysisSection.section_type 漏列 S3/S4/S5 → 补 15 个枚举值
+  - **协作模型固化**：Cooper（产品 PM）+ 我（研发负责人）。技术约束我承担，产品决策 Cooper 拍板，冲突时分 4 类处理（完全放弃/部分放弃/换思路/推迟）
+- 进行中：执行 writing-plans skill（基于设计文档制定实现计划）
+- 下一步（本 session 内）：
+  1. writing-plans skill 出 task list（覆盖 schema 落码 / writer 重构 / scenario_input 改造 / graph 加 recommender 节点 / 5 套 prompt / 前端按 scenario 切表单）
+  2. build skill 实现，6/10 前交付完整 5 场景能跑
+- 阻塞：无
+- 安全提醒：本 session 未涉及 API key
+- 设计文档/研究文档体量大但结构清晰，新 session 进来读 PROGRESS 这一段 + 跳读设计文档 Part 5 / Part 10 评审记录即可恢复上下文
+
 ## 2026-06-06（采集能力增强：接 Tavily 搜索源 + 移除 iTunes 同名污染源）
 - 完成（feat/collector-enhancement 分支，14 commits，三环境 139 测试全绿 + ruff 全清）：
   - **采集配置增强**：P1 超时 20→45s、SEARCH_TOP_N 3→5、新增 SEARCH_PROVIDER/TAVILY_API_KEY 配置

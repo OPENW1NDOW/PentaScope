@@ -15,6 +15,48 @@
 
 ---
 
+## 2026-06-07: 报告 schema 按使用场景拆分（5 场景全做，R2 架构）
+- 选择：废除原通用单一 FinalReport schema，改为按竞品分析使用目的拆 5 个场景（S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位），共享 BaseReport 通用骨架（discriminated union），完整 5 场景设计 + 7000-8000 字咨询级深度
+- 理由：原通用 schema 的 4 段执行摘要 + 顶层 SWOT/雷达/功能矩阵字段集只对 S1 成立，对 S2（无产品调研）/S3（定价细致活）/S4（变更追踪）/S5（定位象限）都失效。调研显示业界（McKinsey/BCG/Bain/Gartner/Forrester）做竞品分析报告会按使用目的分形态——5 场景拆分既贴业界惯例又能讲"按场景分流的多 Agent 工作模板"答辩故事
+- R2（BaseReport 通用骨架 + payload）vs R1（5 套独立 schema）：调研显示 13 通用元素是 5/5 咨询机构共识，R2 让通用部分一处定义改一处生效，writer 编排和前端渲染都能共用大半逻辑。R1 干净分离但代码 5 倍重复
+- 备选 R1（排除：5 套独立 schema 通用部分重复度高、维护成本翻倍、答辩故事弱于 R2 的"共性抽象 + 场景定制"）；备选只做 S1（排除：Cooper 选 5 场景全做做出完整答辩故事）
+
+## 2026-06-07: BaseReport.scenario 改 computed_field 派生（修原 discriminator 三处不一致）
+- 选择：移除独立 `scenario` 字段，改为 `@computed_field` 从 `scenario_payload.scenario_type` 派生；加 `model_validator` 强制 `metadata.scenario == scenario_payload.scenario_type`
+- 理由：doubt-driven 双模型审查发现原设计有 3 处独立 scenario 字段（顶层 + metadata + payload），LLM 可能输出三处不一致（如顶层 S1 / metadata S2 / payload.scenario_type S3），Pydantic 不会报错但业务层错路由
+- 备选：3 处全保留 + 全 model_validator（排除：3 处校验冗余）；只删 metadata.scenario（排除：metadata 是 trace_writer 落盘骨架，不能去掉）
+
+## 2026-06-07: 5 场景共享 13 通用骨架元素 + ExecutiveSummary 5 段式
+- 选择：基于 McKinsey/BCG/Bain/Gartner/Forrester 5/5 共识，BaseReport 含 13 通用字段（title/subtitle/at_a_glance/executive_summary/background/scope/methodology/key_findings/analysis_sections/swot/conclusions/recommendations/appendix）。ExecutiveSummary 用 5 段固定子字段（context/core_thesis/key_findings_brief/implications/path_forward）
+- 理由：原 4 段（what_competitors_did_right/wrong/our_opportunities/next_steps_summary）只对 S1 成立——S2 无"我们"，S3 4 段语义不对口，S5 谈定位拥挤区不谈竞品对错。5 段 Context/Thesis/Findings/Implications/Path 是业界跨场景共识范式
+- 备选：4 段保留只在 S1 用（排除：每场景用不同摘要框架，前端渲染逻辑爆炸）
+
+## 2026-06-07: SWOT 进 BaseReport 通用骨架，5 场景全保留（决策 1）
+- 选择：Swot 升到 BaseReport 通用层，5 场景每份报告都含 SWOT
+- 理由：SWOT 是非技术评委一眼能懂的视觉抓手 + 业界经典框架；前端已有 4 象限渲染逻辑沉淀；5 场景产 SWOT 时各自维度不同（S1 功能维度 / S2 市场维度），用 SwotEntry.dimension 自由 str 承接
+- 备选：删 SWOT（排除：失去 demo 视觉抓手）；只在 S5 保留（排除：放弃了 4 场景的 SWOT 可视化）
+
+## 2026-06-07: 雷达图 S1 多边形 / S5 二维散点（同字段不同含义，决策 2）
+- 选择：S1 用 5 维多边形雷达（feature_breadth/usability/cost_effectiveness/stability/design_quality 各 0-5）；S5 用二维散点 PerceptualMap（用户选两条 axis）
+- 理由：两者是不同图表语义——S1 雷达是"产品维度评分"（多边形），S5 PerceptualMap 是"市场定位坐标"（散点）。共用一个 schema 会语义错乱
+- 备选：S5 复用 S1 雷达（排除：5 维产品评分不能表达"易用性 vs 深度功能"这种二维定位）；都不做（排除：删核心可视化产物）
+
+## 2026-06-07: BattleCard 整块从 S1 移除（决策 4）
+- 选择：S1 schema 不含 BattleCard 整块（含 LandmineQuestion / Objection / proof_points / typical_deal_size 等 10 子模型）
+- 理由：双模型 doubt-driven 一致认定为 YAGNI——4 个核心字段（typical_deal_size 真实成交价 / objections 客户异议库 / landmine_questions 销售引导 / proof_points 真实背书）公开网页根本拿不到（这些是 CRM/录音/销售实战数据），强制必填会让 LLM 编造，违反信息溯源（35% 评分硬指标）。另 S1 P0+P1（vendor_profiles/feature_matrix/radar/JTBD/roadmap）已能撑起 Forrester Wave 风格完整报告
+- 备选：收窄保留 4 个有源字段（排除：双模型都说性价比不划算，工作量超出收益）；全保留 + Optional 兜底（排除：LLM 仍会编 + inspector 难辨真假）
+
+## 2026-06-07: writer 重构为 4 阶段编排（突破单次 LLM 4-5K 字上限）
+- 选择：writer 从单次 LLM 调用改为 4 阶段编排：①骨架（title/exec_summary/key_findings/recommendations）②payload 结构化产物 ③逐 section 写 narrative ④代码合并 + computed_field + validator + quality_score。整体 ~8 次 LLM 调用产 7000-8000 字报告
+- 理由：Doubao-Seed-2.0-lite 单次稳定输出上限 4-5K 中文字（含其他 schema 字段），无 JSON mode 越深嵌套越易局部损坏。分阶段调用每次输入小、输出小、错率低；任一节失败局部重试不阻塞其他章节；computed_field/SWOT/feature_matrix 由代码透传保 100% 结构不丢
+- 已知 trade-off：单次分析 LLM 调用从 4 增到 ~10-15、整体耗时从 5-8 分钟增到 12-18 分钟。Cooper 选 demo 用成功 trace 现成报告即可，不要求现场实时跑
+- 备选：单次 LLM 产整份报告（排除：稳定不到 7000 字 + JSON 损坏率高）；分章节 5+5+5 等量调用（排除：浪费 token 预算）
+
+## 2026-06-07: 协作模型固化（Cooper 产品 / Claude 研发）
+- 选择：明确两人角色——Cooper（产品 PM）决定做什么/优先级/答辩故事；Claude（研发）评估技术可行性/字段命名/Pydantic 模式。冲突时分 4 类处理：完全放弃 / 部分放弃 / 换思路 / 推迟
+- 理由：之前我多次擅自替 Cooper 做产品决策（如默认丢 SWOT/雷达图/选 BattleCard P2），doubt-driven 抓不到这类问题（technical 而非 product）。固化角色避免我再混淆
+- 落地：未来设计阶段我必须主动列产品决策清单（abc 选项 + 标注技术约束），让 Cooper 拍板；技术问题（命名/约束/validator）我自己处理但 RECONCILE 时透明化记录在评审章节
+
 ## 2026-06-06: 移除 iTunes 专源（修正 06-01「数据源含 iTunes」）
 - 选择：删除 ItunesSource 及其 category 路由机制（build_pro_sources/normalize_category）；采集只保留 SerpAPI/Tavily 搜索主线
 - 理由：iTunes Search API 按关键词搜索会带回同名/相近无关 App（实测搜「飞书」带出豆包、千问，搜「语雀」带出 flomo、石墨），且代码无差别将三条结果全并入分析语料，污染结论（analyzer 可能拿豆包数据当飞书分析）。其当初引入的三类价值中，定价/描述已被 Tavily 抓官网取代（飞书抓到 7 个真实套餐 tier，远超 iTunes 的「免费」一条），仅剩 App 评分是独家——但评分一项不值得背同名污染风险。且 iTunes 仅对软件类竞品有效，硬件竞品用不上。将来确需 App 评分可从 git 历史恢复

@@ -35,3 +35,6 @@ logs/
 
 # Runtime artifacts
 runs/
+
+# Git worktrees (本地多窗口并行开发用，不入库)
+.worktrees/

@@ -16,6 +16,20 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-07（弃用 SerpAPI：搜索源单 provider 化）
+- 完成（worktree-drop-serpapi 分支，9 commits 含 spec+plan）：
+  - 走 brainstorming → doubt-driven 单模型 17 条 + 跨模型 Codex 20 条审查 → RECONCILE 9 actionable + 3 产品决策（PD-1 不补 soft-404 测试、PD-2 6-8 commit、PD-3 2.5-3.5h）→ writing-plans → executing-plans
+  - 删除 SerpApiSource 类（28 行）+ SEARCH_API_KEY/SEARCH_PROVIDER/PICK_LLM_TIMEOUT/MAX_FETCH_CONCURRENCY/_provider_env 5 个配置 + collection_pipeline 的 _llm_pick/_rule_pick/_fetch_clean/_fetch_with_backfill 四方法（共 ~115 行生产代码）+ 构造器塌缩为单 search_source 参数
+  - conftest 锁 provider 的 fixture 改名 shield_local_env（屏蔽本地 .env 的 TAVILY_API_KEY 污染）
+  - 集成测试改造：fixture 加 TAVILY_API_KEY="K"、LLM mock 序列删 _llm_pick 步、mock_http 替换 get_json 为 post_json、删过时的 SEARCH_PROVIDER monkeypatch
+  - 单测改造：test_sources.py 删 6 个 test_serpapi_*；test_collection_pipeline.py 删 12 个 SerpAPI 路径专项测试，重写为 5 个 Tavily 路径测试；test_config.py 删 SEARCH_API_KEY/SEARCH_PROVIDER 断言；test_http_client.py 数据 URL 通用化
+  - .env.example 补 TAVILY_API_KEY；CLAUDE.md 同步 3 处架构描述
+  - **125 测试通过**（从 139 减 14：删 6 SerpAPI source + 简化 12 pipeline + 删 1 SEARCH_PROVIDER + 改 reconciled 已计入）；**ruff 全清**；集成测试 11/11 全过
+- 进行中：worktree-drop-serpapi 合并回 master
+- 下一步：接主战场 30 task 分场景报告（worktree-A scenario-reports）
+- 阻塞：无
+- 安全提醒：无（本次重构仅删代码、不引入新 key）
+
 ## 2026-06-07（分场景输出报告：5 套场景 schema 设计 + 双模型 doubt-driven 审查）
 - 完成（设计阶段，未写代码）：
   - **场景拆分**：从原"通用 4 Agent 报告"改为按使用目的拆 5 场景：S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位。Cooper 选 5 场景全做（选项 A）

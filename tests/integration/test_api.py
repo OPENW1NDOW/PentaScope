@@ -15,7 +15,6 @@ class TestAPI:
 
     @pytest.mark.asyncio
     async def test_analyze_returns_report(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},

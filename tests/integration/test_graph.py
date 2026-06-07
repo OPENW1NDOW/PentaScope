@@ -24,7 +24,6 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_full_graph_run(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """端到端：完整图能跑通并返回 report，feedback.passed=True"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
@@ -78,7 +77,6 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_rejection_triggers_retry(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """质检不通过时打回 writer 后重试，retry_count 至少 +1 且最终 passed=True"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
@@ -131,7 +129,6 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_graph_persists_stage_artifacts(self, monkeypatch, tmp_path, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """各节点产出落盘：四个 stage 文件都应存在"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
@@ -184,7 +181,6 @@ class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_build_graph_returns_node_trace(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
         """build_graph 返回 node_trace，记录路由决策序列"""
-        monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},

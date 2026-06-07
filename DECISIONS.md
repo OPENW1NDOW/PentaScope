@@ -15,7 +15,21 @@
 
 ---
 
-## 2026-06-07: 报告 schema 按使用场景拆分（5 场景全做，R2 架构）
+## 2026-06-07（晚）: A 大类中间态破坏的处理策略——治本清理 + 过渡 skip
+- 选择：A 大类重写 `src/schemas/__init__.py` + `report.py` 时，对依赖旧类（FinalReport/CompetitorInput）但属于 D-G 大类范围的文件，采取**两层治本策略**：
+  - **`__init__.py`**：直接清掉旧类暴露（不留 `FinalReport = None` 之类的占位别名）—— 和 plan "废除旧 FinalReport 一步到位"的设计一致，避免技术债积累
+  - **6 个旧测试文件**（test_writer/inspector/schemas/api/graph/trace_api）：module-level `pytest.skip(allow_module_level=True)`，文件内容只留 skip + 注释（不留 dead code）；分别注明会在 D/E/F 大类哪个阶段重写
+  - **analyzer 2 测试**：xfail（fixture 用旧 SwotEntry 短中文不符合新 min_length=10），E 大类 analyzer 重写时一起修
+- 理由：plan 设计了"中间态破坏"是接受的（"废除旧 FinalReport 一步到位"）。如果留兼容占位，D-G session 写代码时容易误以为占位是真实可用的，造成更隐蔽的 bug。skip + 注释比 dead code 干净，git history 保留旧测试供后续重写参考
+- 备选：① `FinalReport = BaseReport` 别名占位（排除：B 大类 union 接通后会语义不一致）；② 在 ruff 配置中给旧测试文件免 E402（排除：dead code 越拖越坏）；③ 直接删旧测试文件（排除：丢失重写参考）
+- 影响：A 大类完成时 pytest collection 阶段会跳过 6 个文件，total 106 passed / 6 skipped / 2 xfailed / 0 failed。skip 标记必须在 D-F 大类 inspector/writer/graph 重写时一并去除并写新测试，否则将永久跳过覆盖
+
+## 2026-06-07（晚）: scenario_payload union import 放报告文件顶部（不延后 import）
+- 选择：`src/schemas/report.py` 顶部直接 `from src.schemas.scenarios.{s1..s5} import ...`，BaseReport 类放文件底部直接用
+- 理由：原 plan 写"BaseReport 在 Task 11 末尾追加 union import"会在文件中部出现 module-level import，触发 ruff E402；而 scenarios 包只依赖 common（验证过无循环），可以安全提到顶部。这样 ruff 干净 + import 集中可读
+- 备选：① 文件中部 import + `# noqa: E402` 抑制（排除：ruff 警告抑制是逃避，不是修复）；② BaseReport 放独立文件（排除：拆分代价大于收益，BaseReport 必须知道 5 场景才能组 union）
+
+
 - 选择：废除原通用单一 FinalReport schema，改为按竞品分析使用目的拆 5 个场景（S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位），共享 BaseReport 通用骨架（discriminated union），完整 5 场景设计 + 7000-8000 字咨询级深度
 - 理由：原通用 schema 的 4 段执行摘要 + 顶层 SWOT/雷达/功能矩阵字段集只对 S1 成立，对 S2（无产品调研）/S3（定价细致活）/S4（变更追踪）/S5（定位象限）都失效。调研显示业界（McKinsey/BCG/Bain/Gartner/Forrester）做竞品分析报告会按使用目的分形态——5 场景拆分既贴业界惯例又能讲"按场景分流的多 Agent 工作模板"答辩故事
 - R2（BaseReport 通用骨架 + payload）vs R1（5 套独立 schema）：调研显示 13 通用元素是 5/5 咨询机构共识，R2 让通用部分一处定义改一处生效，writer 编排和前端渲染都能共用大半逻辑。R1 干净分离但代码 5 倍重复

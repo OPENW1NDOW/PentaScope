@@ -16,7 +16,40 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
-## 2026-06-07（分场景输出报告：5 套场景 schema 设计 + 双模型 doubt-driven 审查）
+## 2026-06-07（晚）（A+B+C 公共层落地：BaseReport + 5 场景 payload + ScenarioInput）
+- 完成（30 task plan 中 14 个 task / 4 commit / worktree-scenario-foundation 分支已合 master）：
+  - **A 大类**（Task 1-5，commit 77ce4ca）：建立 BaseReport 通用骨架 + 公共 schema
+    - `src/schemas/common.py` 新建 — SourceRef / DataSource / ArtifactBase / Revision / Author / Exhibit
+    - `src/schemas/report.py` 重写 — ExecutiveSummary 5 段式（替代旧 4 段）/ ReportScope / Methodology（min 200 字）/ Finding / AnalysisSection（28 个 section_type Literal 枚举）/ Recommendation / Swot / SwotEntry / Appendix / ReportMetadata（含 quality_score Optional 区分"未质检"与"质检 0 分"）
+    - `src/schemas/analysis.py` 删 SwotEntry/Swot/RadarScore/RadarDimensions/FeatureMatrixEntry，Swot 改从 report import 复用，feature_matrix/radar_scores 暂用 list[dict] 占位
+    - `src/schemas/__init__.py` 废除 FinalReport 等旧类暴露
+    - 6 个旧测试文件（test_writer/inspector/schemas/api/graph/trace_api）module-level skip，待 D-G 重写；analyzer 2 测试 xfail
+  - **B 大类**（Task 6-11，commit b30cfd7，+1905 行）：5 场景 payload + BaseReport union 接通
+    - `src/schemas/scenarios/s1.py` — S1 FeatureIterationPayload（vendor_profiles + feature_matrix 加权评分 computed_field + 5 维雷达 + JTBD JobStatement + roadmap），含 `_check_competitor_consistency` validator（vendor / radar / matrix 竞品名一致）
+    - `src/schemas/scenarios/s2.py` — S2 MarketEntryPayload（TAM/SAM/SOM 含 value_basis 防幻觉 + Five Forces 三档枚举 + MarketPlayer 单一 source of truth + entry_strategy + recommender 产出 CompetitorRecommendations + PESTEL 默认 None）
+    - `src/schemas/scenarios/s3.py` — S3 PricingStrategyPayload（GBB packaging 强制 ==1 个 is_recommended + position_uniqueness + ObservedCompetitorTier 每条 source_refs 必填防价格幻觉 + WTP proxy 强制 confidence=low + RecommendedPriceTier annual ≤ monthly×12 + PricingPageAudit 8 法则 + computed overall_score_pct）
+    - `src/schemas/scenarios/s4.py` — S4 MonitoringPayload（review_period 含 prior_trace_id + FIATuple fact 必填 / impact+act Optional + 5 类 _BaseChange + ArtifactBase 多继承 + MonitoringThreat computed quadrant + 活体 Battlecard），含 `_check_monitored_competitor_consistency` 与 `_check_first_review_baseline`（首次监控全 is_baseline=True + trends 全 None）
+    - `src/schemas/scenarios/s5.py` — S5 PositioningPayload（MQ 二轴评分 + computed mq_quadrant + Perceptual Map 含 confidence/score_rationale 必填 + display_watermark + Strategy Canvas factor key 完整性校验 + ERRC raise_level 改名 + Positioning Statement 含 confidence 必填 + computed full_statement_text 带 [AI 推断版本] 水印）
+    - `src/schemas/report.py` 接通 BaseReport scenario_payload Annotated discriminated union（discriminator='scenario_type'）+ scenario computed_field + `_check_scenario_consistency`（强制 metadata.scenario == scenario_payload.scenario_type）
+  - **C 大类**（Task 12-14，commit b412b0b）：ScenarioInput + 前端按场景切表单
+    - `src/schemas/input.py` ScenarioInput 替代 CompetitorInput（按 scenario 分支校验：S2 必有 industry，其他场景必有 competitors + our_product_name）；CompetitorInput 保留为别名兼容
+    - `src/api/schemas.py` AnalysisRequest 改为承载 ScenarioInput 字段，含 to_scenario_input()
+    - `src/api/routes.py` 改用 request.to_scenario_input()，meta 落盘扩展输入字段（scenario / industry / our_product_name / prior_trace_id）
+    - `src/frontend/app.py` 输入区按 scenario 切表单（S2 行业必填 + 选填竞品；其他场景必填竞品 + 我方产品；S4 加 prior_trace_id 选填），按场景做客户端校验
+  - **plan 修订**（commit 70bd8cc）：扫 spec 发现 plan 与 spec 3 处不一致并修
+    - Task 7 imports 补 PESTELFactor
+    - Task 7 测试 fixture 删 MarketSizing.methodology（spec MarketSizing 无该字段）
+    - Task 9 描述：S4 顶层 model_validator 数量 3→2（spec 只有竞品名一致性 + 首次 baseline，无"跨期变化"）
+  - **测试**：50 个新 schema 单测全绿（common 7 + base_report 12 + s1-s5 各 6-7 + input 6）；总 145 passed / 6 skipped (旧测试过渡 skip) / 2 xfailed (analyzer fixture) / 0 failed；ruff 全过
+  - **合并 master**：worktree-scenario-foundation 分支 fast-forward 到 master（fcd21eb → b412b0b，4 commit 线性历史），push origin master 完成；远程 worktree 分支已 push 留存
+  - **后续 worktree rebase**：scenario-schemas-graph 与 scenario-writer-frontend 两个 worktree 已 rebase 到 master，HEAD 都在 b412b0b，可基于此跑 D-G
+- 进行中：无（session1 任务结束）
+- 下一步：开 D+F session 跑 D 大类 graph 改造（recommender 节点 + scenario 路由 + AnalysisState 加场景字段）+ F 大类 inspector 按 scenario 分支硬查；并行开 E+G session 跑 E 大类 writer 4 阶段编排 + G 大类前端 5 场景渲染分支
+- 阻塞：无
+
+---
+
+
 - 完成（设计阶段，未写代码）：
   - **场景拆分**：从原"通用 4 Agent 报告"改为按使用目的拆 5 场景：S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位。Cooper 选 5 场景全做（选项 A）
   - **架构决策**：R2（BaseReport 通用骨架 + scenario discriminated union），不是 R1 的 5 套独立 schema。理由：调研显示 13 通用元素是 5/5 咨询机构（McKinsey/BCG/Bain/Gartner/Forrester）共识

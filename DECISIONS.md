@@ -15,6 +15,27 @@
 
 ---
 
+## 2026-06-08（晚 / v3 spec）: writer 4 阶段编排 v2 → v3 修订（双轮 doubt-driven 复审后 28 条）
+- 选择：保持 v2 已锁定的 18 条决策（C1-C9 + Q2 + P2-P3 + M1-M10），叠加 v3 新增的 28 条 reconciled 修订（11 critical + 12 major + 5 minor）。v3 spec 长度从 v2 的 433 行扩到 1014 行，新增「Pre-flight: master 适配」章节、18 处 `[v3-RXX]` 标记的修订段、完整 v3 修订日志表
+- 理由（产品决策部分，6 条）：
+  - **R-02 writer raise 路径选 c**：复用既有反馈闭环语义（writer raise → builder 外层 try/except → RejectionFeedback 注入 → inspector should_continue）。备选 a (内部 try/except 返回 placeholder) 让幽灵报告过校验、备选 b (fail-fast) 与课题"反馈闭环"评分项冲突
+  - **R-05 熔断 18**：6-section × 2 重试 + phase1/2 = 16 次最坏路径，加 2 个安全荧丝防 LLMClient 内部 JSON retry。备选 b (20) 太宽容遮蔽 bug，备选 c (分 phase budget) 代码复杂度上升不值得
+  - **R-14 S3/S4 source_refs min=1**：无来源则不生成该条目（prompt + normalizer 双防护）。备选 b (改 schema 降为 min=0) 破坏 A+B+C 已锁定的"防幻觉"硬约束、备选 c (允许 placeholder URL) 06-04 已被判为背信溯源设计
+  - **R-19 scope.competitors S2 union**：union 全部去重 by name 用户在前。备选 b (只用 recommender) 用户填写的"重要对手"会丢、备选 c (只用用户填) 与 vendor_profiles 不对称
+  - **R-21 outline 单次调用 + 全字段约束**：保持单次调用 LLM，prompt 内枚举所有 BaseReport 必填字段（19 个）+ 长度约束。备选 b (拆 1a+1b) 调用次数 +1 熔断阈值还要再调高、备选 c (长文本走 phase 3 sections) 字段语义错位
+  - **R-22 confidence_level vs quality_score**：二者独立、不交叉限制，仅 spec 加语义说明（数据采集面 vs 报告内容面）。允许 high+0.3 / low+0.8 这种"采集与内容质量分离"的报告。备选 b (强制压档) 破坏 writer/inspector 职责边界
+- 备选（整体方案）：
+  - 备选 A：信任接手备忘 14 条标题、跳过重审直接改 v3 → 排除：原审查证据链已丢，盲改风险大；且重审实际抓到 28 条（多 14 条），证明备忘信息不全
+  - 备选 B：只修 v2 复查的 1 critical（C3）、其他全推迟 → 排除：跨模型独占发现 R-01（CompetitorProfile.source_urls 不存在）即必修 critical，推迟会让 writer 第一行就 AttributeError
+- 影响：
+  - Task 20/21 落地拆分从 v2 的 11 个 task 扩展到 v3 的 12 个 task（多了 Task 21.0 master 适配前置组：21.0a builder 异常路由 / 21.0b state.py FinalReport 修复 / 21.0c builder 旧覆盖删除 / 21.0d config 新配置项 / 21.0e normalizer 5 套升级）
+  - 测试用例从 13 → 16（v3 加 3 个：S2 recommender 强制覆盖 / S4 prior diff 前置注入 / builder writer_node 异常路由）
+  - 配置项新增 2 个：`WRITER_MAX_LLM_CALLS=18` + `WRITER_NARRATIVE_CONCURRENCY=3`
+  - 新依赖：`asyncio.Semaphore` + `uuid.uuid4` 在 writer_orchestrator 内
+- 跨模型审查独占价值的实证：Codex 抓到 R-01（CompetitorProfile.source_urls 字段不存在），Explore agent 完整漏掉。这条贯穿 v2 phase 1/2/4 的 4-5 处使用，是必修 critical。证明二轮 doubt-driven 不是冗余
+
+---
+
 ## 2026-06-08（晚）: 作废 D+F 进度，协作模型从「双 worktree 并行」切换到「单 session 单线」
 - 选择：revert D+F 已 push 到 origin/master 的两个 commit（508c56a 实现 + a7408f6 文档同步），合并为单 commit 2db622c；cherry-pick 保留 worktree B 的 normalizers（ef07717）+ v2 设计文档（bea03d2）；丢弃 fc36e01 接手备忘；删除两个 worktree 及本地分支；后续 D/E/F/G/H 在 master 单 session 串行重做
 - 理由：原 plan 假设 D+F 与 E+G 跨 worktree 文件无冲突可并行，但只看了"写文件层面"未看"接口契约层面"。实际三条强依赖：

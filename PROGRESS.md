@@ -16,6 +16,36 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-08（晚 / v3 spec）（双轮 doubt-driven 复审 v2 → v3 spec 落盘）
+- 完成（单 session 单线，第二轮 doubt-driven）：
+  - **重新跑 doubt-driven 复审 v2 spec**（接手备忘里 v2 复查的 14 条只有标题摘要，原审查记录已随 worktree B 丢失，按 Cooper 决策"退后一步重审"）：
+    - 单模型 Explore agent 自审：18 条（8 critical + 7 major + 3 minor），现场翻 master 代码核实
+    - 跨模型 Codex (azure_openai/gpt-5.5) 复审：22 条（10 critical + 10 major + 2 minor），独立审查
+    - 合并去重得 **28 条 reconciled**（11 critical + 12 major + 5 minor）
+  - **关键跨模型独占发现**：Codex 抓到的 `CompetitorProfile.source_urls` 字段**根本不存在**（v2 spec 全文 4-5 处用错），Explore agent 漏掉。这条贯穿 phase 1/2/4，验证了双轮 doubt-driven 价值
+  - **Cooper 拍板的 6 个产品决策**（其余 22 条为技术对错由 Claude 处理）：
+    - R-02 writer raise 路径：c (writer 内部 raise → builder 外层 try/except → 注入 RejectionFeedback → inspector should_continue 路由)
+    - R-05 熔断阈值：a (调到 18，1 个安全荧丝)
+    - R-14 S3/S4 source_refs min=1 冲突：a (无来源则不生成该条目，prompt + normalizer 双防护)
+    - R-19 scope.competitors S2：a (union 全部，去重 by name，用户在前)
+    - R-21 outline 字段约束：a (保持单次调用，prompt 补全所有必填字段)
+    - R-22 confidence_level vs quality_score：a (不交叉限制，仅文档加语义说明)
+  - **v3 spec 落盘**：`docs/superpowers/specs/2026-06-08-task20-21-writer-orchestrator-design.md` 从 v2 433 行扩到 v3 1014 行，含 83 处 `[v3-RXX]` 修订标记 + 完整 v3 修订日志表
+  - **v3 新增章节**：「Pre-flight: master 适配」明确写出 5 个 master 适配前置任务（Task 21.0a-e），动 writer_orchestrator 之前必须先把这些做完否则接通不了 graph
+  - **测试用例从 13 → 16**（v3 加 3 个）：phase 2 S2 recommender 强制覆盖 / phase 2 S4 prior diff 前置注入 / builder.writer_node 异常路由
+- 进行中：v3 spec 已落盘，等 commit + push
+- 下一步：
+  1. v3 spec commit + push origin master
+  2. Task 20.0 LLMClient.call_json 加 max_tokens 参数
+  3. Task 20.1 prompts 目录搬迁（保留旧 WRITER_SYSTEM 兼容）
+  4. Task 20.2-20.4 5 套 prompt（outline / payload / narrative）
+  5. Task 21.0a-e master 适配前置（builder writer_node 异常路由 / state.py 修 import / config 加 WRITER_MAX_LLM_CALLS / normalizer 5 套升级）
+  6. Task 21.1-21.6 WriterOrchestrator 主体 + 16 单测
+- 阻塞：无
+- 安全提醒：本次纯设计文档修订，无 key 引入
+
+---
+
 ## 2026-06-08（晚）（作废 D+F 进度，切换到单 session 单线方案）
 - 完成（commit 2db622c：revert D+F + cherry-pick 保留资产）：
   - **作废 D+F**：revert commit 508c56a（D+F 实现）+ a7408f6（D+F PROGRESS/DECISIONS 同步）。理由：原 plan 假设 D（Graph）+ F（Inspector）与 E（Writer）+ G（前端）跨 worktree 文件无冲突可并行，实际 E↔F / E↔D / E↔G 三条都是强契约依赖。worktree A 留下大量隐含接口假设（writer.py NotImplementedError 桩、builder.writer_node 的 pass、AnalysisState 字段路径、inspector 已写好的硬查路径），worktree B 接过这些假设继续做会处处踩雷

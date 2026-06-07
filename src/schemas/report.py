@@ -1,10 +1,15 @@
-"""BaseReport 通用骨架 + 5 场景 discriminated union（union 在 Task 11 接通）"""
+"""BaseReport 通用骨架 + 5 场景 discriminated union"""
 from __future__ import annotations
 from datetime import date
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Annotated, Literal, Optional, Union
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from src.schemas.common import DataSource, Exhibit, Revision, SourceRef
+from src.schemas.scenarios.s1 import S1FeatureIterationPayload
+from src.schemas.scenarios.s2 import S2MarketEntryPayload
+from src.schemas.scenarios.s3 import S3PricingStrategyPayload
+from src.schemas.scenarios.s4 import S4MonitoringPayload
+from src.schemas.scenarios.s5 import S5PositioningPayload
 
 
 # ============ 通用骨架子模型 ============
@@ -124,4 +129,47 @@ class ReportMetadata(BaseModel):
     citation_format: Optional[str] = None
 
 
-# BaseReport 在 Task 11（B 大类完成后）实例化 scenario_payload union
+# ============ BaseReport（接通 5 场景 discriminated union） ============
+
+
+class BaseReport(BaseModel):
+    """所有 5 场景共用的报告通用骨架"""
+    metadata: ReportMetadata
+    title: str = Field(min_length=10, max_length=80)
+    subtitle: Optional[str] = Field(default=None, max_length=120)
+    at_a_glance: list[str] = Field(min_length=3, max_length=6)
+    executive_summary: ExecutiveSummary
+    background: str = Field(min_length=200, max_length=1500)
+    scope: ReportScope
+    methodology: Methodology
+    key_findings: list[Finding] = Field(min_length=3, max_length=6)
+    analysis_sections: list[AnalysisSection] = Field(min_length=4, max_length=8)
+    swot: Swot
+    conclusions: str = Field(min_length=200, max_length=1500)
+    recommendations: list[Recommendation] = Field(min_length=3)
+    appendix: Appendix = Field(default_factory=lambda: Appendix())
+
+    scenario_payload: Annotated[
+        Union[
+            S1FeatureIterationPayload,
+            S2MarketEntryPayload,
+            S3PricingStrategyPayload,
+            S4MonitoringPayload,
+            S5PositioningPayload,
+        ],
+        Field(discriminator='scenario_type')
+    ]
+
+    @computed_field
+    @property
+    def scenario(self) -> Literal["S1", "S2", "S3", "S4", "S5"]:
+        return self.scenario_payload.scenario_type
+
+    @model_validator(mode='after')
+    def _check_scenario_consistency(self) -> 'BaseReport':
+        if self.metadata.scenario != self.scenario_payload.scenario_type:
+            raise ValueError(
+                f"metadata.scenario={self.metadata.scenario} but "
+                f"scenario_payload.scenario_type={self.scenario_payload.scenario_type}"
+            )
+        return self

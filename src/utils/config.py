@@ -12,12 +12,6 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def _provider_env(name: str, default: str, allowed: tuple[str, ...]) -> str:
-    """读取字符串枚举环境变量，非法/空值回落默认（小写规整）"""
-    val = (os.getenv(name) or "").strip().lower()
-    return val if val in allowed else default
-
-
 class Settings:
     DOUBAO_API_KEY: str = os.getenv("DOUBAO_API_KEY", "")
     DOUBAO_BASE_URL: str = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
@@ -28,11 +22,7 @@ class Settings:
     COLLECT_INTERVAL: float = 2.0  # 同域名请求间隔（秒）
     MAX_RETRIES_INSPECTOR: int = 2
     # 数据源拓展
-    SEARCH_API_KEY: str = os.getenv("SEARCH_API_KEY", "")
     SEARCH_TOP_N: int = _int_env("SEARCH_TOP_N", 5)
-    PICK_LLM_TIMEOUT: int = _int_env("PICK_LLM_TIMEOUT", 45)
-    MAX_FETCH_CONCURRENCY: int = _int_env("MAX_FETCH_CONCURRENCY", 5)
-    SEARCH_PROVIDER: str = _provider_env("SEARCH_PROVIDER", "serpapi", ("serpapi", "tavily"))
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
 

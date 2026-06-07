@@ -6,14 +6,15 @@ from src.utils.config import settings
 
 
 @pytest.fixture(autouse=True)
-def lock_search_provider(monkeypatch):
-    """锁定 SEARCH_PROVIDER=serpapi，使集成测试不受本地 .env 影响。
+def shield_local_env(monkeypatch):
+    """屏蔽本地 .env 的 TAVILY_API_KEY 污染所有测试。
 
-    集成测试的 LLM mock 序列按 serpapi 路径（含选页调用）编排，
-    若本地 .env=tavily 会改变 build_graph 注入的 source 导致调用次数错位。
-    tavily 专项测试各自显式构造 TavilySource，不读此配置，不受影响。
+    集成测试需要明确控制 TavilySource.available() 状态：
+    - 走主线测试 → 自行 monkeypatch TAVILY_API_KEY="K"
+    - 走占位降级测试 → 不设，本 fixture 已默认置空
+    Tavily 专项测试用 MagicMock 构造 source，不读此配置，不受影响。
     """
-    monkeypatch.setattr(settings, "SEARCH_PROVIDER", "serpapi")
+    monkeypatch.setattr(settings, "TAVILY_API_KEY", "")
 
 
 @pytest.fixture

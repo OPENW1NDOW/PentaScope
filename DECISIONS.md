@@ -30,6 +30,15 @@
 - 备选：① 文件中部 import + `# noqa: E402` 抑制（排除：ruff 警告抑制是逃避，不是修复）；② BaseReport 放独立文件（排除：拆分代价大于收益，BaseReport 必须知道 5 场景才能组 union）
 
 
+## 2026-06-07: 弃用 SerpAPI，仅保留 Tavily 作为唯一搜索源
+- 选择：删除 SerpApiSource 类、SEARCH_API_KEY/SEARCH_PROVIDER 配置开关、collection_pipeline 的"搜索→选页→抓取"两步走机制（_llm_pick/_rule_pick/_fetch_clean/_fetch_with_backfill 四方法 + 构造器塌缩）。Tavily 一次调用直返带正文，跳过中间所有步骤
+- 理由：06-06 实测证实 Tavily 在中文场景质量明显优于 SerpAPI（语雀 1.0 / 飞书 0.85 completeness）；双 provider 架构带来开关复杂度（SEARCH_PROVIDER）、conftest 防污染 fixture、builder if/else、115 行 SerpAPI 专项代码——与 Cooper 选择的"代码简化、答辩故事单一 AI 搜索"目标矛盾。git 历史保留，未来若需恢复可 revert
+- 反转的旧决策：06-06「双 provider 切换、保留 SerpAPI 作为可选 fallback」（一日决策反转，作为历史保留）
+- 备选 1：保留 SerpAPI 但删 SEARCH_PROVIDER 开关、Tavily 作为默认（排除：仍需双 provider 代码维护、答辩故事不干净）
+- 备选 2：仅删 SerpAPI 类、保留 SEARCH_PROVIDER 字段（排除：废留架构假承诺）
+- 实现路径：方案 B'（doubt-driven 双模型审查后修订），分 7 个细粒度 commit；commit 顺序：测试先改不依赖 → 删生产代码 → 删 SerpAPI 专项测试 → 文档同步
+
+## 2026-06-07: 报告 schema 按使用场景拆分（5 场景全做，R2 架构）
 - 选择：废除原通用单一 FinalReport schema，改为按竞品分析使用目的拆 5 个场景（S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位），共享 BaseReport 通用骨架（discriminated union），完整 5 场景设计 + 7000-8000 字咨询级深度
 - 理由：原通用 schema 的 4 段执行摘要 + 顶层 SWOT/雷达/功能矩阵字段集只对 S1 成立，对 S2（无产品调研）/S3（定价细致活）/S4（变更追踪）/S5（定位象限）都失效。调研显示业界（McKinsey/BCG/Bain/Gartner/Forrester）做竞品分析报告会按使用目的分形态——5 场景拆分既贴业界惯例又能讲"按场景分流的多 Agent 工作模板"答辩故事
 - R2（BaseReport 通用骨架 + payload）vs R1（5 套独立 schema）：调研显示 13 通用元素是 5/5 咨询机构共识，R2 让通用部分一处定义改一处生效，writer 编排和前端渲染都能共用大半逻辑。R1 干净分离但代码 5 倍重复

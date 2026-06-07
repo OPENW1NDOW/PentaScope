@@ -92,7 +92,7 @@ class TestGetJson:
             return mock_resp
 
         with patch.object(client.client, "get", side_effect=fake_get):
-            result = await client.get_json("https://serpapi.com/search", headers={"Authorization": "Bearer K"})
+            result = await client.get_json("https://api.example.com/search", headers={"Authorization": "Bearer K"})
         assert result == payload
         assert captured["headers"] == {"Authorization": "Bearer K"}
         assert "Authorization" not in client.client.headers
@@ -102,7 +102,7 @@ class TestGetJson:
     async def test_get_json_returns_none_on_non_200(self):
         client = HttpClient()
         with patch.object(client.client, "get", new_callable=AsyncMock, return_value=httpx.Response(429)):
-            result = await client.get_json("https://serpapi.com/search", headers={})
+            result = await client.get_json("https://api.example.com/search", headers={})
         assert result is None
         await client.close()
 
@@ -110,7 +110,7 @@ class TestGetJson:
     async def test_get_json_returns_none_on_timeout(self):
         client = HttpClient()
         with patch.object(client.client, "get", new_callable=AsyncMock, side_effect=httpx.TimeoutException("t")):
-            result = await client.get_json("https://serpapi.com/search", headers={})
+            result = await client.get_json("https://api.example.com/search", headers={})
         assert result is None
         await client.close()
 
@@ -119,7 +119,7 @@ class TestGetJson:
         client = HttpClient()
         bad = httpx.Response(200, text="<html>not json</html>")
         with patch.object(client.client, "get", new_callable=AsyncMock, return_value=bad):
-            result = await client.get_json("https://serpapi.com/search", headers={})
+            result = await client.get_json("https://api.example.com/search", headers={})
         assert result is None
         await client.close()
 
@@ -168,6 +168,6 @@ class TestPostJson:
 
 
 def test_redact_key_masks_query_param():
-    out = _redact_key("https://serpapi.com/search?q=x&api_key=SECRET123")
+    out = _redact_key("https://api.example.com/search?q=x&api_key=SECRET123")
     assert "SECRET123" not in out
     assert "api_key=" in out

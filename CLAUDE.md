@@ -95,7 +95,7 @@ ruff check --fix src tests               # 自动修复
 
 运行需在项目根目录配置 `.env`：
 - `DOUBAO_API_KEY` 必填
-- 搜索主线按 `SEARCH_PROVIDER` 切换：`serpapi`（需 `SEARCH_API_KEY`）或 `tavily`（需 `TAVILY_API_KEY`）；缺 key 则跳过搜索主线、仅走专源/占位降级
+- `TAVILY_API_KEY` 选填——搜索主线 Tavily 的鉴权 key；缺 key 则跳过搜索主线、走占位降级（completeness=0.0）
 - 其余配置见 `src/utils/config.py` 默认值
 
 ## 代码架构
@@ -111,9 +111,9 @@ collector → analyzer → writer → inspector ─┬─(passed)─────
 
 - **共享状态** `src/graph/state.py::AnalysisState`：一个 TypedDict，节点间通过返回 dict 增量更新（`profiles`/`analysis`/`report`/`feedback`/`retry_count` 等）。所有跨 Agent 数据都是 Pydantic 模型，而非裸 dict。
 - **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`（analyzer 回边为保险，正常流程 SWOT/雷达/矩阵由 writer 代码透传 + analyzer 兜底已保证）；`retry_count >= max_retries`（默认 2）则强制结束。这是课题要求的「质检→上游反馈闭环」的实现点。
-- **Agent**（`src/agents/`）：对外暴露单个 async 方法（`collect`/`analyze`/`write`/`inspect`），所有 prompt 集中在 `src/agents/prompts.py`。**采集层已分层下沉**（06-03）：`CollectorAgent` 不再直持 `http`/`parser`，而是持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），后者编排「搜索 API → LLM 选页 → 抓正文 → 质量闸门」主线，搜索源插件在 `src/tools/sources.py`（SerpAPI / Tavily 双 provider，按 `SEARCH_PROVIDER` 切换；iTunes 已于 06-06 因同名污染移除）。analyzer/writer/inspector 仍为 `(llm)` 依赖。
+- **Agent**（`src/agents/`）：对外暴露单个 async 方法（`collect`/`analyze`/`write`/`inspect`），所有 prompt 集中在 `src/agents/prompts.py`。**采集层已分层下沉**（06-03）：`CollectorAgent` 不再直持 `http`/`parser`，而是持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），后者编排「Tavily 搜索 → 质量闸门 → 全空兜底」主线，搜索源插件在 `src/tools/sources.py`（仅 Tavily，06-07 弃用 SerpAPI；iTunes 已于 06-06 因同名污染移除）。Tavily 一次调用直返带正文 SourceResult，跳过传统的「搜索→选页→抓取」三步走（_llm_pick/_rule_pick/_fetch_with_backfill 已于 06-07 删除）。analyzer/writer/inspector 仍为 `(llm)` 依赖。
 - **Schema**（`src/schemas/`）：竞品知识的契约层，对应 PRD 的功能树/定价模型/用户画像。`input`(输入) → `profile`(采集产出) → `analysis`(分析产出) → `report`(报告) → `feedback`(质检)，与流水线各阶段一一对应。改动数据流时先改这里。
-- **工具**（`src/tools/`）：`llm_client`（Doubao 纯 prompt 约束 + 代码块剥离，**不**用 `response_format`——06-01 实测端点不支持；带超时/重试）、`http_client`（httpx async，同域名限速 `COLLECT_INTERVAL` 加 per-domain 锁，URL/异常双重脱敏 key）、`sources`（SerpAPI/Tavily 搜索源）、`quality_gate`（采集质量闸门）、`trace_writer`（中间产物落盘）、`html_parser`、`validators`。
+- **工具**（`src/tools/`）：`llm_client`（Doubao 纯 prompt 约束 + 代码块剥离，**不**用 `response_format`——06-01 实测端点不支持；带超时/重试）、`http_client`（httpx async，同域名限速 `COLLECT_INTERVAL` 加 per-domain 锁）、`sources`（Tavily 搜索源）、`quality_gate`（采集质量闸门）、`trace_writer`（中间产物落盘）、`html_parser`、`validators`。
 - **入口**：后端 `src/api/main.py`（路由 `src/api/routes.py` 的 `POST /api/v1/analyze`，每请求生成 `trace_id` 并构图执行）；前端 `src/frontend/app.py`。
 - **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（评分项之一，勿移除）。`quality_score` 由 `inspector_node` 按 issue 严重度倒推回填（06-01 决策），不靠 LLM 自评——改 inspector 时勿动这条回填链。
 - **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。追溯接口 `GET /api/v1/trace/{trace_id}`（路由 `src/api/routes.py`，含路径穿越双重防护，`?version=` 取历史版本），前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。

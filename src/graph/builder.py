@@ -6,7 +6,7 @@ from src.agents.analyzer import AnalyzerAgent
 from src.agents.writer import WriterAgent
 from src.agents.inspector import InspectorAgent
 from src.agents.collection_pipeline import CollectionPipeline
-from src.tools.sources import SerpApiSource, TavilySource
+from src.tools.sources import TavilySource
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -14,15 +14,8 @@ logger = logging.getLogger(__name__)
 
 def build_graph(llm, http, parser, trace_writer=None):
     """构建 LangGraph 状态图，返回 (compiled_graph, node_trace)"""
-    if settings.SEARCH_PROVIDER == "tavily":
-        search_source = TavilySource(http=http, api_key=settings.TAVILY_API_KEY)
-    else:
-        search_source = SerpApiSource(http=http, api_key=settings.SEARCH_API_KEY)
-    pipeline = CollectionPipeline(
-        llm=llm, http=http, parser=parser, search_source=search_source,
-        max_top_n=settings.SEARCH_TOP_N, pick_timeout=settings.PICK_LLM_TIMEOUT,
-        max_concurrency=settings.MAX_FETCH_CONCURRENCY,
-    )
+    search_source = TavilySource(http=http, api_key=settings.TAVILY_API_KEY)
+    pipeline = CollectionPipeline(search_source=search_source)
     collector = CollectorAgent(llm=llm, pipeline=pipeline)
     analyzer = AnalyzerAgent(llm=llm)
     writer = WriterAgent(llm=llm)

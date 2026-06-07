@@ -36,4 +36,8 @@ logs/
 # Runtime artifacts
 runs/
 
+# Backup files (e.g. report.py.bak.20260607)
+*.bak
+*.bak.*
+
 # Claude Code worktrees 落在 .claude/worktrees/，已被上面的 .claude/ 规则覆盖

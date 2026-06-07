@@ -1,60 +1,127 @@
+"""BaseReport 通用骨架 + 5 场景 discriminated union（union 在 Task 11 接通）"""
+from __future__ import annotations
+from datetime import date
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
-from typing import Literal
-from src.schemas.input import AnalysisGoal
-from src.schemas.analysis import Swot, RadarScore, FeatureMatrixEntry
 
+from src.schemas.common import DataSource, Exhibit, Revision, SourceRef
+
+
+# ============ 通用骨架子模型 ============
 
 class ExecutiveSummary(BaseModel):
-    """四段式执行摘要"""
-    what_competitors_did_right: str = ""
-    what_competitors_did_wrong: str = ""
-    our_opportunities: str = ""
-    next_steps_summary: str = ""
+    """执行摘要 5 段式（替代旧 4 段）"""
+    context: str = Field(min_length=80, max_length=200)
+    core_thesis: str = Field(min_length=50, max_length=120)
+    key_findings_brief: list[str] = Field(min_length=2, max_length=4)
+    implications: str = Field(min_length=100, max_length=250)
+    path_forward: list[str] = Field(min_length=1, max_length=3)
 
 
-class ReportSection(BaseModel):
-    """报告章节"""
-    title: str
-    content: str = ""
-    dimension: Literal[
-        "positioning", "feature_matrix", "business_model",
-        "operations", "user_sentiment", "swot", "overview"
-    ] = "overview"
-    source_refs: list[str] = Field(default_factory=list)
+class ReportScope(BaseModel):
+    competitors: list[str] = Field(min_length=1)
+    time_window: str
+    regions: list[str] = Field(default_factory=list)
+    exclusions: list[str] = Field(default_factory=list)
 
 
-class ActionItem(BaseModel):
-    """单条行动建议"""
-    priority: Literal["高", "中", "低"]
-    description: str
-    rationale: str = ""
-    source_urls: list[str] = Field(default_factory=list)
+class Methodology(BaseModel):
+    """方法论章节，字数预算 1000+ 字"""
+    data_collection_approach: str = Field(min_length=200)
+    evaluation_criteria: list[str] = Field(min_length=3)
+    limitations: list[str] = Field(min_length=2)
+    sample_size_note: str = Field(min_length=80)
+    analyst_disclosure: str = Field(
+        default="本报告由 AI 多 Agent 协作系统生成，分析模型 Doubao-Seed-2.0-lite"
+    )
 
 
-class ActionItems(BaseModel):
-    """时间分层行动建议"""
-    immediate: list[ActionItem] = Field(default_factory=list, description="1个月内")
-    short_term: list[ActionItem] = Field(default_factory=list, description="3个月内")
-    long_term: list[ActionItem] = Field(default_factory=list, description="6个月内")
+class Finding(BaseModel):
+    statement: str = Field(min_length=20)
+    evidence: str = Field(min_length=20)
+    implication: str = Field(min_length=20)
+    source_refs: list[SourceRef] = Field(default_factory=list)
 
+
+class AnalysisSection(BaseModel):
+    section_id: str = Field(min_length=3, max_length=40)
+    heading: str = Field(min_length=4)
+    narrative: str = Field(min_length=300)
+    section_type: Literal[
+        "overview", "executive_overview", "background", "conclusions_summary",
+        "feature_matrix_analysis", "vendor_profile_analysis", "jtbd_analysis", "roadmap_analysis",
+        "market_sizing_analysis", "five_forces_analysis", "competitive_landscape_analysis",
+        "consumer_segments_analysis", "trends_analysis", "entry_strategy_analysis",
+        "pricing_baseline_analysis", "value_drivers_analysis", "packaging_design_analysis",
+        "competitive_pricing_analysis", "pricing_recommendations_analysis",
+        "monitoring_overview", "competitive_moves_analysis", "threat_assessment_analysis",
+        "opportunity_identification_analysis", "battlecard_analysis",
+        "vendor_positioning_analysis", "perceptual_map_analysis", "strategy_canvas_analysis",
+        "errc_analysis", "positioning_statement_analysis",
+    ]
+    artifact_refs: list[str] = Field(default_factory=list)
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+class Recommendation(BaseModel):
+    action: str = Field(min_length=20)
+    target_role: str
+    priority: Literal["critical", "important", "consider"]
+    timeline: Literal["immediate", "short_term", "long_term"]
+    rationale: str = Field(min_length=20)
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+class SwotEntry(BaseModel):
+    point: str = Field(min_length=10)
+    evidence: str = Field(min_length=10)
+    dimension: str = Field(default="overall")
+    source_refs: list[SourceRef] = Field(default_factory=list)
+
+
+class Swot(BaseModel):
+    strengths: list[SwotEntry] = Field(min_length=1)
+    weaknesses: list[SwotEntry] = Field(min_length=1)
+    opportunities: list[SwotEntry] = Field(min_length=1)
+    threats: list[SwotEntry] = Field(min_length=1)
+
+
+class Appendix(BaseModel):
+    glossary: dict[str, str] = Field(default_factory=dict)
+    additional_exhibits: list[Exhibit] = Field(default_factory=list)
+    data_sources_full: list[DataSource] = Field(default_factory=list)
+
+
+# ============ ReportMetadata（Task 3） ============
 
 class ReportMetadata(BaseModel):
-    """报告元数据"""
-    competitors_analyzed: list[str] = Field(default_factory=list)
-    analysis_goal: AnalysisGoal = Field(default_factory=AnalysisGoal)
-    generated_at: str = ""
-    data_sources: list[str] = Field(default_factory=list)
-    quality_score: float = Field(ge=0, le=1, default=0)
+    # 基础识别
+    report_id: str
+    trace_id: str
+    scenario: Literal["S1", "S2", "S3", "S4", "S5"]
+    schema_version: str = "2.0"
+
+    # 时间与版本
+    publication_date: date
+    version: str = "1.0"
+    revision_history: list[Revision] = Field(default_factory=list)
+
+    # 作者与出品方
+    organization: str = "AI 竞品分析 Agent 协作系统"
+    contributing_agents: list[str] = Field(default_factory=list)
+
+    # 可信度与溯源
+    data_sources: list[DataSource] = Field(min_length=1)
+    confidence_level: Literal["high", "medium", "low"]
+    quality_score: Optional[float] = Field(default=None, ge=0, le=1)
+    quality_score_calculation_note: str = Field(default="")
     warnings: list[str] = Field(default_factory=list)
 
+    # 合规
+    disclaimer: str = Field(
+        default="本报告基于公开渠道采集数据生成，不构成投资建议。生成时间晚于数据采集时间可能存在滞后。"
+    )
+    citation_format: Optional[str] = None
 
-class FinalReport(BaseModel):
-    """撰写 Agent 输出：最终竞品分析报告"""
-    title: str
-    executive_summary: ExecutiveSummary = Field(default_factory=ExecutiveSummary)
-    sections: list[ReportSection] = Field(default_factory=list)
-    swot: Swot = Field(default_factory=Swot)
-    radar_scores: list[RadarScore] = Field(default_factory=list)
-    feature_matrix: list[FeatureMatrixEntry] = Field(default_factory=list)
-    action_items: ActionItems = Field(default_factory=ActionItems)
-    metadata: ReportMetadata = Field(default_factory=ReportMetadata)
+
+# BaseReport 在 Task 11（B 大类完成后）实例化 scenario_payload union

@@ -8,7 +8,6 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
     llm_responses = [
         {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
         {"competitor_type": "核心竞品", "reason": "test"},
-        {"urls": ["https://alipay.com/pricing"]},
         {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
         sample_competitive_analysis,
         sample_final_report,
@@ -28,6 +27,19 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
     mock_http.get_json = AsyncMock(return_value={
         "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
     })
+    mock_http.post_json = AsyncMock(return_value={
+        "results": [
+            {"url": "https://alipay.com/pricing",
+             "raw_content": "支付宝定价方案介绍" * 60,
+             "content": ""},
+            {"url": "https://alipay.com/features",
+             "raw_content": "支付宝功能模块说明" * 60,
+             "content": ""},
+            {"url": "https://alipay.com/help",
+             "raw_content": "支付宝帮助中心文档" * 60,
+             "content": ""},
+        ]
+    })
     mock_http.close = AsyncMock()
     mock_parser = MagicMock()
     mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
@@ -38,7 +50,8 @@ def _make_mocks(sample_competitor_profile, sample_competitive_analysis, sample_f
 @pytest.mark.asyncio
 async def test_analyze_persists_meta(monkeypatch, tmp_path, sample_competitor_profile,
                                      sample_competitive_analysis, sample_final_report):
-    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -60,7 +73,8 @@ async def test_analyze_persists_meta(monkeypatch, tmp_path, sample_competitor_pr
 @pytest.mark.asyncio
 async def test_get_trace_returns_stages(monkeypatch, tmp_path, sample_competitor_profile,
                                         sample_competitive_analysis, sample_final_report):
-    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app
@@ -85,7 +99,8 @@ async def test_get_trace_returns_stages(monkeypatch, tmp_path, sample_competitor
 @pytest.mark.asyncio
 async def test_run_log_created(monkeypatch, tmp_path, sample_competitor_profile,
                                sample_competitive_analysis, sample_final_report):
-    monkeypatch.setattr("src.graph.builder.settings.SEARCH_API_KEY", "K", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
+    monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
     mock_llm, mock_http, mock_parser = _make_mocks(
         sample_competitor_profile, sample_competitive_analysis, sample_final_report)
     from src.api.main import app

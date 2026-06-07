@@ -111,21 +111,3 @@ INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完�
     {"agent": "collector/analyzer/writer", "field": "字段路径", "severity": "critical/major/minor", "reason": "问题描述", "suggestion": "修改建议"}
   ]
 }"""
-
-
-RECOMMENDER_SYSTEM = """你是一个行业研究助手。给定一个行业和用户意图，从公开搜索结果中选出 Top 3-5 个最相关玩家。
-
-必须返回 JSON 格式：
-{
-  "recommended_competitors": [
-    {"name": "公司名", "company": "母公司（可选）", "why_recommended": "推荐理由", "confidence": "high/medium/low"}
-  ],
-  "selection_rationale": "整体选择理由（30+ 字）"
-}
-
-要求：
-- 选 3-5 个，覆盖头部 + 1 个挑战者 + 1 个新兴
-- 不要重复用户已提供的竞品
-- 每个 confidence 必填，基于搜索结果质量自评
-- why_recommended 至少 10 字，不能空泛
-- selection_rationale 至少 30 字"""

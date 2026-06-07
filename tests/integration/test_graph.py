@@ -5,25 +5,33 @@ from src.graph.builder import build_graph
 from src.tools.trace_writer import TraceWriter
 
 
+_TAVILY_RESULTS = {
+    "results": [
+        {"url": "https://alipay.com/pricing",
+         "raw_content": "支付宝定价方案介绍" * 60,
+         "content": ""},
+        {"url": "https://alipay.com/features",
+         "raw_content": "支付宝功能模块说明" * 60,
+         "content": ""},
+        {"url": "https://alipay.com/help",
+         "raw_content": "支付宝帮助中心文档" * 60,
+         "content": ""},
+    ]
+}
+
+
 class TestGraphIntegration:
     @pytest.mark.asyncio
     async def test_full_graph_run(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        """端到端测试：Mock LLM，验证完整图运行（走 Tavily 搜索主线）"""
+        """端到端：完整图能跑通并返回 report，feedback.passed=True"""
         monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
-        # 构造 LLM 返回序列（Tavily 路径无选页步）
         llm_responses = [
-            # collector: parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
-            # collector: classify
             {"competitor_type": "核心竞品", "reason": "test"},
-            # collector: extract_profile (对每个竞品)
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
-            # analyzer
             sample_competitive_analysis,
-            # writer
             sample_final_report,
-            # inspector
             {"passed": True, "issues": []},
         ]
         call_index = [0]
@@ -41,19 +49,7 @@ class TestGraphIntegration:
         mock_http.get_json = AsyncMock(return_value={
             "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
-        mock_http.post_json = AsyncMock(return_value={
-            "results": [
-                {"url": "https://alipay.com/pricing",
-                 "raw_content": "支付宝定价方案介绍" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/features",
-                 "raw_content": "支付宝功能模块说明" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/help",
-                 "raw_content": "支付宝帮助中心文档" * 60,
-                 "content": ""},
-            ]
-        })
+        mock_http.post_json = AsyncMock(return_value=_TAVILY_RESULTS)
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
@@ -76,30 +72,22 @@ class TestGraphIntegration:
         assert "report" in result
         assert result["report"].title != ""
         assert result["feedback"].passed is True
-        # Tavily 路径无 _llm_pick：6 个 LLM 响应全部被消费
+        # 6 步 LLM 调用全部消费（parse_goal / classify / extract_profile / analyzer / writer / inspector）
         assert call_index[0] == 6
 
     @pytest.mark.asyncio
     async def test_rejection_triggers_retry(self, monkeypatch, sample_competitor_profile, sample_competitive_analysis, sample_final_report):
-        """测试质检打回后重新执行（走 Tavily 搜索主线）"""
+        """质检不通过时打回 writer 后重试，retry_count 至少 +1 且最终 passed=True"""
         monkeypatch.setattr("src.graph.builder.settings.SEARCH_PROVIDER", "tavily", raising=False)
         monkeypatch.setattr("src.graph.builder.settings.TAVILY_API_KEY", "K", raising=False)
         llm_responses = [
-            # collector: parse_goal
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
-            # collector: classify
             {"competitor_type": "核心竞品", "reason": "test"},
-            # collector: extract_profile（Tavily 路径无 _llm_pick 步）
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
-            # analyzer
             sample_competitive_analysis,
-            # writer (第一次)
             sample_final_report,
-            # inspector (第一次: 不通过)
             {"passed": False, "issues": [{"agent": "writer", "field": "executive_summary.what_competitors_did_right", "severity": "critical", "reason": "为空", "suggestion": "补充"}]},
-            # writer (修正后)
             sample_final_report,
-            # inspector (第二次: 通过)
             {"passed": True, "issues": []},
         ]
         call_index = [0]
@@ -117,19 +105,7 @@ class TestGraphIntegration:
         mock_http.get_json = AsyncMock(return_value={
             "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
-        mock_http.post_json = AsyncMock(return_value={
-            "results": [
-                {"url": "https://alipay.com/pricing",
-                 "raw_content": "支付宝定价方案介绍" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/features",
-                 "raw_content": "支付宝功能模块说明" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/help",
-                 "raw_content": "支付宝帮助中心文档" * 60,
-                 "content": ""},
-            ]
-        })
+        mock_http.post_json = AsyncMock(return_value=_TAVILY_RESULTS)
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
@@ -180,19 +156,7 @@ class TestGraphIntegration:
         mock_http.get_json = AsyncMock(return_value={
             "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
-        mock_http.post_json = AsyncMock(return_value={
-            "results": [
-                {"url": "https://alipay.com/pricing",
-                 "raw_content": "支付宝定价方案介绍" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/features",
-                 "raw_content": "支付宝功能模块说明" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/help",
-                 "raw_content": "支付宝帮助中心文档" * 60,
-                 "content": ""},
-            ]
-        })
+        mock_http.post_json = AsyncMock(return_value=_TAVILY_RESULTS)
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2
@@ -245,19 +209,7 @@ class TestGraphIntegration:
         mock_http.get_json = AsyncMock(return_value={
             "organic_results": [{"link": "https://alipay.com/pricing", "title": "支付宝定价", "snippet": "定价"}]
         })
-        mock_http.post_json = AsyncMock(return_value={
-            "results": [
-                {"url": "https://alipay.com/pricing",
-                 "raw_content": "支付宝定价方案介绍" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/features",
-                 "raw_content": "支付宝功能模块说明" * 60,
-                 "content": ""},
-                {"url": "https://alipay.com/help",
-                 "raw_content": "支付宝帮助中心文档" * 60,
-                 "content": ""},
-            ]
-        })
+        mock_http.post_json = AsyncMock(return_value=_TAVILY_RESULTS)
 
         mock_parser = MagicMock()
         mock_parser.extract_text.return_value = "支付宝是蚂蚁集团旗下的移动支付平台，提供扫码支付、转账、生活服务等功能，覆盖中国主流消费群体的日常支付场景。" * 2

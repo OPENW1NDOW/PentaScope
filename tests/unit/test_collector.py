@@ -45,6 +45,8 @@ class TestCollectorAgent:
                                                         "【来源: https://www.alipay.com/features】\n" + "支付宝 移动支付正文" * 10))
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
+            scenario="S1",
+            our_product_name="MyProduct",
             competitors=[CompetitorBasic(name="支付宝")],
             analysis_context="分析支付宝",
         )
@@ -80,6 +82,8 @@ class TestCollectorAgent:
                                                         "【来源: https://a.com】\n" + "有效正文" * 30))
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
+            scenario="S1",
+            our_product_name="MyProduct",
             competitors=[CompetitorBasic(name="甲竞品"), CompetitorBasic(name="乙竞品")],
             analysis_context="对比",
         )
@@ -98,6 +102,8 @@ class TestCollectorAgent:
         mock_pipeline.collect = AsyncMock(return_value=("", [], [{"step": "all_empty"}], ""))  # empty
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
         user_input = CompetitorInput(
+            scenario="S1",
+            our_product_name="MyProduct",
             competitors=[CompetitorBasic(name="空竞品")], analysis_context="x",
         )
         profiles, _ = await agent.collect(user_input)
@@ -149,7 +155,9 @@ async def test_collect_returns_goal_with_profiles():
             return ("", [], [], "")
 
     agent = CollectorAgent(llm=_LLM(), pipeline=_Pipe())
-    user_input = CompetitorInput(competitors=[CompetitorBasic(name="XX")],
+    user_input = CompetitorInput(scenario="S1",
+                                 our_product_name="MyProduct",
+                                 competitors=[CompetitorBasic(name="XX")],
                                  analysis_context="分析协作功能")
     profiles, goal = await agent.collect(user_input)
     assert goal.focus_area == "协作功能"

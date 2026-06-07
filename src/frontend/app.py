@@ -8,35 +8,82 @@ st.title("竞品分析 Agent 系统")
 
 # 输入区
 st.header("输入")
-col1, col2 = st.columns([1, 1])
 
-with col1:
+scenario = st.selectbox(
+    "选择分析场景",
+    options=["S1", "S2", "S3", "S4", "S5"],
+    format_func=lambda s: {
+        "S1": "S1 功能迭代（已有产品对标）",
+        "S2": "S2 市场进入（无产品调研）",
+        "S3": "S3 定价策略",
+        "S4": "S4 持续监控",
+        "S5": "S5 战略定位",
+    }[s],
+)
+
+analysis_context = st.text_area(
+    "分析意图描述",
+    placeholder="例：分析飞书和语雀的协作文档差异，重点看定价",
+    height=80,
+)
+
+# 按 scenario 切换字段
+industry = ""
+our_product_name = ""
+our_product_brief = ""
+prior_trace_id = ""
+competitor_names = ""
+
+if scenario == "S2":
+    industry = st.text_input("行业 / 赛道（必填）", placeholder="知识管理 SaaS")
     competitor_names = st.text_area(
-        "竞品名称（每行一个）",
+        "已知竞品（可选，每行一个）",
+        placeholder="留空则由 AI 推荐 Top 5",
+        height=80,
+    )
+else:
+    our_product_name = st.text_input("我方产品名称（必填）", placeholder="如：MyProduct")
+    our_product_brief = st.text_area("我方产品简介（选填）", height=60)
+    competitor_names = st.text_area(
+        "竞品名称（每行一个，必填）",
         placeholder="支付宝\n微信支付",
         height=100,
     )
-
-with col2:
-    analysis_context = st.text_area(
-        "分析意图描述",
-        placeholder="分析支付宝最近的新功能，我们准备做一个类似的功能",
-        height=100,
-    )
+    if scenario == "S4":
+        prior_trace_id = st.text_input(
+            "上次监控 trace_id（选填）",
+            placeholder="留空则首次监控",
+        )
 
 if st.button("开始分析", type="primary"):
-    if not competitor_names.strip():
-        st.error("请输入至少一个竞品名称")
-    elif not analysis_context.strip():
+    competitors = [
+        {"name": name.strip()}
+        for name in (competitor_names or "").strip().split("\n")
+        if name.strip()
+    ]
+    if not analysis_context.strip():
         st.error("请输入分析意图描述")
+    elif scenario == "S2" and not industry.strip():
+        st.error("S2 市场进入场景必须填写行业 / 赛道")
+    elif scenario != "S2" and not competitors:
+        st.error(f"{scenario} 场景必须至少填一个竞品")
+    elif scenario != "S2" and not our_product_name.strip():
+        st.error(f"{scenario} 场景必须填写我方产品名称")
     else:
-        competitors = [{"name": name.strip()} for name in competitor_names.strip().split("\n") if name.strip()]
-
+        body = {
+            "scenario": scenario,
+            "competitors": competitors,
+            "industry": industry or None,
+            "analysis_context": analysis_context,
+            "our_product_name": our_product_name or None,
+            "our_product_brief": our_product_brief or None,
+            "prior_trace_id": prior_trace_id or None,
+        }
         with st.spinner("正在分析中，请稍候..."):
             try:
                 response = httpx.post(
                     f"{API_BASE}/analyze",
-                    json={"competitors": competitors, "analysis_context": analysis_context},
+                    json=body,
                     timeout=600,
                 )
                 data = response.json()

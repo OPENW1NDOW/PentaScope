@@ -1,11 +1,22 @@
+"""API 请求/响应 schema（承载 ScenarioInput 字段）"""
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
-from src.schemas.input import CompetitorBasic
+
+from src.schemas.input import CompetitorBasic, ScenarioInput
 
 
 class AnalysisRequest(BaseModel):
-    """API 请求"""
-    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=10)
-    analysis_context: str = Field(..., min_length=1)
+    """API 请求（包装 ScenarioInput 字段）"""
+    scenario: Literal["S1", "S2", "S3", "S4", "S5"]
+    competitors: list[CompetitorBasic] = Field(default_factory=list, max_length=10)
+    industry: Optional[str] = None
+    analysis_context: str = Field(min_length=1)
+    our_product_name: Optional[str] = None
+    our_product_brief: Optional[str] = None
+    prior_trace_id: Optional[str] = None
+
+    def to_scenario_input(self) -> ScenarioInput:
+        return ScenarioInput(**self.model_dump())
 
 
 class AnalysisResponse(BaseModel):

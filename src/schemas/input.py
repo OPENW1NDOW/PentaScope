@@ -1,26 +1,51 @@
-from pydantic import BaseModel, Field
-from typing import Literal
+"""ScenarioInput 与 AnalysisGoal（CompetitorInput 已迁移为 ScenarioInput 别名）"""
+from typing import Literal, Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class CompetitorBasic(BaseModel):
-    """竞品基础信息（用户输入）"""
-    name: str = Field(..., min_length=2, max_length=50, description="竞品名称")
-    company: str = Field(default="", description="所属公司（选填，系统可推断）")
-    category: str = Field(default="", description="行业分类（选填，系统可推断）")
+    name: str = Field(min_length=2, max_length=50)
+    company: str = ""
+    category: str = ""
+    official_url: Optional[str] = None  # 可选用户提供官网
+
+
+class ScenarioInput(BaseModel):
+    """统一输入 schema，按 scenario 分支校验"""
+    scenario: Literal["S1", "S2", "S3", "S4", "S5"]
+    competitors: list[CompetitorBasic] = Field(default_factory=list, max_length=10)
+    industry: Optional[str] = None
+    analysis_context: str = Field(min_length=1)
+
+    our_product_name: Optional[str] = None
+    our_product_brief: Optional[str] = None
+
+    # S4 专用：上次监控的 trace_id（用于 delta）
+    prior_trace_id: Optional[str] = None
+
+    @model_validator(mode='after')
+    def _check_scenario_inputs(self) -> 'ScenarioInput':
+        if self.scenario == "S2":
+            if not self.industry:
+                raise ValueError("S2 市场进入场景必须提供 industry")
+        else:
+            if not self.competitors:
+                raise ValueError(f"{self.scenario} 场景必须提供至少一个 competitor")
+            if not self.our_product_name:
+                raise ValueError(f"{self.scenario} 场景必须提供 our_product_name")
+        return self
 
 
 class AnalysisGoal(BaseModel):
-    """解析后的分析目标"""
+    """解析后的分析目标（collector 内部仍使用）"""
     goal_type: Literal[
         "feature_iteration", "pricing_strategy",
         "market_entry", "competitive_monitoring"
     ] = "competitive_monitoring"
     product_stage: Literal["entering", "growing", "mature"] = "growing"
-    focus_area: str = Field(default="", description="用户关注的具体领域")
+    focus_area: str = ""
     output_expectation: Literal["info", "knowledge", "action"] = "action"
 
 
-class CompetitorInput(BaseModel):
-    """完整的用户输入"""
-    competitors: list[CompetitorBasic] = Field(..., min_length=1, max_length=10, description="竞品列表")
-    analysis_context: str = Field(..., min_length=1, description="自然语言描述分析意图")
+# 兼容性占位：旧代码 import CompetitorInput 不崩
+CompetitorInput = ScenarioInput

@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
 from src.api.schemas import AnalysisRequest, AnalysisResponse, TraceResponse
-from src.schemas.input import CompetitorInput
 from src.tools.llm_client import LLMClient
 from src.tools.http_client import HttpClient
 from src.tools.html_parser import HtmlParser
@@ -31,8 +30,12 @@ async def analyze(request: AnalysisRequest):
         "status": "running",
         "started_at": started,
         "input": {
+            "scenario": request.scenario,
             "competitors": [c.model_dump() for c in request.competitors],
+            "industry": request.industry,
             "analysis_context": request.analysis_context,
+            "our_product_name": request.our_product_name,
+            "prior_trace_id": request.prior_trace_id,
         },
     })
 
@@ -52,10 +55,7 @@ async def analyze(request: AnalysisRequest):
     http = HttpClient()
     node_trace: list = []
     try:
-        user_input = CompetitorInput(
-            competitors=request.competitors,
-            analysis_context=request.analysis_context,
-        )
+        user_input = request.to_scenario_input()
         llm = LLMClient()
         parser = HtmlParser()
         graph, node_trace = build_graph(llm=llm, http=http, parser=parser, trace_writer=tw)
@@ -69,8 +69,12 @@ async def analyze(request: AnalysisRequest):
             "retry_count": result.get("retry_count", 0),
             "node_trace": node_trace,
             "input": {
+                "scenario": request.scenario,
                 "competitors": [c.model_dump() for c in request.competitors],
+                "industry": request.industry,
                 "analysis_context": request.analysis_context,
+                "our_product_name": request.our_product_name,
+                "prior_trace_id": request.prior_trace_id,
             },
         })
         return AnalysisResponse(

@@ -3,6 +3,7 @@
 新版 WriterOrchestrator（4 阶段编排）由 Task 21.1 实现。
 本桩仅保留 import 兼容性，调用 write 直接 raise NotImplementedError。
 """
+from src.agents.writer_orchestrator import WriterOrchestrator  # noqa: F401
 
 
 class WriterAgent:

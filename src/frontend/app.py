@@ -1,7 +1,7 @@
 import streamlit as st
 import httpx
 
-from src.frontend.render import render_base_report
+from render import render_base_report
 
 API_BASE = "http://localhost:8000/api/v1"
 
@@ -124,7 +124,7 @@ if st.button("开始分析", type="primary"):
                 response = httpx.post(
                     f"{API_BASE}/analyze",
                     json=body,
-                    timeout=600,
+                    timeout=1800,
                 )
                 data = response.json()
 

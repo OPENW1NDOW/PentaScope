@@ -582,7 +582,7 @@ class WriterOrchestrator:
         discovered_urls: list[str],
         warnings: list[str],
         max_retries: int = 1,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ):
         """Phase 2 LLM call → normalize → 注入 → 实例化场景 Payload schema。
 

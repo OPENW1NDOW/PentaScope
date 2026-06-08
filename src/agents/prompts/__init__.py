@@ -74,7 +74,14 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
   "radar_scores": [{"competitor": "", "dimensions": {"feature_breadth": 0, "usability": 0, "cost_effectiveness": 0, "stability": 0, "design_quality": 0}}]
 }
 
-每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。"""
+每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。
+
+**字数硬约束（schema 强制，不达标会被拦截）**：
+- swot 的 point / evidence 字段：**每条至少 10 个中文字符**（≥ 10 chars，含中文标点）
+- positioning.per_competitor 的各文本字段（target_users / core_scenario / pain_points / value_proposition）：每条至少 10 个字符
+- feature_matrix.evidence：至少 15 个字符，引用具体数据点
+
+写每个 point/evidence 时心里数一下字数，宁可冗长也不可短缺。例如 "性价比领先" 改写成 "性价比相对领先，主打中小团队市场" 才安全。"""
 
 INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完整性、深度和数据支撑。
 

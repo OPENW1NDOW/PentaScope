@@ -18,7 +18,7 @@ class Settings:
     DOUBAO_MODEL_EP: str = os.getenv("DOUBAO_MODEL_EP", "ep-20260514111325-xjmj7")
     LLM_TIMEOUT: int = 120
     LLM_MAX_RETRIES: int = 2
-    HTTP_TIMEOUT: int = 30
+    HTTP_TIMEOUT: int = 120
     COLLECT_INTERVAL: float = 2.0  # 同域名请求间隔（秒）
     MAX_RETRIES_INSPECTOR: int = 2
     # 数据源拓展

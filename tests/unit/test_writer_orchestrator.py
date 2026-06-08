@@ -648,14 +648,17 @@ def test_phase3_placeholder_narrative_min_length():
     """[v3-R12] 占位 narrative 字符数 ≥350（schema min=300 + 50 字硬缓冲）。"""
     from src.agents.writer_orchestrator import _build_placeholder_section
 
-    # 用最长的 section_type（替换后字符数最长）+ 最短的 section_type 各试一次
-    for st in ["feature_matrix_analysis", "overview"]:
+    # 测多种长度的 section_type；opportunity_identification_analysis 是最长 case（35 字），
+    # 用它验证 section_id 不越界（"placeholder-"+28 = 40 ≤ schema 上限 40）
+    for st in ["overview", "feature_matrix_analysis", "opportunity_identification_analysis"]:
         sec = _build_placeholder_section(st, {})
         assert len(sec.narrative) >= 350, (
             f"占位 narrative section_type={st} 字符数 {len(sec.narrative)} < 350"
         )
         assert len(sec.heading) >= 4
-        assert 3 <= len(sec.section_id) <= 40
+        assert 3 <= len(sec.section_id) <= 40, (
+            f"{st}: section_id 长度 {len(sec.section_id)} 越界 (3-40)"
+        )
         assert sec.section_type == st
 
 

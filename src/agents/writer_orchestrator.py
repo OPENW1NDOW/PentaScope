@@ -128,8 +128,9 @@ def _build_placeholder_section(section_type: str, payload_dict: dict) -> Analysi
     _ = payload_dict  # 占位文案不依赖 payload；保留参数供未来扩展
     narrative = _PLACEHOLDER_NARRATIVE_TEMPLATE.format(section_type=section_type)
     heading = f"【数据不足占位章节】{section_type}"
-    # section_id schema 约束 3-40 字。最长 section_type=23 字，"placeholder-"+23 = 35 ≤ 40 ✓
-    section_id = f"placeholder-{section_type[:30]}"
+    # section_id schema 3-40 字。"placeholder-" = 12 字，section_type 截断至 28 → 12+28=40 ✓
+    # 最长 section_type 实测 35 字（如 opportunity_identification_analysis），截断后保留前 28 字仍可识别 section
+    section_id = f"placeholder-{section_type[:28]}"
     return AnalysisSection(
         section_id=section_id,
         heading=heading,

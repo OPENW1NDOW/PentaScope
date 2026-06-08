@@ -1,5 +1,16 @@
+"""InspectorAgent 桩级过渡版。
+
+旧版基于 FinalReport 的 _programmatic_checks 已无法工作（A 大类删除了 FinalReport
+及其 sections / action_items / executive_summary 旧 4 段字段）。
+F 阶段 Task 21.0e2-3 会重写为按 scenario 分支硬查 + quality_score 三项加权。
+
+本过渡版：
+- 修复 import（FinalReport → BaseReport）让全链路 import 不崩
+- inspect 方法仅做最小 LLM 质检（保留 LLM 调用通路），程序化 checks 暂留空
+- 让 graph 在 D/E 阶段能跑通（即使质检几乎不产 issue），F 阶段全面重写
+"""
 import logging
-from src.schemas.report import FinalReport
+from src.schemas.report import BaseReport
 from src.schemas.feedback import RejectionFeedback, FeedbackIssue
 from src.agents.prompts import INSPECTOR_SYSTEM
 
@@ -12,113 +23,45 @@ def _minor_only_pass(issues) -> bool:
 
 
 class InspectorAgent:
-    """质检 Agent：Schema 校验 + 溯源检查 + LLM 质量评估"""
+    """质检 Agent 过渡版。F 阶段重写。"""
 
     def __init__(self, llm):
         self.llm = llm
 
-    def _programmatic_checks(self, report: FinalReport, competitors: list[str]) -> list[FeedbackIssue]:
-        """程序化检查：不依赖 LLM 的硬性规则"""
-        issues = []
+    def _programmatic_checks(self, report: BaseReport, competitors: list[str]) -> list[FeedbackIssue]:
+        """程序化检查暂留空（旧实现依赖 FinalReport.sections/action_items 已删）。
 
-        # 检查执行摘要四段是否填写
-        es = report.executive_summary
-        for field_name, field_value in [
-            ("what_competitors_did_right", es.what_competitors_did_right),
-            ("what_competitors_did_wrong", es.what_competitors_did_wrong),
-            ("our_opportunities", es.our_opportunities),
-            ("next_steps_summary", es.next_steps_summary),
-        ]:
-            if not field_value or len(field_value.strip()) < 10:
-                issues.append(FeedbackIssue(
-                    agent="writer", field=f"executive_summary.{field_name}",
-                    severity="critical", reason="执行摘要该段为空或过短",
-                    suggestion="补充 50-150 字的内容"
-                ))
+        F 阶段 Task 21.0e2 重写为 _check_common + _check_s1..s5 dispatcher。
+        """
+        return []
 
-        # 检查行动建议每个时间层至少 1 条
-        ai = report.action_items
-        for layer_name, layer_items in [
-            ("immediate", ai.immediate), ("short_term", ai.short_term), ("long_term", ai.long_term)
-        ]:
-            if len(layer_items) == 0:
-                issues.append(FeedbackIssue(
-                    agent="writer", field=f"action_items.{layer_name}",
-                    severity="major", reason=f"行动建议 {layer_name} 层为空",
-                    suggestion="至少添加 1 条行动建议"
-                ))
-
-        # 检查报告章节是否为空
-        if not report.sections:
-            issues.append(FeedbackIssue(
-                agent="writer", field="sections",
-                severity="major", reason="报告无章节内容",
-                suggestion="至少添加 1 个章节"
-            ))
-
-        # SWOT 四象限至少各 1 条
-        sw = report.swot
-        if not (sw.strengths and sw.weaknesses and sw.opportunities and sw.threats):
-            issues.append(FeedbackIssue(
-                agent="analyzer", field="swot",
-                severity="major", reason="SWOT 四象限不完整",
-                suggestion="每个象限至少 1 条"))
-
-        # 雷达：每个竞品一条
-        radar_comps = {r.competitor for r in report.radar_scores}
-        # competitors 为空时（如未传入）跳过雷达 cardinality 检查
-        if competitors and not all(c in radar_comps for c in competitors):
-            issues.append(FeedbackIssue(
-                agent="analyzer", field="radar_scores",
-                severity="major", reason="雷达评分缺竞品",
-                suggestion="每个竞品填一条 0-5 五维评分"))
-
-        # 功能矩阵非空
-        if not report.feature_matrix:
-            issues.append(FeedbackIssue(
-                agent="analyzer", field="feature_matrix",
-                severity="major", reason="功能矩阵为空",
-                suggestion="至少补充关键功能对比"))
-
-        # 维度级溯源：有内容的 section 必须有 source_refs
-        for idx, sec in enumerate(report.sections):
-            if sec.content.strip() and not sec.source_refs:
-                issues.append(FeedbackIssue(
-                    agent="writer", field=f"sections[{idx}].source_refs",
-                    severity="major", reason=f"章节「{sec.title}」无溯源",
-                    suggestion="标注该章节引用的来源 URL"))
-
-        # action_item 溯源：软查（minor，不阻断 pass）
-        for layer_name, layer in [("immediate", report.action_items.immediate),
-                                   ("short_term", report.action_items.short_term),
-                                   ("long_term", report.action_items.long_term)]:
-            for j, item in enumerate(layer):
-                if not item.source_urls:
-                    issues.append(FeedbackIssue(
-                        agent="writer", field=f"action_items.{layer_name}[{j}].source_urls",
-                        severity="minor", reason="行动建议未标注来源",
-                        suggestion="补充支撑该建议的来源 URL"))
-
-        return issues
-
-    async def inspect(self, report: FinalReport, competitors: list[str] | None = None,
+    async def inspect(self, report: BaseReport, competitors: list[str] | None = None,
                       retry_count: int = 0, max_retries: int = 2) -> RejectionFeedback:
-        """执行质量检查"""
-        logger.info("[inspector] 开始质检, retry_count=%d", retry_count)
+        """执行质量检查（过渡版：仅 LLM 检查 + 容错）"""
+        logger.info("[inspector] 开始质检（过渡版）, retry_count=%d", retry_count)
         competitors = competitors or []
 
         programmatic_issues = self._programmatic_checks(report, competitors)
 
-        report_text = report.model_dump_json()
-        llm_result = await self.llm.call_json(INSPECTOR_SYSTEM, f"请检查以下报告：\n\n{report_text}")
+        # LLM 质检：失败时不阻断（过渡阶段优先保证流水线能跑）
+        llm_issues: list[FeedbackIssue] = []
+        try:
+            report_text = report.model_dump_json()
+            llm_result = await self.llm.call_json(INSPECTOR_SYSTEM, f"请检查以下报告：\n\n{report_text}")
+            for issue in llm_result.get("issues", []):
+                try:
+                    llm_issues.append(FeedbackIssue(**issue))
+                except Exception as e:
+                    logger.warning("[inspector] LLM issue 解析失败: %s, raw=%s", e, issue)
+        except Exception as e:
+            logger.warning("[inspector] LLM 质检失败（过渡阶段不阻断）: %s", e)
 
-        llm_issues = [FeedbackIssue(**issue) for issue in llm_result.get("issues", [])]
         all_issues = programmatic_issues + llm_issues
 
         seen = set()
         unique_issues = []
         for issue in sorted(all_issues, key=lambda i: {"critical": 0, "major": 1, "minor": 2}[i.severity]):
-            key = (issue.agent, issue.field)
+            key = (issue.agent, getattr(issue, "field", ""))
             if key not in seen:
                 seen.add(key)
                 unique_issues.append(issue)
@@ -132,5 +75,6 @@ class InspectorAgent:
             max_retries=max_retries,
         )
         minor_cnt = sum(1 for i in unique_issues if i.severity == "minor")
-        logger.info("[inspector] 质检完成, passed=%s, issues=%d (minor=%d)", passed, len(unique_issues), minor_cnt)
+        logger.info("[inspector] 质检完成（过渡版）, passed=%s, issues=%d (minor=%d)",
+                    passed, len(unique_issues), minor_cnt)
         return feedback

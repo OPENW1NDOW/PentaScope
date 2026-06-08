@@ -41,3 +41,31 @@ class TestLLMClient:
         with patch.object(client.client.chat.completions, "create", new_callable=AsyncMock, return_value=mock_bad):
             with pytest.raises(ValueError, match="Failed to parse"):
                 await client.call_json("sys", "usr")
+
+    @pytest.mark.asyncio
+    async def test_call_json_max_tokens_default_not_passed(self):
+        """[v3-R03] 不传 max_tokens 时不应进 OpenAI SDK kwargs（保持向后兼容）"""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({"k": "v"})
+
+        client = LLMClient(api_key="t", base_url="https://t.com", model_ep="ep-t")
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            await client.call_json("sys", "usr")
+        call_kwargs = mock_create.call_args.kwargs
+        assert "max_tokens" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_call_json_max_tokens_passed_when_specified(self):
+        """[v3-R03] 传 max_tokens=4096 时应进 OpenAI SDK kwargs"""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({"k": "v"})
+
+        client = LLMClient(api_key="t", base_url="https://t.com", model_ep="ep-t")
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            await client.call_json("sys", "usr", max_tokens=4096)
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("max_tokens") == 4096

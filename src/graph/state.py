@@ -1,15 +1,22 @@
-from typing import TypedDict
-from src.schemas.input import CompetitorInput, AnalysisGoal
+from typing import TypedDict, Optional
+from src.schemas.input import ScenarioInput, AnalysisGoal
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
-from src.schemas.report import FinalReport
+from src.schemas.report import BaseReport
 from src.schemas.feedback import RejectionFeedback
+from src.schemas.scenarios.s2 import CompetitorRecommendations
 
 
 class AnalysisState(TypedDict, total=False):
     """LangGraph 状态定义：所有 Agent 共享的数据结构"""
-    # 输入
-    user_input: CompetitorInput
+    # 输入（v3：ScenarioInput 替代 CompetitorInput）
+    user_input: ScenarioInput
+
+    # S2 专用：recommender 节点产出
+    competitor_recommendations: Optional[CompetitorRecommendations]
+
+    # S4 专用：从 prior_trace_id 读到的旧 BaseReport（dict 形式）
+    prior_report_data: Optional[dict]
 
     # 采集 Agent 输出
     profiles: list[CompetitorProfile]
@@ -19,8 +26,8 @@ class AnalysisState(TypedDict, total=False):
     # 分析 Agent 输出
     analysis: CompetitiveAnalysis
 
-    # 撰写 Agent 输出
-    report: FinalReport
+    # 撰写 Agent 输出（v3：BaseReport 替代 FinalReport）
+    report: BaseReport
 
     # 质检 Agent 输出
     feedback: RejectionFeedback

@@ -24,6 +24,9 @@ class Settings:
     # 数据源拓展
     SEARCH_TOP_N: int = _int_env("SEARCH_TOP_N", 5)
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
+    # Writer 4 阶段编排（v3 spec）
+    WRITER_MAX_LLM_CALLS: int = _int_env("WRITER_MAX_LLM_CALLS", 18)
+    WRITER_NARRATIVE_CONCURRENCY: int = _int_env("WRITER_NARRATIVE_CONCURRENCY", 3)
 
 
 settings = Settings()

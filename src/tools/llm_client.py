@@ -19,8 +19,13 @@ class LLMClient:
             timeout=settings.LLM_TIMEOUT,
         )
 
-    async def call_json(self, system_prompt: str, user_prompt: str) -> dict:
+    async def call_json(
+        self, system_prompt: str, user_prompt: str, *, max_tokens: int | None = None
+    ) -> dict:
         """调用 LLM 并要求返回 JSON，自动重试解析失败的情况"""
+        extra_kwargs: dict = {}
+        if max_tokens is not None:
+            extra_kwargs["max_tokens"] = max_tokens
         last_error = None
         for attempt in range(settings.LLM_MAX_RETRIES + 1):
             try:
@@ -31,6 +36,7 @@ class LLMClient:
                         {"role": "user", "content": user_prompt},
                     ],
                     timeout=settings.LLM_TIMEOUT,
+                    **extra_kwargs,
                 )
                 content = response.choices[0].message.content
                 # strict=False 允许字符串值内的裸控制字符（LLM 常在内容里直接输出换行）

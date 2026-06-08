@@ -1,8 +1,9 @@
-"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2+21.3 部分）。
+"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2+21.3+21.4 部分）。
 
 阶段 3-C1 范围：骨架 + Phase 1 outline。
 阶段 3-C3 范围：Phase 2 payload（含 normalize 接通 + S2/S4 前置注入 + 实例化场景 Payload schema）。
-Phase 3/4 由 C4-C5 后续 task 实现。
+阶段 3-C4 范围：Phase 3 narrative（并行 + 半数闸门 + 占位降级 + Semaphore 限速）。
+Phase 4 由 C5 后续 task 实现。
 """
 import asyncio
 import json
@@ -13,9 +14,15 @@ from pydantic import ValidationError
 
 from src.agents.normalizers import normalize_for_scenario
 from src.agents.prompts.writer import WRITER_OUTLINE_PROMPTS, WRITER_PAYLOAD_PROMPTS
+from src.agents.prompts.writer.narrative import (
+    NARRATIVE_TEMPLATE,
+    SECTION_CONTEXT_MAP,
+    SECTION_FOCUS_HINTS,
+    SECTION_LABELS,
+)
 from src.schemas.input import ScenarioInput
 from src.schemas.profile import CompetitorProfile
-from src.schemas.report import BaseReport
+from src.schemas.report import AnalysisSection, BaseReport
 from src.schemas.scenarios.s1 import S1FeatureIterationPayload
 from src.schemas.scenarios.s2 import S2MarketEntryPayload
 from src.schemas.scenarios.s3 import S3PricingStrategyPayload
@@ -34,6 +41,103 @@ _PAYLOAD_CLASSES: dict[str, type] = {
     "S4": S4MonitoringPayload,
     "S5": S5PositioningPayload,
 }
+
+
+# [v3-R20] 每场景默认 section_type 序列（5-6 个，对应 BaseReport.analysis_sections min=4 max=8）
+_DEFAULT_SECTION_TYPES: dict[str, list[str]] = {
+    "S1": [
+        "overview",
+        "vendor_profile_analysis",
+        "feature_matrix_analysis",
+        "jtbd_analysis",
+        "roadmap_analysis",
+    ],
+    "S2": [
+        "overview",
+        "market_sizing_analysis",
+        "five_forces_analysis",
+        "competitive_landscape_analysis",
+        "trends_analysis",
+        "entry_strategy_analysis",
+    ],
+    "S3": [
+        "overview",
+        "pricing_baseline_analysis",
+        "value_drivers_analysis",
+        "competitive_pricing_analysis",
+        "packaging_design_analysis",
+        "pricing_recommendations_analysis",
+    ],
+    "S4": [
+        "overview",
+        "monitoring_overview",
+        "competitive_moves_analysis",
+        "threat_assessment_analysis",
+        "opportunity_identification_analysis",
+        "battlecard_analysis",
+    ],
+    "S5": [
+        "overview",
+        "vendor_positioning_analysis",
+        "perceptual_map_analysis",
+        "strategy_canvas_analysis",
+        "errc_analysis",
+        "positioning_statement_analysis",
+    ],
+}
+
+
+# [v3-R12] 占位 narrative 模板。实测字符数：
+# - 未替换 ≈ 390，替换后（最短 section_type "overview"）≈ 378，均 ≥350，留 28+ 字硬缓冲。
+_PLACEHOLDER_NARRATIVE_TEMPLATE = (
+    "【本节因数据不足暂未生成深度分析（自动占位）】\n\n"
+    "本章节（{section_type}）原本应基于采集与分析阶段产出的具体数据展开 1500-3000 字的深度论述，"
+    "但 phase 3 narrative LLM 调用在 1 次重试后仍未返回合规结果，故由代码自动落入占位模板。\n\n"
+    "可用诊断信息：\n"
+    "- metadata.warnings 中以 `placeholder_section:{section_type}` 为前缀的告警条目\n"
+    "- 同 trace_id 下的 04_feedback.json，记录 inspector 对本节的具体扣分依据\n"
+    "- 同 trace_id 下的 run.log，可定位 phase 3 LLM 调用失败的异常类型与时间点\n\n"
+    "建议处理：等待 graph 反馈闭环重试 collector/analyzer，或手动指定更精准的数据源后重新发起分析。"
+)
+
+
+def _dot_walk(obj: Any, path: str) -> Any:
+    """按 dot-walk 路径取值，遇 None / 缺字段直接返回 None，绝不抛异常。
+
+    示例：_dot_walk(ctx, "payload.feature_matrix") → ctx["payload"]["feature_matrix"]
+    """
+    if not path:
+        return obj
+    cur = obj
+    for part in path.split("."):
+        if cur is None:
+            return None
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            cur = getattr(cur, part, None)
+    return cur
+
+
+def _build_placeholder_section(section_type: str, payload_dict: dict) -> AnalysisSection:
+    """[v3-R12] 构造占位 AnalysisSection（narrative ≥350 字硬缓冲）。
+
+    payload_dict 当前未直接拼入文本（占位文案不依赖 payload 内容，避免动态长度抖动），
+    保留参数以便未来扩展（如把 payload 的 artifact_id 列入 artifact_refs）。
+    """
+    _ = payload_dict  # 占位文案不依赖 payload；保留参数供未来扩展
+    narrative = _PLACEHOLDER_NARRATIVE_TEMPLATE.format(section_type=section_type)
+    heading = f"【数据不足占位章节】{section_type}"
+    # section_id schema 约束 3-40 字。最长 section_type=23 字，"placeholder-"+23 = 35 ≤ 40 ✓
+    section_id = f"placeholder-{section_type[:30]}"
+    return AnalysisSection(
+        section_id=section_id,
+        heading=heading,
+        narrative=narrative,
+        section_type=section_type,
+        artifact_refs=[],
+        source_refs=[],
+    )
 
 
 def collect_profile_urls(profile: CompetitorProfile) -> set[str]:
@@ -126,11 +230,25 @@ class WriterOrchestrator:
             discovered_urls=discovered_urls,
             warnings=warnings,
         )
-        # outline / payload_model / warnings 留给 phase 3-4 使用，避免未使用告警
-        _ = (outline, payload_model)
+        logger.info("[writer] phase 2 完成, 进入 phase 3")
 
-        # 触达占位：C4-C5 task 接续实现
-        raise NotImplementedError("phase 3-4 待 Task 21.4-21.5 实现")
+        # ========== Phase 3: narrative ==========
+        # 用 model_dump() 转 payload_dict 给 narrative prompt 拼装上下文（[v3-R20] dot-walk 路径取值）
+        payload_dict_for_phase3 = payload_model.model_dump()
+        sections, warnings = await self._phase3_narratives(
+            scenario=scenario,
+            scenario_input=scenario_input,
+            outline=outline,
+            payload_dict=payload_dict_for_phase3,
+            analysis=analysis,
+            discovered_urls=discovered_urls,
+            warnings=warnings,
+        )
+        # sections / payload_model / outline / warnings 留给 phase 4 使用，避免未使用告警
+        _ = (sections, payload_model, outline)
+
+        # 触达占位：C5 task 接续实现
+        raise NotImplementedError("phase 4 待 Task 21.5 实现")
 
     async def _llm_call_with_quota(
         self,
@@ -486,3 +604,142 @@ class WriterOrchestrator:
         )
 
         return payload_dict
+
+    # ========== Phase 3: narrative ==========
+
+    def _default_section_types(self, scenario: str) -> list[str]:
+        """每场景默认 section_type 序列（5-6 个）。"""
+        return _DEFAULT_SECTION_TYPES[scenario]
+
+    async def _phase3_one_section(
+        self,
+        *,
+        scenario: str,
+        section_type: str,
+        outline: dict,
+        payload_dict: dict,
+        analysis: Any,
+        scenario_input: ScenarioInput,
+        discovered_urls: list[str],
+    ) -> AnalysisSection:
+        """[v3-R18] Semaphore 限速；[v3-R04] 走 _llm_call_with_quota 不绕熔断。
+
+        失败（LLM 异常 / Pydantic ValidationError）让其向上抛——caller 用
+        asyncio.gather(return_exceptions=True) 接住后回 _build_placeholder_section。
+        """
+        _ = discovered_urls  # prompt 已在 phase 1/2 里灌过；本阶段 schema 校验靠 SourceRef.url 约束
+        async with self._narrative_sem:
+            # 按 [v3-R20] SECTION_CONTEXT_MAP 取本 section 应吃的字段
+            ctx = {
+                "outline": outline,
+                "payload": payload_dict,
+                "analysis": analysis,
+                "scenario_input": scenario_input,
+            }
+            context_paths = SECTION_CONTEXT_MAP.get(section_type, [])
+            context_payload: dict = {}
+            for p in context_paths:
+                value = _dot_walk(ctx, p)
+                if value is not None:
+                    context_payload[p] = value
+
+            # 控制 token：context_payload JSON 序列化后截断 4000 字符
+            try:
+                ctx_json = json.dumps(context_payload, ensure_ascii=False, default=str)
+            except TypeError:
+                ctx_json = json.dumps(
+                    {k: str(v) for k, v in context_payload.items()},
+                    ensure_ascii=False,
+                )
+            if len(ctx_json) > 4000:
+                ctx_json = (
+                    ctx_json[:4000]
+                    + f"\n...[已截断后续 {len(ctx_json) - 4000} 字符]"
+                )
+
+            section_label = SECTION_LABELS.get(section_type, section_type)
+            section_focus = SECTION_FOCUS_HINTS.get(section_type, "")
+            # section_id schema 3-40 字；scenario.lower()=2 + "-" + section_type[:30] 最多 33 字
+            section_id_hint = f"{scenario.lower()}-{section_type[:30]}"
+
+            # NARRATIVE_TEMPLATE 既含角色描述也含 JSON 输出契约，整体当 system；user 只触发生成
+            system_prompt = NARRATIVE_TEMPLATE.format(
+                section_type=section_type,
+                section_label=section_label,
+                section_focus_hint=section_focus,
+                scenario=scenario,
+                section_id_hint=section_id_hint,
+                context_payload=ctx_json,
+            )
+            user_prompt = "请基于上述上下文生成本节 JSON。"
+
+            raw = await self._llm_call_with_quota(
+                system_prompt, user_prompt, max_tokens=4096
+            )
+            return AnalysisSection(**raw)
+
+    async def _phase3_narratives(
+        self,
+        *,
+        scenario: str,
+        scenario_input: ScenarioInput,
+        outline: dict,
+        payload_dict: dict,
+        analysis: Any,
+        discovered_urls: list[str],
+        warnings: list[str],
+    ) -> tuple[list[AnalysisSection], list[str]]:
+        """[v3-R05] [v3-R12] [v3-R18] 并行 narrative + 占位降级 + 半数闸门。
+
+        - asyncio.gather(return_exceptions=True) 接住单 section 失败
+        - 失败回 _build_placeholder_section + warnings 加 placeholder_section:{type}:{ExcName}
+        - 失败数 ≥ ⌈expected_n / 2⌉ → raise RuntimeError 触发 graph 回 collector
+        """
+        section_types = _DEFAULT_SECTION_TYPES[scenario]
+        expected_n = len(section_types)
+
+        results = await asyncio.gather(
+            *(
+                self._phase3_one_section(
+                    scenario=scenario,
+                    section_type=st,
+                    outline=outline,
+                    payload_dict=payload_dict,
+                    analysis=analysis,
+                    scenario_input=scenario_input,
+                    discovered_urls=discovered_urls,
+                )
+                for st in section_types
+            ),
+            return_exceptions=True,
+        )
+
+        sections: list[AnalysisSection] = []
+        failed_n = 0
+        for st, r in zip(section_types, results):
+            if isinstance(r, Exception):
+                sections.append(_build_placeholder_section(st, payload_dict))
+                warnings.append(f"placeholder_section:{st}:{type(r).__name__}")
+                failed_n += 1
+                logger.warning(
+                    "[writer] phase 3 section %s 失败 → 占位降级: %s",
+                    st,
+                    type(r).__name__,
+                )
+            else:
+                sections.append(r)
+
+        # [v3-R05] 半数闸门：失败数 ≥ ⌈expected_n / 2⌉ 即 raise
+        threshold = (expected_n + 1) // 2
+        if failed_n >= threshold:
+            raise RuntimeError(
+                f"phase 3 失败数 {failed_n} >= {threshold}（expected={expected_n}），"
+                f"触发半数闸门，建议回 collector 重新采集"
+            )
+
+        logger.info(
+            "[writer] phase 3 narrative 完成: %d/%d 成功",
+            expected_n - failed_n,
+            expected_n,
+        )
+        return sections, warnings

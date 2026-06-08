@@ -1,0 +1,1112 @@
+"""前端渲染模块：BaseReport 通用骨架 + scenario_payload 分场景渲染。
+
+F1 实现 BaseReport 通用部分（at_a_glance / executive_summary / methodology /
+key_findings / analysis_sections / swot / recommendations / appendix）。
+
+F2/F3 后续在 render_scenario_payload + Plotly 图表中扩展。
+"""
+from __future__ import annotations
+
+import streamlit as st
+
+# F3 Plotly 图表：plotly 是可选依赖；导入失败时图表静默退化为文字提示
+try:
+    import plotly.graph_objects as go  # type: ignore
+    _PLOTLY_OK = True
+except ImportError:  # pragma: no cover
+    go = None
+    _PLOTLY_OK = False
+
+
+# ============ F3 图表（Plotly） ============
+
+_FIVE_FORCES_INTENSITY_NUM = {"low": 1, "medium": 3, "high": 5}
+
+
+def _render_chart_or_skip(fig, fallback_msg: str = "（plotly 未安装，跳过图表）"):
+    if not _PLOTLY_OK or fig is None:
+        st.caption(fallback_msg)
+        return
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _radar_chart_s1(radar_scores: list[dict]):
+    """S1 雷达图：5 维 × N 个竞品"""
+    if not _PLOTLY_OK or not radar_scores:
+        return None
+    dims = ["feature_breadth", "usability", "cost_effectiveness", "stability", "design_quality"]
+    labels_cn = ["功能广度", "易用性", "性价比", "稳定性", "设计质量"]
+    fig = go.Figure()
+    for r in radar_scores:
+        values = [r.get(d, 0) or 0 for d in dims]
+        # 闭合多边形
+        fig.add_trace(go.Scatterpolar(
+            r=values + [values[0]],
+            theta=labels_cn + [labels_cn[0]],
+            fill="toself",
+            name=r.get("competitor_name", ""),
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+        showlegend=True,
+        height=400,
+    )
+    return fig
+
+
+def _radar_chart_five_forces(ff: dict):
+    """S2 五力蜘蛛网"""
+    if not _PLOTLY_OK or not ff:
+        return None
+    forces = [
+        ("new_entrants", "新进入者"),
+        ("supplier_power", "供应商"),
+        ("buyer_power", "买家"),
+        ("substitute_threat", "替代品"),
+        ("competitive_rivalry", "现有竞争"),
+    ]
+    values = [_FIVE_FORCES_INTENSITY_NUM.get((ff.get(k) or {}).get("intensity", ""), 0) for k, _ in forces]
+    labels = [lbl for _, lbl in forces]
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values + [values[0]],
+        theta=labels + [labels[0]],
+        fill="toself",
+        name="行业五力",
+    ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 5], tickvals=[1, 3, 5], ticktext=["低", "中", "高"])),
+        showlegend=False,
+        height=380,
+    )
+    return fig
+
+
+def _scatter_perceptual_map(pm: dict):
+    """S5 二维感知地图（带 is_self 高亮）"""
+    if not _PLOTLY_OK or not pm:
+        return None
+    brands = pm.get("plotted_brands") or []
+    if not brands:
+        return None
+    x_axis = pm.get("x_axis") or {}
+    y_axis = pm.get("y_axis") or {}
+    fig = go.Figure()
+    others_x = [b.get("x_score", 0) for b in brands if not b.get("is_self")]
+    others_y = [b.get("y_score", 0) for b in brands if not b.get("is_self")]
+    others_text = [b.get("competitor_name", "") for b in brands if not b.get("is_self")]
+    if others_x:
+        fig.add_trace(go.Scatter(
+            x=others_x, y=others_y, mode="markers+text", text=others_text,
+            textposition="top center", marker=dict(size=14, color="#3b82f6"),
+            name="竞品",
+        ))
+    selves = [b for b in brands if b.get("is_self")]
+    if selves:
+        fig.add_trace(go.Scatter(
+            x=[b.get("x_score", 0) for b in selves],
+            y=[b.get("y_score", 0) for b in selves],
+            mode="markers+text", text=[b.get("competitor_name", "我方") for b in selves],
+            textposition="top center", marker=dict(size=20, color="#ef4444", symbol="star"),
+            name="我方",
+        ))
+    fig.update_layout(
+        xaxis_title=f"{x_axis.get('attribute', 'X')} ({x_axis.get('low_label', '')} → {x_axis.get('high_label', '')})",
+        yaxis_title=f"{y_axis.get('attribute', 'Y')} ({y_axis.get('low_label', '')} → {y_axis.get('high_label', '')})",
+        height=420, showlegend=True,
+    )
+    fig.update_xaxes(range=[0, x_axis.get("scale_max", 5)])
+    fig.update_yaxes(range=[0, y_axis.get("scale_max", 5)])
+    return fig
+
+
+def _scatter_magic_quadrant(vps: list[dict]):
+    """S5 Gartner Magic Quadrant 散点（execute × vision，含象限分隔线）"""
+    if not _PLOTLY_OK or not vps:
+        return None
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[v.get("ability_to_execute_score", 0) for v in vps],
+        y=[v.get("completeness_of_vision_score", 0) for v in vps],
+        mode="markers+text",
+        text=[v.get("competitor_name", "") for v in vps],
+        textposition="top center",
+        marker=dict(size=16, color="#3b82f6"),
+        name="竞品",
+    ))
+    # 象限分隔线（2.5 中点）
+    fig.add_shape(type="line", x0=2.5, y0=0, x1=2.5, y1=5, line=dict(color="gray", dash="dash"))
+    fig.add_shape(type="line", x0=0, y0=2.5, x1=5, y1=2.5, line=dict(color="gray", dash="dash"))
+    # 象限标签
+    fig.add_annotation(x=4, y=4.5, text="Leaders", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=4, y=0.5, text="Challengers", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=1, y=4.5, text="Visionaries", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=1, y=0.5, text="Niche Players", showarrow=False, font=dict(color="#888"))
+    fig.update_layout(
+        xaxis_title="Ability to Execute 执行力",
+        yaxis_title="Completeness of Vision 愿景完整度",
+        xaxis=dict(range=[0, 5]), yaxis=dict(range=[0, 5]),
+        height=440, showlegend=False,
+    )
+    return fig
+
+
+def _line_strategy_canvas(sc: dict):
+    """S5 战略画布：每个品牌一条折线（x=factors，y=levels）"""
+    if not _PLOTLY_OK or not sc:
+        return None
+    factors = [f.get("name", "") for f in sc.get("competitive_factors") or []]
+    if not factors:
+        return None
+    fig = go.Figure()
+    for vc in sc.get("value_curves") or []:
+        levels = [(vc.get("factor_levels") or {}).get(f, 0) for f in factors]
+        is_self = vc.get("is_self")
+        fig.add_trace(go.Scatter(
+            x=factors, y=levels, mode="lines+markers",
+            name=vc.get("competitor_name", ""),
+            line=dict(width=4 if is_self else 2, dash="solid" if is_self else "dot"),
+        ))
+    fig.update_layout(
+        yaxis_title="水平 (0-10)", yaxis=dict(range=[0, 10]),
+        xaxis_title="竞争要素", height=420, showlegend=True,
+    )
+    return fig
+
+
+def _render_source_refs(refs: list[dict] | None, *, prefix: str = "来源") -> None:
+    """渲染 SourceRef 列表为 caption 行（小字）"""
+    if not refs:
+        return
+    parts = []
+    for i, ref in enumerate(refs, 1):
+        url = ref.get("url", "") if isinstance(ref, dict) else ""
+        title = ref.get("title", "") if isinstance(ref, dict) else ""
+        label = title or f"链接 {i}"
+        if url:
+            parts.append(f"[{label}]({url})")
+        else:
+            parts.append(label)
+    if parts:
+        st.caption(f"{prefix}：" + " · ".join(parts))
+
+
+def _render_at_a_glance(items: list[str]) -> None:
+    if not items:
+        return
+    st.subheader("一图看懂")
+    for it in items:
+        st.markdown(f"- {it}")
+
+
+def _render_executive_summary(es: dict) -> None:
+    """5 段式执行摘要（v3 BaseReport 替代旧 4 段）"""
+    if not es:
+        return
+    st.header("执行摘要")
+    for label, key in [
+        ("背景定位 Context", "context"),
+        ("核心论断 Core Thesis", "core_thesis"),
+        ("现实启示 Implications", "implications"),
+    ]:
+        val = es.get(key, "")
+        if val:
+            st.subheader(label)
+            st.write(val)
+
+    kfb = es.get("key_findings_brief") or []
+    if kfb:
+        st.subheader("关键发现速览")
+        for f in kfb:
+            st.markdown(f"- {f}")
+
+    pf = es.get("path_forward") or []
+    if pf:
+        st.subheader("行动路径 Path Forward")
+        for p in pf:
+            st.markdown(f"- {p}")
+
+
+def _render_scope_and_methodology(scope: dict, methodology: dict) -> None:
+    cols = st.columns(2)
+    with cols[0]:
+        if scope:
+            st.subheader("分析范围")
+            st.markdown(f"**竞品**：{', '.join(scope.get('competitors', []))}")
+            st.markdown(f"**时间窗**：{scope.get('time_window', '')}")
+            regions = scope.get("regions") or []
+            if regions:
+                st.markdown(f"**区域**：{', '.join(regions)}")
+            exclusions = scope.get("exclusions") or []
+            if exclusions:
+                st.markdown(f"**排除**：{', '.join(exclusions)}")
+    with cols[1]:
+        if methodology:
+            st.subheader("方法论")
+            with st.expander("数据采集与评估", expanded=False):
+                st.write(methodology.get("data_collection_approach", ""))
+                ec = methodology.get("evaluation_criteria") or []
+                if ec:
+                    st.markdown("**评估维度**：")
+                    for c in ec:
+                        st.markdown(f"- {c}")
+                lim = methodology.get("limitations") or []
+                if lim:
+                    st.markdown("**已知局限**：")
+                    for l_ in lim:
+                        st.markdown(f"- {l_}")
+                ssn = methodology.get("sample_size_note", "")
+                if ssn:
+                    st.caption(ssn)
+
+
+def _render_key_findings(findings: list[dict]) -> None:
+    if not findings:
+        return
+    st.header("关键发现")
+    for i, f in enumerate(findings, 1):
+        st.markdown(f"**Finding {i}**：{f.get('statement', '')}")
+        ev = f.get("evidence", "")
+        impl = f.get("implication", "")
+        if ev:
+            st.caption(f"依据：{ev}")
+        if impl:
+            st.caption(f"启示：{impl}")
+        _render_source_refs(f.get("source_refs"))
+        st.markdown("---")
+
+
+def _render_analysis_sections(sections: list[dict]) -> None:
+    if not sections:
+        return
+    st.header("详细章节")
+    for sec in sections:
+        st.subheader(sec.get("heading", ""))
+        st.caption(f"section_type: `{sec.get('section_type', '')}`")
+        st.markdown(sec.get("narrative", ""))
+        _render_source_refs(sec.get("source_refs"))
+
+
+def _render_swot(swot: dict) -> None:
+    if not swot:
+        return
+    has_any = any(swot.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats"))
+    if not has_any:
+        return
+    st.header("SWOT 分析")
+    cols = st.columns(2)
+    quadrants = [
+        (cols[0], "strengths", "优势 S"),
+        (cols[1], "weaknesses", "劣势 W"),
+        (cols[0], "opportunities", "机会 O"),
+        (cols[1], "threats", "威胁 T"),
+    ]
+    for col, key, label in quadrants:
+        with col:
+            entries = swot.get(key) or []
+            st.subheader(label)
+            for e in entries:
+                st.markdown(f"- **{e.get('point', '')}**")
+                ev = e.get("evidence", "")
+                if ev:
+                    st.caption(f"依据：{ev}")
+                _render_source_refs(e.get("source_refs"))
+
+
+def _render_recommendations(recs: list[dict]) -> None:
+    if not recs:
+        return
+    st.header("行动建议")
+    timeline_groups: dict[str, list[dict]] = {"immediate": [], "short_term": [], "long_term": []}
+    for r in recs:
+        tl = r.get("timeline", "long_term")
+        timeline_groups.setdefault(tl, []).append(r)
+    for tl_key, tl_label in [
+        ("immediate", "即时（1 个月内）"),
+        ("short_term", "短期（3 个月内）"),
+        ("long_term", "长期（6-12 个月）"),
+    ]:
+        items = timeline_groups.get(tl_key) or []
+        if not items:
+            continue
+        st.subheader(tl_label)
+        for r in items:
+            priority = r.get("priority", "")
+            target = r.get("target_role", "")
+            action = r.get("action", "")
+            rationale = r.get("rationale", "")
+            badge = {"critical": "🔴", "important": "🟡", "consider": "🟢"}.get(priority, "")
+            st.markdown(f"{badge} **[{priority}]** {action}")
+            if target:
+                st.caption(f"对象：{target}")
+            if rationale:
+                st.caption(f"依据：{rationale}")
+            _render_source_refs(r.get("source_refs"))
+
+
+def _render_appendix(appendix: dict | None) -> None:
+    if not appendix:
+        return
+    glossary = appendix.get("glossary") or {}
+    sources_full = appendix.get("data_sources_full") or []
+    if not (glossary or sources_full):
+        return
+    with st.expander("附录", expanded=False):
+        if glossary:
+            st.subheader("术语表")
+            for term, defi in glossary.items():
+                st.markdown(f"- **{term}**：{defi}")
+        if sources_full:
+            st.subheader("完整数据来源")
+            for ds in sources_full:
+                url = ds.get("url", "")
+                title = ds.get("title", "") or url
+                conf = ds.get("confidence", "")
+                badge = {"high": "🟢", "medium": "🟡", "low": "🟠"}.get(conf, "")
+                if url:
+                    st.markdown(f"- {badge} [{title}]({url})")
+                else:
+                    st.markdown(f"- {badge} {title}")
+
+
+def _render_metadata_panel(metadata: dict) -> None:
+    if not metadata:
+        return
+    with st.expander("元数据 & 质检", expanded=False):
+        cols = st.columns(3)
+        cols[0].metric("场景", metadata.get("scenario", ""))
+        cols[1].metric("置信度", metadata.get("confidence_level", ""))
+        qs = metadata.get("quality_score")
+        if qs is not None:
+            cols[2].metric("质检评分", f"{qs:.2f}")
+        else:
+            cols[2].metric("质检评分", "未质检")
+        note = metadata.get("quality_score_calculation_note", "")
+        if note:
+            st.caption(f"评分依据：{note}")
+        warnings = metadata.get("warnings") or []
+        if warnings:
+            st.markdown("**警告**：")
+            for w in warnings:
+                st.markdown(f"- {w}")
+        st.json(metadata)
+
+
+def render_scenario_payload(payload: dict | None) -> None:
+    """scenario_payload 按 scenario_type 分发到 5 个专属渲染函数（F2）。
+
+    图表（雷达 / Perceptual Map / MQ）由 F3 在各 _render_sX_payload 内补齐。
+    """
+    if not payload:
+        return
+    scenario_type = payload.get("scenario_type", "")
+    fn = globals().get(f"_render_{scenario_type.lower()}_payload")
+    if fn is None:
+        st.header("场景专属数据")
+        st.caption(f"未知场景：`{scenario_type}`，回退原始 JSON")
+        st.json(payload)
+        return
+    fn(payload)
+
+
+# ============ S1 功能迭代 ============
+
+def _render_s1_payload(p: dict) -> None:
+    st.header("S1 功能迭代分析")
+
+    # vendor_profiles 表
+    vps = p.get("vendor_profiles") or []
+    if vps:
+        st.subheader("竞品画像（Forrester Wave 风格）")
+        rows = [
+            {
+                "竞品": v.get("competitor_name", ""),
+                "波次定位": v.get("wave_position", ""),
+                "一句话": v.get("one_line_pitch", ""),
+                "最佳适配": v.get("best_fit_for", ""),
+                "优势数": len(v.get("strengths") or []),
+                "警示数": len(v.get("cautions") or []),
+            }
+            for v in vps
+        ]
+        st.dataframe(rows, use_container_width=True)
+
+    # feature_matrix 表（categories × competitors 评分）
+    fm = p.get("feature_matrix") or {}
+    if fm.get("categories"):
+        st.subheader("功能矩阵")
+        st.caption(
+            f"我方：{fm.get('our_product_name', '')} | "
+            f"竞品：{', '.join(fm.get('competitors', []))} | "
+            f"评分制：0=不支持 / 1=部分 / 2=完整支持"
+        )
+        rows = []
+        for cat in fm.get("categories", []):
+            for f in cat.get("features", []):
+                row = {
+                    "类别": cat.get("name", ""),
+                    "权重": cat.get("weight", ""),
+                    "功能": f.get("name", ""),
+                }
+                for comp, fs in (f.get("scores") or {}).items():
+                    row[comp] = fs.get("score", "") if isinstance(fs, dict) else fs
+                rows.append(row)
+        if rows:
+            st.dataframe(rows, use_container_width=True)
+        ws = fm.get("weighted_scores") or {}
+        if ws:
+            st.caption("加权总分（百分比）：" + " · ".join(f"{k}={v}" for k, v in ws.items()))
+
+    # 雷达图（F3）
+    radar_scores = p.get("radar_scores") or []
+    if radar_scores:
+        st.subheader("5 维雷达图")
+        _render_chart_or_skip(_radar_chart_s1(radar_scores))
+
+    # tier1_disqualifiers
+    t1d = p.get("tier1_disqualifiers") or []
+    if t1d:
+        st.subheader("Tier 1 一票否决项")
+        for d in t1d:
+            failing = ", ".join(d.get("competitors_failing") or [])
+            st.markdown(f"- **{d.get('feature', '')}**：{failing} 不达标")
+            st.caption(f"启示：{d.get('implication', '')}")
+
+    # white_space_features
+    ws_features = p.get("white_space_features") or []
+    if ws_features:
+        st.subheader("无人触及功能（white space）")
+        st.dataframe([
+            {
+                "功能": w.get("feature", ""),
+                "无人做的原因": w.get("why_no_one_supports", ""),
+                "机会": w.get("opportunity_estimate", ""),
+            }
+            for w in ws_features
+        ], use_container_width=True)
+
+    # job_statement
+    js = p.get("job_statement") or {}
+    if js:
+        st.subheader("用户工作 JTBD")
+        st.markdown(
+            f"**情境**：{js.get('situation', '')}\n\n"
+            f"**动机**：{js.get('motivation', '')}\n\n"
+            f"**期望结果**：{js.get('outcome', '')}"
+        )
+        st.caption(f"层次：{js.get('layer', '')}")
+
+    # feature_gaps
+    fgs = p.get("feature_gaps") or []
+    if fgs:
+        st.subheader("功能差距")
+        st.dataframe([
+            {
+                "功能": g.get("feature_name", ""),
+                "竞品已有": ", ".join(g.get("competitors_have_it") or []),
+                "未满足结果": g.get("underserved_outcome", ""),
+                "投入": g.get("estimated_effort", ""),
+                "影响": g.get("estimated_impact", ""),
+                "建议": g.get("recommendation", ""),
+            }
+            for g in fgs
+        ], use_container_width=True)
+
+    # roadmap_recommendations
+    rr = p.get("roadmap_recommendations") or {}
+    if rr:
+        st.subheader("路线图建议")
+        cols = st.columns(3)
+        with cols[0]:
+            st.markdown("**must_build**")
+            for x in rr.get("must_build") or []:
+                st.markdown(f"- {x}")
+        with cols[1]:
+            st.markdown("**should_skip**")
+            for x in rr.get("should_skip") or []:
+                st.markdown(f"- {x}")
+        with cols[2]:
+            st.markdown("**should_differentiate**")
+            for x in rr.get("should_differentiate") or []:
+                st.markdown(f"- {x}")
+        st.caption(rr.get("rationale_summary", ""))
+
+
+# ============ S2 市场进入 ============
+
+def _render_market_value(label: str, mv: dict) -> None:
+    if not mv:
+        return
+    amount = mv.get("amount")
+    unit = mv.get("unit", "")
+    currency = mv.get("currency", "")
+    basis = mv.get("value_basis", "")
+    year = mv.get("year", "")
+    geo = mv.get("geography", "")
+    if amount is None:
+        st.metric(label, "—", help=f"basis={basis}")
+    else:
+        st.metric(label, f"{amount} {unit} {currency}", help=f"{geo} {year} ({basis})")
+
+
+def _render_s2_payload(p: dict) -> None:
+    st.header("S2 市场进入分析")
+
+    # market_sizing
+    ms = p.get("market_sizing") or {}
+    if ms:
+        st.subheader("市场规模 TAM/SAM/SOM")
+        cols = st.columns(3)
+        with cols[0]:
+            _render_market_value("TAM", ms.get("tam") or {})
+        with cols[1]:
+            _render_market_value("SAM", ms.get("sam") or {})
+        with cols[2]:
+            _render_market_value("SOM", ms.get("som") or {})
+        cagr = ms.get("cagr_pct")
+        if cagr is not None:
+            st.caption(f"CAGR: {cagr}% / 预测年限: {ms.get('forecast_years', '—')} 年")
+
+    # five_forces
+    ff = p.get("five_forces") or {}
+    if ff:
+        st.subheader("Porter 五力分析")
+        _render_chart_or_skip(_radar_chart_five_forces(ff))
+        forces_map = [
+            ("new_entrants", "新进入者威胁"),
+            ("supplier_power", "供应商议价力"),
+            ("buyer_power", "买家议价力"),
+            ("substitute_threat", "替代品威胁"),
+            ("competitive_rivalry", "现有竞争"),
+        ]
+        rows = [
+            {
+                "维度": label,
+                "强度": (ff.get(k) or {}).get("intensity", ""),
+                "影响": (ff.get(k) or {}).get("implication", ""),
+            }
+            for k, label in forces_map
+        ]
+        st.dataframe(rows, use_container_width=True)
+        ia = p.get("industry_attractiveness_1_5")
+        if ia is not None:
+            st.caption(f"行业吸引力评分（1-5）：{ia}")
+
+    # players
+    players = p.get("players") or []
+    if players:
+        st.subheader("市场玩家")
+        st.caption(f"市场集中度：{p.get('market_concentration', '')}")
+        st.dataframe([
+            {
+                "名称": pl.get("name", ""),
+                "公司": pl.get("company", ""),
+                "角色": pl.get("market_role", ""),
+                "份额%": pl.get("market_share_pct", ""),
+                "增速%": pl.get("yoy_growth_pct", ""),
+                "差异化": pl.get("key_differentiator", ""),
+                "推荐": "✓" if pl.get("is_recommended") else "",
+                "已采集": "✓" if pl.get("is_collected") else "",
+            }
+            for pl in players
+        ], use_container_width=True)
+
+    # consumer_segments
+    segs = p.get("consumer_segments") or []
+    if segs:
+        st.subheader("消费者分群")
+        st.dataframe([
+            {
+                "分群": s.get("name", ""),
+                "份额%": s.get("share_pct", ""),
+                "可触达": s.get("addressability", ""),
+                "核心需求": " / ".join(s.get("key_needs") or []),
+            }
+            for s in segs
+        ], use_container_width=True)
+
+    # key_trends
+    trends = p.get("key_trends") or []
+    if trends:
+        st.subheader("关键趋势")
+        st.dataframe([
+            {
+                "趋势": t.get("trend_name", ""),
+                "方向": t.get("direction", ""),
+                "时间窗": t.get("time_horizon", ""),
+                "对进入影响": t.get("impact_on_entry", ""),
+            }
+            for t in trends
+        ], use_container_width=True)
+
+    # entry_strategy
+    es = p.get("entry_strategy") or {}
+    if es:
+        st.subheader("进入策略")
+        st.markdown(f"**推荐模式**：`{es.get('recommended_mode', '')}`")
+        st.markdown(f"**目标分群**：{', '.join(es.get('target_segments') or [])}")
+        st.markdown(f"**初始定位**：{es.get('initial_positioning', '')}")
+        ksf = es.get("key_success_factors") or []
+        if ksf:
+            st.markdown("**关键成功因素**：")
+            for k in ksf:
+                st.markdown(f"- {k}")
+        risks = es.get("main_risks") or []
+        if risks:
+            st.markdown("**主要风险**：")
+            for r in risks:
+                st.markdown(
+                    f"- {r.get('description', '')} "
+                    f"（风险={r.get('likelihood', '')}/影响={r.get('impact', '')}）"
+                )
+
+    # competitor_recommendations（recommender 产出）
+    rec = p.get("competitor_recommendations") or {}
+    if rec:
+        st.subheader("Recommender 推荐玩家")
+        st.caption(f"行业：{rec.get('user_provided_industry', '')} | 方法：{rec.get('selection_method', '')}")
+        rcs = rec.get("recommended_competitors") or []
+        st.dataframe([
+            {
+                "名称": r.get("name", ""),
+                "公司": r.get("company", ""),
+                "推荐理由": r.get("why_recommended", ""),
+                "置信度": r.get("confidence", ""),
+            }
+            for r in rcs
+        ], use_container_width=True)
+
+
+# ============ S3 定价策略 ============
+
+def _render_s3_payload(p: dict) -> None:
+    st.header("S3 定价策略分析")
+
+    # pricing_baseline
+    pb = p.get("pricing_baseline") or {}
+    if pb:
+        st.subheader("当前定价基线")
+        st.markdown(
+            f"**模式**：`{pb.get('current_pricing_model', '')}` | "
+            f"**层级数**：{pb.get('current_tier_count', '')} | "
+            f"**ARPU 备注**：{pb.get('current_arpu_note', '')}"
+        )
+        pains = pb.get("pain_points") or []
+        if pains:
+            st.markdown("**痛点**：")
+            for pp in pains:
+                st.markdown(f"- {pp}")
+
+    # value_drivers
+    vds = p.get("value_drivers") or []
+    if vds:
+        st.subheader("价值驱动因素")
+        st.dataframe([
+            {"驱动": v.get("driver_name", ""), "重要性": v.get("importance", ""), "证据": v.get("evidence", "")}
+            for v in vds
+        ], use_container_width=True)
+
+    # feature_classification
+    fc = p.get("feature_classification") or {}
+    if fc:
+        st.subheader("功能分类")
+        cols = st.columns(3)
+        with cols[0]:
+            st.markdown("**Hygiene 基础**")
+            for x in fc.get("hygiene_factors") or []:
+                st.markdown(f"- {x}")
+        with cols[1]:
+            st.markdown("**Preference 偏好**")
+            for x in fc.get("preference_drivers") or []:
+                st.markdown(f"- {x}")
+        with cols[2]:
+            st.markdown("**Premium 溢价**")
+            for x in fc.get("premium_drivers") or []:
+                st.markdown(f"- {x}")
+
+    # wtp_research
+    wtp = p.get("wtp_research")
+    if wtp:
+        st.subheader("支付意愿研究")
+        st.markdown(
+            f"**方法**：`{wtp.get('method', '')}` | **置信度**：{wtp.get('confidence', '')}"
+        )
+        st.caption(f"理由：{wtp.get('rationale', '')}")
+        if wtp.get("limitations"):
+            st.caption(f"局限：{wtp.get('limitations', '')}")
+
+    # packaging
+    pkg = p.get("packaging") or {}
+    tiers = pkg.get("tiers") or []
+    if tiers:
+        st.subheader("推荐套餐设计 GBB")
+        cols = st.columns(len(tiers))
+        for col, t in zip(cols, tiers):
+            with col:
+                badge = "⭐" if t.get("is_recommended") else ""
+                st.markdown(f"### {badge} {t.get('name', '')}")
+                st.caption(f"position: `{t.get('position', '')}`")
+                mp = t.get("monthly_price")
+                ap = t.get("annual_price")
+                cur = t.get("currency", "")
+                if mp is not None:
+                    st.markdown(f"**月费**：{mp} {cur}")
+                if ap is not None:
+                    st.markdown(f"**年费**：{ap} {cur}")
+                st.markdown(f"**对象**：{t.get('target_persona', '')}")
+                feats = t.get("included_features") or []
+                if feats:
+                    st.markdown("**包含**：")
+                    for f in feats:
+                        st.markdown(f"- {f}")
+        adv = pkg.get("annual_discount_pct")
+        if adv is not None:
+            st.caption(f"年付折扣：{adv}% | 默认周期：{pkg.get('default_billing_cycle', '')}")
+        st.caption(pkg.get("rationale", ""))
+
+    # competitive_pricing_matrix
+    cpm = p.get("competitive_pricing_matrix") or []
+    if cpm:
+        st.subheader("竞品定价矩阵")
+        for cp in cpm:
+            with st.expander(f"{cp.get('competitor_name', '')} - {cp.get('pricing_model', '')}"):
+                ts = cp.get("tiers") or []
+                if ts:
+                    st.dataframe([
+                        {
+                            "套餐": t.get("name", ""),
+                            "月费": t.get("monthly_price", ""),
+                            "年费": t.get("annual_price", ""),
+                            "货币": t.get("currency", ""),
+                            "热销": "✓" if t.get("observed_is_most_popular") else "",
+                            "对象": t.get("observed_target_persona", ""),
+                        }
+                        for t in ts
+                    ], use_container_width=True)
+                if cp.get("free_plan_strategy"):
+                    st.caption(f"免费策略：{cp.get('free_plan_strategy', '')}")
+
+    # recommendations_summary
+    rs = p.get("recommendations_summary") or {}
+    if rs:
+        st.subheader("定价方案总结")
+        st.write(rs.get("recommended_packaging_summary", ""))
+        uplift = rs.get("expected_arr_uplift_pct")
+        basis = rs.get("expected_arr_uplift_basis", "")
+        if uplift is not None:
+            st.metric("预期 ARR 提升 %", f"{uplift}%", help=f"basis={basis}")
+        st.caption(f"理由：{rs.get('expected_uplift_rationale', '')}")
+        risks = rs.get("main_risks") or []
+        if risks:
+            st.markdown("**主要风险**：")
+            for r in risks:
+                st.markdown(f"- {r.get('description', '')}（缓解：{r.get('mitigation', '')}）")
+
+    # rollout_plan
+    rp = p.get("rollout_plan") or []
+    if rp:
+        st.subheader("Rollout 步骤")
+        st.dataframe([
+            {
+                "步骤": s.get("step_name", ""),
+                "周期": s.get("duration", ""),
+                "负责团队": s.get("owner_team", ""),
+                "成功指标": s.get("success_metric", ""),
+            }
+            for s in rp
+        ], use_container_width=True)
+
+
+# ============ S4 持续监控 ============
+
+def _render_s4_payload(p: dict) -> None:
+    st.header("S4 持续监控分析")
+
+    # review_period
+    rp = p.get("review_period") or {}
+    if rp:
+        st.subheader("监控周期")
+        prior = rp.get("prior_trace_id")
+        st.caption(
+            f"周期：{rp.get('review_period_label', '')} | "
+            f"竞品：{', '.join(rp.get('monitored_competitors') or [])} | "
+            f"模式：{'增量' if prior else '首次基线'}"
+        )
+
+    # 5 类 changes
+    change_groups = [
+        ("feature_changes", "功能变更"),
+        ("pricing_changes", "定价变更"),
+        ("messaging_changes", "信息变更"),
+        ("news_events", "新闻事件"),
+        ("org_changes", "组织变更"),
+    ]
+    rendered_any = False
+    for key, label in change_groups:
+        items = p.get(key) or []
+        if not items:
+            continue
+        if not rendered_any:
+            st.subheader("变更检测")
+            rendered_any = True
+        with st.expander(f"{label}（{len(items)} 条）"):
+            st.dataframe([
+                {
+                    "竞品": it.get("competitor_name", ""),
+                    "类型": it.get("change_type", "") or it.get("category", "") or it.get("action", ""),
+                    "事实": (it.get("fia") or {}).get("fact", ""),
+                    "严重度": it.get("severity", ""),
+                    "基线": "✓" if it.get("is_baseline") else "",
+                }
+                for it in items
+            ], use_container_width=True)
+
+    # threats
+    threats = p.get("threats") or []
+    if threats:
+        st.subheader("威胁评估")
+        st.dataframe([
+            {
+                "标题": t.get("title", ""),
+                "严重度": t.get("severity", ""),
+                "可能性": t.get("likelihood", ""),
+                "象限": t.get("quadrant", ""),
+                "应对": t.get("recommended_response", ""),
+            }
+            for t in threats
+        ], use_container_width=True)
+
+    # opportunities
+    opps = p.get("opportunities") or []
+    if opps:
+        st.subheader("机会识别 OSCOM")
+        st.dataframe([
+            {
+                "类型": o.get("opportunity_type", ""),
+                "投入": o.get("estimated_effort", ""),
+                "影响": o.get("expected_impact", ""),
+                "描述": o.get("description", ""),
+                "首步": o.get("first_step", ""),
+            }
+            for o in opps
+        ], use_container_width=True)
+
+    # trends
+    trends = p.get("trends") or {}
+    if any(trends.get(k) for k in ("sentiment_trend", "pricing_trend", "release_velocity_trend", "threat_level_trend")):
+        st.subheader("趋势方向")
+        cols = st.columns(4)
+        labels = [
+            (cols[0], "情感", "sentiment_trend"),
+            (cols[1], "定价", "pricing_trend"),
+            (cols[2], "迭代速度", "release_velocity_trend"),
+            (cols[3], "威胁等级", "threat_level_trend"),
+        ]
+        for col, label, key in labels:
+            with col:
+                v = trends.get(key) or "—"
+                arrow = {"up": "↑", "down": "↓", "flat": "→"}.get(v, "")
+                st.metric(label, f"{v} {arrow}")
+        if trends.get("rationale"):
+            st.caption(trends.get("rationale", ""))
+
+    # monitoring_actions
+    actions = p.get("monitoring_actions") or []
+    if actions:
+        st.subheader("推荐行动")
+        st.dataframe([
+            {
+                "行动": a.get("description", ""),
+                "团队": a.get("owner_team", ""),
+                "优先级": a.get("priority_tier", ""),
+                "截止": a.get("due_date_estimate", ""),
+            }
+            for a in actions
+        ], use_container_width=True)
+
+    # battlecards
+    bcs = p.get("battlecards") or []
+    if bcs:
+        st.subheader("活体战卡")
+        for bc in bcs:
+            with st.expander(
+                f"{bc.get('competitor_name', '')} - 完整度: {bc.get('overall_completeness', '')}"
+            ):
+                for sec in bc.get("sections") or []:
+                    st.markdown(f"**{sec.get('section_name', '')}** "
+                                f"({sec.get('completeness', '')})")
+                    if sec.get("content"):
+                        st.write(sec.get("content", ""))
+
+
+# ============ S5 战略定位 ============
+
+def _render_s5_payload(p: dict) -> None:
+    st.header("S5 战略定位分析")
+
+    # vendor_profiles（含 Gartner MQ 评分）
+    vps = p.get("vendor_profiles") or []
+    if vps:
+        st.subheader("竞品画像 Gartner MQ")
+        _render_chart_or_skip(_scatter_magic_quadrant(vps))
+        st.dataframe([
+            {
+                "竞品": v.get("competitor_name", ""),
+                "执行力": v.get("ability_to_execute_score", ""),
+                "愿景完整度": v.get("completeness_of_vision_score", ""),
+                "象限": v.get("mq_quadrant", ""),
+                "概览": v.get("overview", ""),
+            }
+            for v in vps
+        ], use_container_width=True)
+
+    # perceptual_map
+    pm = p.get("perceptual_map") or {}
+    if pm:
+        st.subheader("感知地图 Perceptual Map")
+        _render_chart_or_skip(_scatter_perceptual_map(pm))
+        x_axis = pm.get("x_axis") or {}
+        y_axis = pm.get("y_axis") or {}
+        st.caption(
+            f"X 轴：{x_axis.get('attribute', '')} ({x_axis.get('low_label', '')} → {x_axis.get('high_label', '')}) | "
+            f"Y 轴：{y_axis.get('attribute', '')} ({y_axis.get('low_label', '')} → {y_axis.get('high_label', '')})"
+        )
+        brands = pm.get("plotted_brands") or []
+        st.dataframe([
+            {
+                "品牌": b.get("competitor_name", ""),
+                "我方": "✓" if b.get("is_self") else "",
+                "X": b.get("x_score", ""),
+                "Y": b.get("y_score", ""),
+                "置信": b.get("confidence", ""),
+                "理由": b.get("score_rationale", ""),
+            }
+            for b in brands
+        ], use_container_width=True)
+        ws = pm.get("white_space") or []
+        if ws:
+            st.markdown("**空白区域机会**")
+            for w in ws:
+                st.markdown(f"- `{w.get('quadrant', '')}`：{w.get('opportunity_description', '')}")
+        cz = pm.get("cluster_zones") or []
+        if cz:
+            st.markdown("**聚集区域**")
+            for c in cz:
+                st.markdown(f"- {', '.join(c.get('brands_in_cluster') or [])}：{c.get('implication', '')}")
+        if pm.get("display_watermark"):
+            st.caption(f"⚠️ {pm.get('display_watermark', '')}")
+
+    # strategy_canvas
+    sc = p.get("strategy_canvas") or {}
+    if sc:
+        st.subheader("战略画布")
+        _render_chart_or_skip(_line_strategy_canvas(sc))
+        factors = [f.get("name", "") for f in sc.get("competitive_factors") or []]
+        rows = []
+        for vc in sc.get("value_curves") or []:
+            row = {"品牌": vc.get("competitor_name", ""), "我方": "✓" if vc.get("is_self") else ""}
+            for f in factors:
+                row[f] = (vc.get("factor_levels") or {}).get(f, "")
+            rows.append(row)
+        if rows:
+            st.dataframe(rows, use_container_width=True)
+
+    # errc_grid
+    eg = p.get("errc_grid") or {}
+    if eg:
+        st.subheader("ERRC 4 宫格")
+        cols = st.columns(4)
+        for col, key, label in [
+            (cols[0], "eliminate", "Eliminate 消除"),
+            (cols[1], "reduce", "Reduce 减少"),
+            (cols[2], "raise_level", "Raise 提升"),
+            (cols[3], "create", "Create 创造"),
+        ]:
+            with col:
+                st.markdown(f"**{label}**")
+                for a in eg.get(key) or []:
+                    st.markdown(f"- {a.get('factor', '')}")
+                    st.caption(a.get("rationale", ""))
+
+    # blue_ocean_move
+    bom = p.get("blue_ocean_move")
+    if bom:
+        st.subheader("蓝海战略动作")
+        st.markdown(f"**新价值曲线**：{bom.get('new_value_curve_summary', '')}")
+        cols = st.columns(2)
+        cols[0].metric("聚焦", bom.get("focus_assessment", ""))
+        cols[1].metric("发散", bom.get("divergence_assessment", ""))
+        st.markdown(f"**广告语**：> {bom.get('compelling_tagline', '')}")
+        targets = bom.get("target_noncustomers") or []
+        if targets:
+            st.caption(f"目标非客户：{', '.join(targets)}")
+
+    # positioning_statement
+    ps = p.get("positioning_statement") or {}
+    if ps:
+        st.subheader("定位陈述（Geoffrey Moore 6 位模板）")
+        st.caption(f"置信度：`{ps.get('confidence', '')}`")
+        if ps.get("full_statement_text"):
+            st.info(ps.get("full_statement_text", ""))
+        else:
+            st.markdown(
+                f"For **{ps.get('target_customer', '')}** who {ps.get('need_or_opportunity', '')}, "
+                f"**{ps.get('product_name', '')}** is a {ps.get('product_category', '')} that "
+                f"{ps.get('key_benefit', '')}. Unlike {ps.get('primary_alternative', '')}, "
+                f"our product {ps.get('primary_differentiation', '')}."
+            )
+
+    # category_strategy
+    cs = p.get("category_strategy") or {}
+    if cs:
+        st.subheader("品类战略")
+        st.markdown(f"**选定品类**：{cs.get('chosen_category', '')}")
+        st.caption(f"理由：{cs.get('why_this_category', '')}")
+        implied = cs.get("competitors_implied") or []
+        if implied:
+            st.markdown(f"**隐含竞品**：{', '.join(implied)}")
+        if cs.get("risk_of_category_choice"):
+            st.caption(f"风险：{cs.get('risk_of_category_choice', '')}")
+
+
+def render_base_report(report: dict) -> None:
+    """主入口：按 BaseReport schema 顺序渲染。"""
+    if not report:
+        st.warning("报告为空")
+        return
+
+    title = report.get("title", "")
+    subtitle = report.get("subtitle", "")
+    if title:
+        st.title(title)
+    if subtitle:
+        st.caption(subtitle)
+
+    _render_at_a_glance(report.get("at_a_glance") or [])
+    _render_executive_summary(report.get("executive_summary") or {})
+
+    bg = report.get("background", "")
+    if bg:
+        st.header("背景")
+        st.write(bg)
+
+    _render_scope_and_methodology(
+        report.get("scope") or {},
+        report.get("methodology") or {},
+    )
+
+    _render_key_findings(report.get("key_findings") or [])
+    _render_analysis_sections(report.get("analysis_sections") or [])
+    _render_swot(report.get("swot") or {})
+
+    conclusions = report.get("conclusions", "")
+    if conclusions:
+        st.header("结论")
+        st.write(conclusions)
+
+    _render_recommendations(report.get("recommendations") or [])
+
+    render_scenario_payload(report.get("scenario_payload"))
+
+    _render_appendix(report.get("appendix") or {})
+    _render_metadata_panel(report.get("metadata") or {})

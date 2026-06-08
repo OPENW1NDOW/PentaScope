@@ -114,24 +114,16 @@ class WriterOrchestrator:
 
         # ========== Phase 2: payload ==========
         warnings: list[str] = []
-        payload_dict = await self._phase2_payload(
-            scenario,
-            scenario_input,
-            analysis,
-            profiles,
-            competitor_recommendations,
-            prior_report_data,
-            competitor_names,
-            competitor_basics,
-            discovered_urls,
-        )
-        payload_model = self._build_payload_model(
-            scenario,
-            payload_dict,
-            discovered_urls=discovered_urls,
+        payload_model = await self._call_phase2_with_validation(
+            scenario=scenario,
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
             competitor_recommendations=competitor_recommendations,
             prior_report_data=prior_report_data,
-            scenario_input=scenario_input,
+            competitor_names=competitor_names,
+            competitor_basics=competitor_basics,
+            discovered_urls=discovered_urls,
             warnings=warnings,
         )
         # outline / payload_model / warnings 留给 phase 3-4 使用，避免未使用告警
@@ -268,22 +260,18 @@ class WriterOrchestrator:
 
     # ========== Phase 2: payload ==========
 
-    async def _phase2_payload(
+    def _build_phase2_user_prompt(
         self,
         scenario: str,
         scenario_input: ScenarioInput,
         analysis: Any,
         profiles: list[CompetitorProfile],
         competitor_recommendations: Any,
-        prior_report_data: Optional[dict],
         competitor_names: list[str],
         competitor_basics: list[dict],
         discovered_urls: list[str],
-    ) -> dict:
-        """Phase 2：一次 LLM 调用产出场景特有 scenario_payload 原始 dict。
-
-        不在此处 normalize 或实例化 schema——这是 _build_payload_model 的职责。
-        """
+    ) -> str:
+        """拼装 Phase 2 base user prompt（不含 LLM 调用，便于重试时复用）。"""
         # Profiles 摘要（与 phase 1 一致：basic_info 维度，控制 token）
         profile_summaries: list[dict] = []
         for p in profiles:
@@ -344,14 +332,68 @@ class WriterOrchestrator:
                 parts.append(f"{label}\n{value}")
             else:
                 parts.append(f"{label}\n{json.dumps(value, ensure_ascii=False, indent=2)}")
-        user_prompt = "\n\n".join(parts)
+        return "\n\n".join(parts)
 
-        system_prompt = WRITER_PAYLOAD_PROMPTS[scenario]
-        raw = await self._llm_call_with_quota(
-            system_prompt, user_prompt, max_tokens=4096
+    async def _call_phase2_with_validation(
+        self,
+        *,
+        scenario: str,
+        scenario_input: ScenarioInput,
+        analysis: Any,
+        profiles: list[CompetitorProfile],
+        competitor_recommendations: Any,
+        prior_report_data: Optional[dict],
+        competitor_names: list[str],
+        competitor_basics: list[dict],
+        discovered_urls: list[str],
+        warnings: list[str],
+        max_retries: int = 1,
+        max_tokens: int = 4096,
+    ):
+        """Phase 2 LLM call → normalize → 注入 → 实例化场景 Payload schema。
+
+        [I1 修复] ValidationError 时回灌错误摘要重试 1 次（spec v3 行 254-256）。
+        重试也走 _llm_call_with_quota，受熔断保护。
+        """
+        base_user_prompt = self._build_phase2_user_prompt(
+            scenario,
+            scenario_input,
+            analysis,
+            profiles,
+            competitor_recommendations,
+            competitor_names,
+            competitor_basics,
+            discovered_urls,
         )
-        logger.info("[writer] phase 2 payload 完成: scenario=%s", scenario)
-        return raw
+        system_prompt = WRITER_PAYLOAD_PROMPTS[scenario]
+        last_error_summary: str | None = None
+
+        for attempt in range(max_retries + 1):
+            current_user_prompt = base_user_prompt
+            if last_error_summary:
+                current_user_prompt = (
+                    f"{base_user_prompt}\n\n【上次校验失败，请修复】\n{last_error_summary}"
+                )
+            raw = await self._llm_call_with_quota(
+                system_prompt, current_user_prompt, max_tokens=max_tokens
+            )
+            try:
+                payload_model = self._build_payload_model(
+                    scenario,
+                    raw,
+                    discovered_urls=discovered_urls,
+                    competitor_recommendations=competitor_recommendations,
+                    prior_report_data=prior_report_data,
+                    scenario_input=scenario_input,
+                    warnings=warnings,
+                )
+                logger.info("[writer] phase 2 payload 完成: scenario=%s", scenario)
+                return payload_model
+            except ValidationError as e:
+                if attempt >= max_retries:
+                    raise
+                last_error_summary = self._serialize_validation_error(e, max_chars=1500)
+                logger.warning("[writer] phase 2 ValidationError 重试 1 次")
 
     def _build_payload_model(
         self,
@@ -400,15 +442,15 @@ class WriterOrchestrator:
     ) -> dict:
         """[v3-R09] S4 场景：从 prior_report_data 解析 newly_added/dropped competitors，写入 review_period。
 
-        - prior_report_data 为 None → 首次监控模式（normalizer 已确保 changes 全 baseline）
-        - prior 报告 scenario / schema_version 不匹配 → logger.warning + 降级为首次监控
+        - prior_report_data 为 None → 首次监控模式（不写 prior_trace_id；schema validator 走 baseline 分支）
+        - prior 报告 scenario / schema_version 不匹配 → logger.warning + 降级为首次监控（同样不写 prior_trace_id）
+
+        [C1 修复] prior_trace_id 写入与 newly/dropped 计算同步——只在确认能做 diff 时才注入，
+        避免「prior_trace_id 已写但 diff 没算」造成的伪溯源（标"基于 prior=xxx 增量"但实际未 diff）。
         """
         review_period = payload_dict.setdefault("review_period", {})
 
-        # ScenarioInput.prior_trace_id 由代码注入（不让 LLM 自填）
-        if scenario_input.prior_trace_id:
-            review_period["prior_trace_id"] = scenario_input.prior_trace_id
-
+        # 首次监控模式：prior_report_data 为空 → 不写 prior_trace_id，直接返回
         if not prior_report_data:
             return payload_dict
 
@@ -425,6 +467,10 @@ class WriterOrchestrator:
                 "[writer] S4 prior 报告 scenario/schema_version 不匹配，降级为首次监控"
             )
             return payload_dict
+
+        # 确认能做 diff，prior_trace_id 与 newly/dropped 同步注入
+        if scenario_input.prior_trace_id:
+            review_period["prior_trace_id"] = scenario_input.prior_trace_id
 
         prior_payload = prior_report_data.get("scenario_payload", {}) or {}
         prior_review_period = prior_payload.get("review_period", {}) or {}

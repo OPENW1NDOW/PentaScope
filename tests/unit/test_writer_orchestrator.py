@@ -26,12 +26,15 @@ from src.tools.llm_client import LLMClient
 
 def _make_profile(
     *,
-    data_sources: list[str],
-    recent_urls: list[str],
-    review_urls: list[str],
+    data_sources: list[str] | None = None,
+    recent_urls: list[str] | None = None,
+    review_urls: list[str] | None = None,
     name: str = "竞品A",
 ) -> CompetitorProfile:
-    """构造最小合法 CompetitorProfile，3 个来源可分别注入 URL"""
+    """构造最小合法 CompetitorProfile，3 个来源可分别注入 URL（默认空列表）。"""
+    data_sources = data_sources if data_sources is not None else []
+    recent_urls = recent_urls if recent_urls is not None else []
+    review_urls = review_urls if review_urls is not None else []
     return CompetitorProfile(
         classification=Classification(competitor_type="核心竞品", reason="测试"),
         basic_info=BasicInfo(name=name),
@@ -412,3 +415,103 @@ def test_phase2_s4_prior_diff_injects_newly_added_dropped():
     assert result["review_period"]["newly_added_competitors"] == ["C"]
     assert result["review_period"]["dropped_competitors"] == ["B"]
     assert result["review_period"]["prior_trace_id"] == "abc123"
+
+
+# ---------- 测试 9：C1 修复——prior_report_data=None 时不注入 prior_trace_id ----------
+
+def test_phase2_s4_prior_data_none_does_not_inject_trace_id():
+    """C1 修复：prior_report_data=None（builder 读盘失败）→ 不注入 prior_trace_id。
+
+    避免「prior_trace_id 已写但 newly/dropped 没算」造成的伪溯源
+    （schema validator 用 prior_trace_id is None 判定首次模式）。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id="abc123",
+        competitors=[CompetitorBasic(name="AA")],
+        analysis_context="测试上下文",
+        our_product_name="MyProduct",
+    )
+    payload_dict = {"review_period": {"monitored_competitors": ["AA", "CC"]}}
+    result = orch._inject_s4_prior_diff(payload_dict, None, scenario_input)
+
+    # 不写 prior_trace_id（prior 缺失时 schema 走首次模式）
+    assert result["review_period"].get("prior_trace_id") is None
+    assert "newly_added_competitors" not in result["review_period"]
+    assert "dropped_competitors" not in result["review_period"]
+
+
+# ---------- 测试 10：C1 修复——prior schema 不匹配时不注入 prior_trace_id ----------
+
+def test_phase2_s4_prior_schema_mismatch_does_not_inject_trace_id():
+    """C1 修复：prior 报告 scenario/schema_version 不匹配 → logger.warning 降级且不注入 prior_trace_id。"""
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id="abc123",
+        competitors=[CompetitorBasic(name="AA")],
+        analysis_context="测试上下文",
+        our_product_name="MyProduct",
+    )
+    payload_dict = {"review_period": {"monitored_competitors": ["AA", "CC"]}}
+    # prior 报告是 S2（不是 S4），schema_version 是 1.0（不是 2.0）—— 两种降级触发条件
+    bad_prior = {
+        "metadata": {"scenario": "S2", "schema_version": "1.0"},
+        "scenario_payload": {"review_period": {"monitored_competitors": ["AA", "BB"]}},
+    }
+    result = orch._inject_s4_prior_diff(payload_dict, bad_prior, scenario_input)
+
+    assert result["review_period"].get("prior_trace_id") is None
+    assert "newly_added_competitors" not in result["review_period"]
+    assert "dropped_competitors" not in result["review_period"]
+
+
+# ---------- 测试 11：I2——Phase 2 ValidationError 重试后仍失败抛出 ----------
+
+@pytest.mark.asyncio
+async def test_phase2_validation_error_propagates_after_retry():
+    """[v3-R02] LLM 两次都返回非法 phase 2 dict → phase 2 retry 仍失败 → ValidationError 抛出。
+
+    给 graph builder.writer_node 外层捕获转 RejectionFeedback。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    # 序列：phase 1 outline 一次（任意 dict）+ phase 2 两次（都非法）
+    mock_llm.call_json = AsyncMock(side_effect=[
+        {"title": "ok"},  # phase 1 outline（不实例化 schema，任意 dict 即可）
+        {"scenario_type": "S1"},  # phase 2 第 1 次：严重漏字段（vendor_profiles 等）
+        {"scenario_type": "S1"},  # phase 2 第 2 次：仍漏
+    ])
+    orch = WriterOrchestrator(llm=mock_llm)
+    profile = _make_profile(data_sources=["https://example.com"])
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="AA")],
+        analysis_context="测试",
+        our_product_name="MyProduct",
+    )
+    # 用 MagicMock 即可，反正只走 phase 1 + phase 2 的 LLM 调用，不到 phase 4
+    analysis = MagicMock()
+    analysis.model_dump_json = MagicMock(return_value="{}")
+
+    with pytest.raises(ValidationError):
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=[profile],
+        )
+    # 验证 phase 2 真的被调了 2 次（重试 1 次后仍失败）
+    # phase 1 占 1 次 + phase 2 重试 2 次 = 3 次 LLM call
+    assert mock_llm.call_json.call_count == 3

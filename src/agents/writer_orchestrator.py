@@ -1,13 +1,16 @@
-"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2+21.3+21.4 部分）。
+"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2+21.3+21.4+21.5）。
 
 阶段 3-C1 范围：骨架 + Phase 1 outline。
 阶段 3-C3 范围：Phase 2 payload（含 normalize 接通 + S2/S4 前置注入 + 实例化场景 Payload schema）。
 阶段 3-C4 范围：Phase 3 narrative（并行 + 半数闸门 + 占位降级 + Semaphore 限速）。
-Phase 4 由 C5 后续 task 实现。
+阶段 3-C5 范围：Phase 4 assemble（代码合成 BaseReport，0 LLM 调用；SWOT 透传 + URL 双通道收集 +
+                 全字段 DataSource 构造 + scope.competitors S2 union + ReportMetadata 构造）。
 """
 import asyncio
 import json
 import logging
+import uuid
+from datetime import date
 from typing import Any, Optional
 
 from pydantic import ValidationError
@@ -20,9 +23,22 @@ from src.agents.prompts.writer.narrative import (
     SECTION_FOCUS_HINTS,
     SECTION_LABELS,
 )
+from src.schemas.common import DataSource
 from src.schemas.input import ScenarioInput
 from src.schemas.profile import CompetitorProfile
-from src.schemas.report import AnalysisSection, BaseReport
+from src.schemas.report import (
+    AnalysisSection,
+    Appendix,
+    BaseReport,
+    ExecutiveSummary,
+    Finding,
+    Methodology,
+    Recommendation,
+    ReportMetadata,
+    ReportScope,
+    Swot,
+    SwotEntry,
+)
 from src.schemas.scenarios.s1 import S1FeatureIterationPayload
 from src.schemas.scenarios.s2 import S2MarketEntryPayload
 from src.schemas.scenarios.s3 import S3PricingStrategyPayload
@@ -159,6 +175,73 @@ def collect_profile_urls(profile: CompetitorProfile) -> set[str]:
     return urls
 
 
+# ========== Phase 4: assemble 模块级工具 ==========
+
+# [v3-R07] 裸 url 字段名白名单（仅取 url 字符串，不构造 SourceRef 全字段）
+# 覆盖 S1 FeatureScore.evidence_url / S3 PricingPageAudit.pricing_page_url /
+# S3 RolloutStep.evidence_url / RecentUpdate.source_url / SampleReview.source_url 等。
+_BARE_URL_FIELDS = frozenset({
+    "evidence_url", "pricing_page_url", "source_url", "official_url", "url",
+})
+
+
+def _build_placeholder_swot() -> Swot:
+    """[v3-R12] analysis.swot 缺失时的占位 SWOT。
+
+    字符数硬约束（schema min=10，留 ≥15 字硬缓冲防文案微调跌破）：
+    - point_text 36 字 ≥25
+    - evidence_text 28 字 ≥25
+    """
+    point_text = "采集数据不足，本象限当前由代码自动占位，等待数据补齐后由 LLM 重新生成具体条目"
+    evidence_text = "详见报告 metadata.warnings 中以 placeholder_swot 为前缀的告警条目"
+    placeholder = SwotEntry(
+        point=point_text,
+        evidence=evidence_text,
+        dimension="overall",
+    )
+    return Swot(
+        strengths=[placeholder],
+        weaknesses=[placeholder],
+        opportunities=[placeholder],
+        threats=[placeholder],
+    )
+
+
+def _collect_source_refs_recursive(obj: Any) -> tuple[list[dict], set[str]]:
+    """[v3-R07/R08] 双通道 URL 收集。
+
+    返回 (source_refs_full, bare_urls)：
+    - source_refs_full：SourceRef-like dict 列表（保留 url/title/accessed_at/source_type 全字段）
+    - bare_urls：仅从 _BARE_URL_FIELDS 字段名白名单收集的 url 字符串集合
+
+    [v3-R08] 区分 SourceRef vs DataSource：DataSource 含 confidence 字段，
+    报告级 metadata.data_sources 不应再被回收当 source_ref。
+    """
+    refs: list[dict] = []
+    bare: set[str] = set()
+    if isinstance(obj, dict):
+        if {"url", "source_type"} <= obj.keys() and "confidence" not in obj:
+            if obj.get("url"):
+                refs.append({
+                    "url": obj["url"],
+                    "title": obj.get("title", ""),
+                    "accessed_at": obj.get("accessed_at"),
+                    "source_type": obj.get("source_type", "other"),
+                })
+        for k, v in obj.items():
+            if k in _BARE_URL_FIELDS and isinstance(v, str) and v.startswith("http"):
+                bare.add(v)
+            sub_refs, sub_bare = _collect_source_refs_recursive(v)
+            refs.extend(sub_refs)
+            bare |= sub_bare
+    elif isinstance(obj, list):
+        for item in obj:
+            sub_refs, sub_bare = _collect_source_refs_recursive(item)
+            refs.extend(sub_refs)
+            bare |= sub_bare
+    return refs, bare
+
+
 class WriterOrchestrator:
     """Writer 4 阶段编排器（C1 仅实现 Phase 1，后续 phase 由 C3-C5 接续）。"""
 
@@ -245,11 +328,25 @@ class WriterOrchestrator:
             discovered_urls=discovered_urls,
             warnings=warnings,
         )
-        # sections / payload_model / outline / warnings 留给 phase 4 使用，避免未使用告警
-        _ = (sections, payload_model, outline)
+        logger.info("[writer] phase 3 完成, 进入 phase 4")
 
-        # 触达占位：C5 task 接续实现
-        raise NotImplementedError("phase 4 待 Task 21.5 实现")
+        # ========== Phase 4: assemble ==========
+        report = self._phase4_assemble(
+            scenario=scenario,
+            scenario_input=scenario_input,
+            outline=outline,
+            payload_model=payload_model,
+            sections=sections,
+            profiles=profiles,
+            analysis=analysis,
+            trace_id=trace_id,
+            warnings=warnings,
+            competitor_recommendations=competitor_recommendations,
+            discovered_urls=discovered_urls,
+            competitor_names=competitor_names,
+        )
+        logger.info("[writer] phase 4 完成: %s", (report.title or "")[:30])
+        return report
 
     async def _llm_call_with_quota(
         self,
@@ -627,57 +724,64 @@ class WriterOrchestrator:
 
         失败（LLM 异常 / Pydantic ValidationError）让其向上抛——caller 用
         asyncio.gather(return_exceptions=True) 接住后回 _build_placeholder_section。
+
+        [C5 carry-over] Semaphore scope 仅包裹 LLM 调用本身——ctx 收集 / JSON 序列化 / format prompt
+        都是纯 CPU 工作，不应占用并发名额（否则 N>concurrency 时纯 CPU 也被串行化）。
         """
         _ = discovered_urls  # prompt 已在 phase 1/2 里灌过；本阶段 schema 校验靠 SourceRef.url 约束
-        async with self._narrative_sem:
-            # 按 [v3-R20] SECTION_CONTEXT_MAP 取本 section 应吃的字段
-            ctx = {
-                "outline": outline,
-                "payload": payload_dict,
-                "analysis": analysis,
-                "scenario_input": scenario_input,
-            }
-            context_paths = SECTION_CONTEXT_MAP.get(section_type, [])
-            context_payload: dict = {}
-            for p in context_paths:
-                value = _dot_walk(ctx, p)
-                if value is not None:
-                    context_payload[p] = value
 
-            # 控制 token：context_payload JSON 序列化后截断 4000 字符
-            try:
-                ctx_json = json.dumps(context_payload, ensure_ascii=False, default=str)
-            except TypeError:
-                ctx_json = json.dumps(
-                    {k: str(v) for k, v in context_payload.items()},
-                    ensure_ascii=False,
-                )
-            if len(ctx_json) > 4000:
-                ctx_json = (
-                    ctx_json[:4000]
-                    + f"\n...[已截断后续 {len(ctx_json) - 4000} 字符]"
-                )
+        # 按 [v3-R20] SECTION_CONTEXT_MAP 取本 section 应吃的字段（CPU 工作，semaphore 外）
+        ctx = {
+            "outline": outline,
+            "payload": payload_dict,
+            "analysis": analysis,
+            "scenario_input": scenario_input,
+        }
+        context_paths = SECTION_CONTEXT_MAP.get(section_type, [])
+        context_payload: dict = {}
+        for p in context_paths:
+            value = _dot_walk(ctx, p)
+            if value is not None:
+                context_payload[p] = value
 
-            section_label = SECTION_LABELS.get(section_type, section_type)
-            section_focus = SECTION_FOCUS_HINTS.get(section_type, "")
-            # section_id schema 3-40 字；scenario.lower()=2 + "-" + section_type[:30] 最多 33 字
-            section_id_hint = f"{scenario.lower()}-{section_type[:30]}"
-
-            # NARRATIVE_TEMPLATE 既含角色描述也含 JSON 输出契约，整体当 system；user 只触发生成
-            system_prompt = NARRATIVE_TEMPLATE.format(
-                section_type=section_type,
-                section_label=section_label,
-                section_focus_hint=section_focus,
-                scenario=scenario,
-                section_id_hint=section_id_hint,
-                context_payload=ctx_json,
+        # 控制 token：context_payload JSON 序列化后截断 4000 字符
+        try:
+            ctx_json = json.dumps(context_payload, ensure_ascii=False, default=str)
+        except TypeError:
+            ctx_json = json.dumps(
+                {k: str(v) for k, v in context_payload.items()},
+                ensure_ascii=False,
             )
-            user_prompt = "请基于上述上下文生成本节 JSON。"
+        if len(ctx_json) > 4000:
+            ctx_json = (
+                ctx_json[:4000]
+                + f"\n...[已截断后续 {len(ctx_json) - 4000} 字符]"
+            )
 
+        section_label = SECTION_LABELS.get(section_type, section_type)
+        section_focus = SECTION_FOCUS_HINTS.get(section_type, "")
+        # section_id schema 3-40 字；scenario.lower()=2 + "-" + section_type[:30] 最多 33 字
+        section_id_hint = f"{scenario.lower()}-{section_type[:30]}"
+
+        # NARRATIVE_TEMPLATE 当前是"角色+上下文+输出契约"三合一形态（见 narrative/_common.py），
+        # 整体当 system 给；user 仅作为 chat-completion 必需的触发消息，无实际语义。
+        # 优化项：未来把 context 部分剥到 user 侧（B4 prompts 重构）。
+        system_prompt = NARRATIVE_TEMPLATE.format(
+            section_type=section_type,
+            section_label=section_label,
+            section_focus_hint=section_focus,
+            scenario=scenario,
+            section_id_hint=section_id_hint,
+            context_payload=ctx_json,
+        )
+        user_prompt = "请基于上述上下文生成本节 JSON。"
+
+        # 仅 LLM 调用进 semaphore，CPU 序列化在外面
+        async with self._narrative_sem:
             raw = await self._llm_call_with_quota(
                 system_prompt, user_prompt, max_tokens=4096
             )
-            return AnalysisSection(**raw)
+        return AnalysisSection(**raw)
 
     async def _phase3_narratives(
         self,
@@ -744,3 +848,182 @@ class WriterOrchestrator:
             expected_n,
         )
         return sections, warnings
+
+    # ========== Phase 4: assemble ==========
+
+    def _phase4_assemble(
+        self,
+        *,
+        scenario: str,
+        scenario_input: ScenarioInput,
+        outline: dict,
+        payload_model: Any,
+        sections: list[AnalysisSection],
+        profiles: list[CompetitorProfile],
+        analysis: Any,
+        trace_id: str,
+        warnings: list[str],
+        competitor_recommendations: Any,
+        discovered_urls: list[str],
+        competitor_names: list[str],
+    ) -> BaseReport:
+        """[Q1=C][v3-R06/R07/R08/R11/R13/R19/R24] 代码合成 BaseReport，0 LLM 调用。
+
+        9 步：SWOT 透传 → URL 双通道聚合 → 全字段 DataSource → 空集合兜底 raise →
+        confidence_level 派生 → uuid fallback report_id → ReportMetadata →
+        scope.competitors S2 union → BaseReport 实例化。
+        """
+        _ = competitor_names  # 为对外签名稳定保留；scope.competitors 来自 scenario_input + recommender
+
+        # ----- 步骤 1：SWOT 透传（[Q1=C] 决策）-----
+        analysis_swot = getattr(analysis, "swot", None)
+        if analysis_swot is not None:
+            swot = analysis_swot
+        else:
+            swot = _build_placeholder_swot()
+            warnings.append("placeholder_swot")
+
+        # ----- 步骤 2：URL 双通道聚合 + 幻觉过滤（[v3-R07/R08] + [v3-R06]）-----
+        discovered_set: set[str] = set(discovered_urls)
+        dump = {
+            "outline": outline,
+            "payload": payload_model.model_dump(),
+            "sections": [s.model_dump() for s in sections],
+            "swot": swot.model_dump(),
+        }
+        collected_refs, collected_bare = _collect_source_refs_recursive(dump)
+
+        # 全字段去重 by url，过滤幻觉（不在 discovered 的 URL 直接弃）
+        ref_by_url: dict[str, dict] = {}
+        for r in collected_refs:
+            if r["url"] in discovered_set and r["url"] not in ref_by_url:
+                ref_by_url[r["url"]] = r
+
+        # 裸 url 字段补充：构造最小 SourceRef（title/accessed_at 留空）
+        for u in collected_bare:
+            if u in discovered_set and u not in ref_by_url:
+                ref_by_url[u] = {
+                    "url": u,
+                    "title": "",
+                    "accessed_at": None,
+                    "source_type": "other",
+                }
+
+        final_refs = list(ref_by_url.values())
+
+        # ----- 步骤 3：[v3-R11] 全字段 DataSource 构造 -----
+        data_sources_models = [
+            DataSource(
+                url=r["url"],
+                title=r["title"],
+                accessed_at=r["accessed_at"],
+                source_type=r["source_type"],
+                confidence="medium",
+            )
+            for r in sorted(final_refs, key=lambda x: x["url"])
+        ]
+
+        # ----- 步骤 4：[v3-R06] final_urls 空集合时 raise（让 graph 回 writer 重试）-----
+        if not data_sources_models:
+            raise RuntimeError(
+                "writer phase 4: 报告内 0 个 source_refs 引用了 profiles 中的真实 URL，"
+                "无法构造合规 ReportMetadata（data_sources min_length=1）。"
+                "建议 graph 回 writer 重试。"
+            )
+
+        # ----- 步骤 5：[v3-R13] confidence_level 派生 + ZeroDivisionError 兜底 -----
+        if profiles:
+            avg_completeness = sum(
+                p.metadata.completeness_score for p in profiles
+            ) / len(profiles)
+        else:
+            avg_completeness = 0.0
+
+        if avg_completeness >= 0.8:
+            confidence_level = "high"
+        elif avg_completeness >= 0.5:
+            confidence_level = "medium"
+        else:
+            confidence_level = "low"
+
+        # ----- 步骤 6：[v3-R24] uuid fallback report_id（trace_id 空时防碰撞）-----
+        report_id_seed = trace_id or uuid.uuid4().hex
+        report_id = f"r-{report_id_seed[:8]}"
+
+        # ----- 步骤 7：构造 ReportMetadata -----
+        metadata = ReportMetadata(
+            report_id=report_id,
+            trace_id=trace_id,
+            scenario=scenario,
+            publication_date=date.today(),
+            data_sources=data_sources_models,
+            confidence_level=confidence_level,
+            contributing_agents=["collector", "analyzer", "writer"],
+            warnings=warnings,
+            quality_score_calculation_note=(
+                "confidence_level 由采集 completeness 平均值派生（writer 阶段一次性）"
+            ),
+        )
+
+        # ----- 步骤 8：[v3-R19] scope.competitors S2 union -----
+        if scenario == "S2":
+            user_names = [c.name for c in scenario_input.competitors]
+            rec_names = (
+                [r.name for r in competitor_recommendations.recommended_competitors]
+                if competitor_recommendations is not None
+                else []
+            )
+            seen: set[str] = set()
+            scope_competitors: list[str] = []
+            for name in user_names + rec_names:
+                if name and name not in seen:
+                    seen.add(name)
+                    scope_competitors.append(name)
+            if not scope_competitors:
+                raise RuntimeError(
+                    "S2 scope.competitors 空：用户未填且 recommender 也未产出"
+                )
+        elif scenario_input.competitors:
+            scope_competitors = [c.name for c in scenario_input.competitors]
+        else:
+            raise RuntimeError(
+                f"scope.competitors 无法构造：scenario={scenario}, competitors=[]，"
+                f"ScenarioInput model_validator 应该先一步 raise"
+            )
+
+        # ----- 步骤 9：构造 BaseReport（outline 字段映射 + Pydantic 实例化）-----
+        outline_scope = outline.get("scope", {}) or {}
+        outline_meth = outline.get("methodology", {}) or {}
+        outline_es = outline.get("executive_summary", {}) or {}
+
+        scope = ReportScope(
+            competitors=scope_competitors,
+            time_window=outline_scope.get("time_window", "未指定"),
+            regions=outline_scope.get("regions", []) or [],
+            exclusions=outline_scope.get("exclusions", []) or [],
+        )
+        executive_summary = ExecutiveSummary(**outline_es)
+        methodology = Methodology(**outline_meth)
+        key_findings = [Finding(**f) for f in outline.get("key_findings", []) or []]
+        recommendations = [
+            Recommendation(**r) for r in outline.get("recommendations", []) or []
+        ]
+
+        report = BaseReport(
+            metadata=metadata,
+            title=outline.get("title", ""),
+            subtitle=outline.get("subtitle"),
+            at_a_glance=outline.get("at_a_glance", []) or [],
+            executive_summary=executive_summary,
+            background=outline.get("background", ""),
+            scope=scope,
+            methodology=methodology,
+            key_findings=key_findings,
+            analysis_sections=sections,
+            swot=swot,
+            conclusions=outline.get("conclusions", ""),
+            recommendations=recommendations,
+            appendix=Appendix(),
+            scenario_payload=payload_model,
+        )
+        return report

@@ -590,8 +590,9 @@ async def test_phase3_single_failure_uses_placeholder():
     mock_llm.call_json = AsyncMock(side_effect=side_effects)
     orch = WriterOrchestrator(llm=mock_llm)
 
-    # write 进入 phase 4 时会 raise NotImplementedError
-    with pytest.raises(NotImplementedError, match="phase 4"):
+    # write 进入 phase 4 后因 outline 仅 {"title": "..."} 缺字段会 raise（Pydantic ValidationError 或 RuntimeError）
+    # 本测试焦点是 phase 3 占位降级行为，phase 4 失败合预期，只断 LLM 调用计数
+    with pytest.raises(Exception):
         await orch.write(
             scenario_input=scenario_input,
             analysis=analysis,
@@ -702,7 +703,8 @@ async def test_phase3_parallel_not_serial():
     orch = WriterOrchestrator(llm=mock_llm)
 
     t0 = time.perf_counter()
-    with pytest.raises(NotImplementedError, match="phase 4"):
+    # phase 4 实现后 outline 不合法会 raise ValidationError；本测试焦点是 phase 3 并行
+    with pytest.raises(Exception):
         await orch.write(
             scenario_input=scenario_input,
             analysis=analysis,
@@ -713,5 +715,434 @@ async def test_phase3_parallel_not_serial():
     # 总 LLM 调用 = 1 (outline) + 1 (payload) + 5 (narrative) = 7
     assert mock_llm.call_json.call_count == 7
     # 串行 = 5 * 0.1 = 0.5s；semaphore=3 并发 → 第 1 批 3 个 + 第 2 批 2 个 ≈ 0.2s
-    # 防 Windows 抖动，留 0.4s 上限（仍远低于 0.5s 串行）
-    assert elapsed < 0.4, f"phase 3 总耗时 {elapsed:.3f}s 接近串行（0.5s），可能没并行"
+    # 防 Windows 抖动 + phase 4 实例化少量开销，留 0.45s 上限（仍远低于 0.5s 串行）
+    assert elapsed < 0.45, f"phase 3 总耗时 {elapsed:.3f}s 接近串行（0.5s），可能没并行"
+
+
+# ---------- Phase 4 测试 fixture ----------
+
+
+def _make_minimal_outline_dict() -> dict:
+    """构造一个最小合法 outline dict（满足 BaseReport 19 字段所有 min_length 约束）。
+
+    用于 phase 4 _phase4_assemble 直接调时的 outline 入参。
+    """
+    long_enough_200 = "这是一个测试用的足够长字符串，用于满足 schema min_length=200 的硬性要求。" * 5  # ~250 字
+    long_enough_100 = "implications 字段需要至少 100 字符来满足 schema 约束的硬要求条款。" * 4  # ~120 字
+    long_enough_80 = "sample_size_note 字段需要至少 80 字符的最低描述说明。" * 3  # ~90 字
+    long_enough_50 = "core_thesis 字段需要 50-120 字符的核心论点描述内容。" * 2  # ~60 字
+    long_enough_20 = "至少 20 字符的描述内容用于满足约束。"
+    return {
+        "title": "测试报告标题不少于十字符",
+        "subtitle": "副标题",
+        "at_a_glance": ["要点 1 至少几个字", "要点 2 至少几个字", "要点 3 至少几个字"],
+        "executive_summary": {
+            "context": "执行摘要的 context 字段需要 80-200 字符的背景描述内容。" * 3,  # ~120
+            "core_thesis": long_enough_50,
+            "key_findings_brief": ["发现 1", "发现 2"],
+            "implications": long_enough_100,
+            "path_forward": ["前进路径 1"],
+        },
+        "background": long_enough_200,
+        "scope": {
+            "time_window": "2024-2026",
+            "regions": ["中国"],
+            "exclusions": [],
+        },
+        "methodology": {
+            "data_collection_approach": long_enough_200,
+            "evaluation_criteria": ["标准 1", "标准 2", "标准 3"],
+            "limitations": ["局限 1", "局限 2"],
+            "sample_size_note": long_enough_80,
+        },
+        "key_findings": [
+            {
+                "statement": long_enough_20,
+                "evidence": long_enough_20,
+                "implication": long_enough_20,
+            },
+            {
+                "statement": long_enough_20,
+                "evidence": long_enough_20,
+                "implication": long_enough_20,
+            },
+            {
+                "statement": long_enough_20,
+                "evidence": long_enough_20,
+                "implication": long_enough_20,
+            },
+        ],
+        "conclusions": long_enough_200,
+        "recommendations": [
+            {
+                "action": long_enough_20,
+                "target_role": "PM",
+                "priority": "critical",
+                "timeline": "immediate",
+                "rationale": long_enough_20,
+            },
+            {
+                "action": long_enough_20,
+                "target_role": "PM",
+                "priority": "important",
+                "timeline": "short_term",
+                "rationale": long_enough_20,
+            },
+            {
+                "action": long_enough_20,
+                "target_role": "PM",
+                "priority": "consider",
+                "timeline": "long_term",
+                "rationale": long_enough_20,
+            },
+        ],
+    }
+
+
+def _make_s1_payload_model_for_phase4(discovered_url: str = "https://a.example.com/feature"):
+    """通过 _build_payload_model 构造一个真实合法的 S1FeatureIterationPayload（供 phase 4 走通）。"""
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试上下文",
+        our_product_name="我方",
+    )
+    payload_dict = _s1_payload_dict_with_weighted_scores()
+    payload_model = orch._build_payload_model(
+        "S1",
+        payload_dict,
+        discovered_urls=[discovered_url],
+        competitor_recommendations=None,
+        prior_report_data=None,
+        scenario_input=scenario_input,
+        warnings=[],
+    )
+    return payload_model
+
+
+def _make_phase4_sections(scenario: str = "s1") -> list:
+    """构造 4 个合法 AnalysisSection（满足 BaseReport.analysis_sections min=4）。"""
+    from src.schemas.report import AnalysisSection
+    types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis"]
+    return [
+        AnalysisSection(**_make_valid_narrative_json(t, scenario))
+        for t in types
+    ]
+
+
+# ---------- 测试 16: phase 4 SWOT 透传 ----------
+
+
+def test_phase4_swot_passthrough():
+    """[Q1=C] analysis.swot 非 None 时 phase 4 透传，不构造 placeholder。"""
+    from src.schemas.report import Swot, SwotEntry
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    swot_real = Swot(
+        strengths=[SwotEntry(point="优势点至少十字符长度内容", evidence="证据至少十字符长度内容", dimension="overall")],
+        weaknesses=[SwotEntry(point="劣势点至少十字符长度内容", evidence="证据至少十字符长度内容", dimension="overall")],
+        opportunities=[SwotEntry(point="机会点至少十字符长度内容", evidence="证据至少十字符长度内容", dimension="overall")],
+        threats=[SwotEntry(point="威胁点至少十字符长度内容", evidence="证据至少十字符长度内容", dimension="overall")],
+    )
+    analysis = MagicMock()
+    analysis.swot = swot_real
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    profile = _make_profile(data_sources=["https://a.example.com/feature"])
+    payload_model = _make_s1_payload_model_for_phase4()
+    outline = _make_minimal_outline_dict()
+    sections = _make_phase4_sections()
+    warnings: list[str] = []
+
+    report = orch._phase4_assemble(
+        scenario="S1",
+        scenario_input=scenario_input,
+        outline=outline,
+        payload_model=payload_model,
+        sections=sections,
+        profiles=[profile],
+        analysis=analysis,
+        trace_id="trace-test-1",
+        warnings=warnings,
+        competitor_recommendations=None,
+        discovered_urls=["https://a.example.com/feature"],
+        competitor_names=["竞品A", "竞品B"],
+    )
+
+    # SWOT 是同一对象（透传，不重建）
+    assert report.swot is swot_real
+    # warnings 不应包含 placeholder_swot
+    assert "placeholder_swot" not in warnings
+
+
+# ---------- 测试 17: phase 4 SWOT placeholder ----------
+
+
+def test_phase4_swot_placeholder_when_none():
+    """[v3-R12] _build_placeholder_swot 4 象限各 1 条，point/evidence ≥25 字。"""
+    from src.agents.writer_orchestrator import _build_placeholder_swot
+
+    sw = _build_placeholder_swot()
+    for quadrant in [sw.strengths, sw.weaknesses, sw.opportunities, sw.threats]:
+        assert len(quadrant) == 1
+        entry = quadrant[0]
+        assert len(entry.point) >= 25, f"point 字符数 {len(entry.point)} < 25"
+        assert len(entry.evidence) >= 25, f"evidence 字符数 {len(entry.evidence)} < 25"
+        assert entry.dimension == "overall"
+
+
+# ---------- 测试 18: phase 4 confidence_level 派生 ----------
+
+
+def test_phase4_confidence_level_derivation():
+    """[v3-R13] completeness 平均值映射 high/medium/low；空 profiles → low（无 ZeroDivisionError）。"""
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    payload_model = _make_s1_payload_model_for_phase4()
+    outline = _make_minimal_outline_dict()
+    sections = _make_phase4_sections()
+    discovered = ["https://a.example.com/feature"]
+
+    # high: avg = (0.9 + 0.85) / 2 = 0.875 ≥ 0.8
+    p1 = _make_profile(data_sources=discovered, name="竞品A")
+    p1.metadata.completeness_score = 0.9
+    p2 = _make_profile(data_sources=discovered, name="竞品B")
+    p2.metadata.completeness_score = 0.85
+    report_high = orch._phase4_assemble(
+        scenario="S1", scenario_input=scenario_input, outline=outline,
+        payload_model=payload_model, sections=sections, profiles=[p1, p2],
+        analysis=MagicMock(swot=None), trace_id="t1", warnings=[],
+        competitor_recommendations=None, discovered_urls=discovered,
+        competitor_names=["竞品A", "竞品B"],
+    )
+    assert report_high.metadata.confidence_level == "high"
+
+    # medium: avg = 0.55 ≥ 0.5
+    p1.metadata.completeness_score = 0.6
+    p2.metadata.completeness_score = 0.5
+    report_med = orch._phase4_assemble(
+        scenario="S1", scenario_input=scenario_input, outline=outline,
+        payload_model=payload_model, sections=sections, profiles=[p1, p2],
+        analysis=MagicMock(swot=None), trace_id="t2", warnings=[],
+        competitor_recommendations=None, discovered_urls=discovered,
+        competitor_names=["竞品A", "竞品B"],
+    )
+    assert report_med.metadata.confidence_level == "medium"
+
+    # low: avg = 0.25 < 0.5
+    p1.metadata.completeness_score = 0.3
+    p2.metadata.completeness_score = 0.2
+    report_low = orch._phase4_assemble(
+        scenario="S1", scenario_input=scenario_input, outline=outline,
+        payload_model=payload_model, sections=sections, profiles=[p1, p2],
+        analysis=MagicMock(swot=None), trace_id="t3", warnings=[],
+        competitor_recommendations=None, discovered_urls=discovered,
+        competitor_names=["竞品A", "竞品B"],
+    )
+    assert report_low.metadata.confidence_level == "low"
+
+
+# ---------- 测试 19: phase 4 URL 双通道聚合 ----------
+
+
+def test_phase4_url_dual_channel_aggregation():
+    """[v3-R07/R08] _collect_source_refs_recursive 区分 SourceRef vs DataSource，裸 url 字段单独收集。"""
+    from src.agents.writer_orchestrator import _collect_source_refs_recursive
+
+    dump = {
+        # SourceRef-like（无 confidence）
+        "ref1": {"url": "https://a.com/x", "title": "A", "source_type": "official_website"},
+        # DataSource-like（含 confidence）→ 不应被回收
+        "ref2": {
+            "url": "https://b.com/x", "title": "B", "source_type": "news",
+            "confidence": "high",
+        },
+        # 裸 url 字段
+        "evidence_url": "https://c.com/y",
+        "pricing_page_url": "https://d.com/z",
+        # 嵌套 list 中的 SourceRef
+        "list_field": [
+            {"url": "https://e.com/p", "source_type": "user_review"},
+        ],
+        # 非白名单字段名的裸 url（不被收集）
+        "random_link": "https://ignored.com/q",
+        # 非 http 开头（不被收集）
+        "url": "ftp://x.com/y",
+    }
+    refs, bare = _collect_source_refs_recursive(dump)
+
+    ref_urls = {r["url"] for r in refs}
+    # SourceRef-like 进 refs（含嵌套）
+    assert "https://a.com/x" in ref_urls
+    assert "https://e.com/p" in ref_urls
+    # DataSource-like 不进 refs
+    assert "https://b.com/x" not in ref_urls
+    # 裸 url 字段进 bare（不进 refs）
+    assert "https://c.com/y" in bare
+    assert "https://d.com/z" in bare
+    assert "https://c.com/y" not in ref_urls
+    # 非白名单字段名不进 bare
+    assert "https://ignored.com/q" not in bare
+    # 非 http 不进 bare（白名单 url 字段但 ftp:// 开头）
+    assert "ftp://x.com/y" not in bare
+
+
+# ---------- 测试 20: phase 4 final_urls 空 raise ----------
+
+
+def test_phase4_empty_final_urls_raises():
+    """[v3-R06] profiles 有 URL（discovered 非空）但报告内 0 个引用 → raise RuntimeError 含 '回 writer'。"""
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    # discovered_urls 非空（profile 有 URL）
+    discovered = ["https://only.example.com/page"]
+    profile = _make_profile(data_sources=discovered, name="竞品A")
+    # payload 用一个不引用 discovered URL 的（构造时给的 evidence_url 是不同 URL）
+    payload_model = _make_s1_payload_model_for_phase4(discovered_url="https://other.example.com/feat")
+    outline = _make_minimal_outline_dict()  # outline 不含任何 URL
+    sections = _make_phase4_sections()  # sections.source_refs=[]
+    warnings: list[str] = []
+
+    # 关键：discovered 给 only.example.com，但报告内（payload/outline/sections/swot）都不引用这个 URL
+    # final_urls 必为空，应 raise
+    with pytest.raises(RuntimeError, match="回 writer"):
+        orch._phase4_assemble(
+            scenario="S1", scenario_input=scenario_input, outline=outline,
+            payload_model=payload_model, sections=sections, profiles=[profile],
+            analysis=MagicMock(swot=None), trace_id="t-empty", warnings=warnings,
+            competitor_recommendations=None, discovered_urls=discovered,
+            competitor_names=["竞品A", "竞品B"],
+        )
+
+
+# ---------- 测试 21: phase 4 S2 scope.competitors union ----------
+
+
+def test_phase4_s2_scope_union(monkeypatch):
+    """[v3-R19] S2 union（用户在前去重）；recommender=None 时仅用户；用户/recommender 都空 → raise。
+
+    注意：S2 真实 BaseReport 实例化需要完整 S2MarketEntryPayload（market_sizing/five_forces 等子 schema 复杂），
+    本测试 monkey-patch BaseReport 类绕开实例化，聚焦 S2 union 计算逻辑。
+    """
+    from src.schemas.scenarios.s2 import CompetitorRecommendations, RecommendedCompetitor
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    from src.agents import writer_orchestrator as wo
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    # monkeypatch BaseReport 为接受任意字段的 fake，仅暴露 scope 和 metadata
+    captured: dict = {}
+
+    class _FakeBaseReport:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.metadata = kwargs.get("metadata")
+            self.scope = kwargs.get("scope")
+            self.swot = kwargs.get("swot")
+            self.title = kwargs.get("title", "")
+
+    monkeypatch.setattr(wo, "BaseReport", _FakeBaseReport)
+
+    discovered = ["https://a.example.com/feature"]
+    profile = _make_profile(data_sources=discovered, name="A")
+    payload_model = _make_s1_payload_model_for_phase4()  # S1 payload 也行——_FakeBaseReport 不校验
+    outline = _make_minimal_outline_dict()
+    sections = _make_phase4_sections()
+
+    # 案例 1: S2 + competitors=[A] + recommender=[B,C,D] → union=[A,B,C,D]，A 在前
+    scenario_input_1 = ScenarioInput(
+        scenario="S2",
+        competitors=[CompetitorBasic(name="AA")],
+        industry="测试行业",
+        analysis_context="测试",
+    )
+    rec_1 = CompetitorRecommendations(
+        user_provided_industry="测试行业",
+        user_provided_competitors=["A"],
+        recommended_competitors=[
+            RecommendedCompetitor(name=n, why_recommended="推荐理由满足十字符约束", confidence="high")
+            for n in ["B", "C", "D"]
+        ],
+        selection_method="hybrid",
+        selection_rationale="测试推荐理由不少于三十字符的描述内容来满足该字段最低长度约束的要求",
+    )
+    report_1 = orch._phase4_assemble(
+        scenario="S2", scenario_input=scenario_input_1, outline=outline,
+        payload_model=payload_model, sections=sections, profiles=[profile],
+        analysis=MagicMock(swot=None), trace_id="ts2-1", warnings=[],
+        competitor_recommendations=rec_1, discovered_urls=discovered,
+        competitor_names=["A"],
+    )
+    assert report_1.scope.competitors == ["AA", "B", "C", "D"]
+
+    # 案例 2: S2 + competitors=[] + recommender=[A,B,C] → union=[A,B,C]
+    scenario_input_2 = ScenarioInput(
+        scenario="S2",
+        competitors=[],
+        industry="测试行业",
+        analysis_context="测试",
+    )
+    rec_2 = CompetitorRecommendations(
+        user_provided_industry="测试行业",
+        user_provided_competitors=[],
+        recommended_competitors=[
+            RecommendedCompetitor(name=n, why_recommended="推荐理由满足十字符约束", confidence="high")
+            for n in ["A", "B", "C"]
+        ],
+        selection_method="search_api_top_n",
+        selection_rationale="测试推荐理由不少于三十字符的描述内容来满足该字段最低长度约束的要求",
+    )
+    report_2 = orch._phase4_assemble(
+        scenario="S2", scenario_input=scenario_input_2, outline=outline,
+        payload_model=payload_model, sections=sections, profiles=[profile],
+        analysis=MagicMock(swot=None), trace_id="ts2-2", warnings=[],
+        competitor_recommendations=rec_2, discovered_urls=discovered,
+        competitor_names=[],
+    )
+    assert report_2.scope.competitors == ["A", "B", "C"]
+
+    # 案例 3: S2 + competitors=[] + recommender=None → raise
+    with pytest.raises(RuntimeError, match="S2 scope.competitors 空"):
+        orch._phase4_assemble(
+            scenario="S2", scenario_input=scenario_input_2, outline=outline,
+            payload_model=payload_model, sections=sections, profiles=[profile],
+            analysis=MagicMock(swot=None), trace_id="ts2-3", warnings=[],
+            competitor_recommendations=None, discovered_urls=discovered,
+            competitor_names=[],
+        )

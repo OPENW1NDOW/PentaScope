@@ -109,10 +109,14 @@ class CollectorAgent:
             score -= 0.1
         return max(0, round(score, 2))
 
-    async def _collect_single(self, comp: CompetitorBasic, goal: AnalysisGoal) -> CompetitorProfile:
-        """采集单个竞品：分类 → 类别路由 → 管线采集 → 抽取/占位。"""
+    async def _collect_single(
+        self, comp: CompetitorBasic, goal: AnalysisGoal, scenario: str | None = None,
+    ) -> CompetitorProfile:
+        """采集单个竞品：分类 → 类别路由 → scenario 化管线采集 → 抽取/占位。"""
         classification = await self.classify_competitor(comp.name, goal)
-        merged_text, sources, trace, labeled_text = await self.pipeline.collect(comp.name)
+        merged_text, sources, trace, labeled_text = await self.pipeline.collect(
+            comp.name, scenario=scenario,
+        )
         if not labeled_text.strip():
             logger.info("[collector] %s 全空, 产占位 profile", comp.name)
             return self._build_placeholder_profile(comp, classification, trace)
@@ -123,8 +127,9 @@ class CollectorAgent:
     async def collect(self, user_input: CompetitorInput) -> list[CompetitorProfile]:
         """完整采集流程：目标解析 → 并行采集所有竞品（单竞品失败产占位，不拖垮全局）。"""
         goal = await self.parse_goal(user_input.analysis_context)
+        scenario = getattr(user_input, "scenario", None)
         results = await asyncio.gather(
-            *[self._collect_single(comp, goal) for comp in user_input.competitors],
+            *[self._collect_single(comp, goal, scenario=scenario) for comp in user_input.competitors],
             return_exceptions=True,
         )
         profiles: list[CompetitorProfile] = []

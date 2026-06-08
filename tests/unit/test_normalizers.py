@@ -178,15 +178,119 @@ def test_s4_trends_direction_arrow():
 
 
 def test_s4_first_review_baseline_inferred_when_no_prior():
-    """没有 prior_trace_id 时所有 change 自动加 is_baseline=True（首次监控模式）"""
+    """没有 prior_trace_id 时所有 change 自动加 is_baseline=True（首次监控模式）。
+
+    [v3-R14] 修订后：必须给 changes 提供有效 source_refs，否则会被 normalizer 删除。
+    """
+    valid_ref = [{"url": "https://example.com/a"}]
     raw = {
         "review_period": {"prior_trace_id": None},
-        "feature_changes": [{"competitor_name": "A"}],
-        "pricing_changes": [{"competitor_name": "A"}],
+        "feature_changes": [{"competitor_name": "A", "source_refs": valid_ref}],
+        "pricing_changes": [{"competitor_name": "A", "source_refs": valid_ref}],
     }
     cleaned = normalize_for_scenario("S4", raw)
     assert cleaned["feature_changes"][0]["is_baseline"] is True
     assert cleaned["pricing_changes"][0]["is_baseline"] is True
+
+
+def test_s4_drops_changes_without_source_refs():
+    """[v3-R14] 无 source_refs 的 changes 被 normalizer 删除"""
+    valid_ref = [{"url": "https://example.com/a"}]
+    raw = {
+        "review_period": {"prior_trace_id": None},
+        "feature_changes": [
+            {"competitor_name": "A", "source_refs": valid_ref},  # 保留
+            {"competitor_name": "B", "source_refs": []},  # 删
+            {"competitor_name": "C"},  # 删（缺字段）
+        ],
+        "pricing_changes": [{"competitor_name": "A", "source_refs": [{"url": ""}]}],  # 删（url 空）
+    }
+    warnings = []
+    cleaned = normalize_for_scenario("S4", raw, warnings=warnings)
+    assert len(cleaned["feature_changes"]) == 1
+    assert cleaned["feature_changes"][0]["competitor_name"] == "A"
+    assert len(cleaned["pricing_changes"]) == 0
+    assert any("dropped_unverified_entries:s4.feature_changes:2" in w for w in warnings)
+    assert any("dropped_unverified_entries:s4.pricing_changes:1" in w for w in warnings)
+
+
+def test_s3_drops_observed_tier_without_source_refs():
+    """[v3-R14] 无 source_refs 的 ObservedCompetitorTier 被删；连带 CompetitorPricing 也清"""
+    valid_ref = [{"url": "https://x.com/p"}]
+    raw = {
+        "competitive_pricing_matrix": [
+            {
+                "competitor_name": "A",
+                "source_refs": valid_ref,
+                "tiers": [
+                    {"name": "pro", "source_refs": valid_ref},  # 保
+                    {"name": "free", "source_refs": []},  # 删
+                ],
+            },
+            {
+                "competitor_name": "B",
+                "source_refs": [],  # 整条删（自身无 source_refs）
+                "tiers": [{"name": "free", "source_refs": valid_ref}],
+            },
+        ],
+    }
+    warnings = []
+    cleaned = normalize_for_scenario("S3", raw, warnings=warnings)
+    assert len(cleaned["competitive_pricing_matrix"]) == 1
+    assert cleaned["competitive_pricing_matrix"][0]["competitor_name"] == "A"
+    assert len(cleaned["competitive_pricing_matrix"][0]["tiers"]) == 1
+    assert any("dropped_unverified_entries:s3" in w for w in warnings)
+
+
+def test_s3_wtp_proxy_forces_low_confidence():
+    """[v3-R15] WTP method=proxy_from_competitor_pricing 时 normalizer 强制 confidence=low"""
+    raw = {
+        "wtp_research": {
+            "method": "proxy_from_competitor_pricing",
+            "confidence": "high",  # LLM 错误填 high
+            "rationale": "x" * 30,
+            "limitations": "",
+        }
+    }
+    cleaned = normalize_for_scenario("S3", raw)
+    assert cleaned["wtp_research"]["confidence"] == "low"
+    # limitations 兜底自动补
+    assert cleaned["wtp_research"]["limitations"]
+
+
+def test_s1_score_2_with_invalid_evidence_url_demoted():
+    """[v3-R14] FeatureScore.score=2 但 evidence_url 不在 discovered_urls 时降为 score=1"""
+    discovered = {"https://valid.com/a", "https://valid.com/b"}
+    raw = {
+        "feature_matrix": {
+            "categories": [
+                {
+                    "name": "core",
+                    "tier": 1,
+                    "features": [
+                        {
+                            "name": "f1",
+                            "scores": {
+                                "compA": {"score": 2, "evidence_url": "https://valid.com/a"},  # 保留 score=2
+                                "compB": {"score": 2, "evidence_url": "https://hallucinated.com/x"},  # 降 score=1
+                                "compC": {"score": 0, "evidence_url": "https://hallucinated.com/y", "source_missing_reason": "未找到"},  # 清非法 url，保 score=0
+                            },
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    cleaned = normalize_for_scenario("S1", raw, discovered_urls=discovered)
+    scores = cleaned["feature_matrix"]["categories"][0]["features"][0]["scores"]
+    assert scores["compA"]["score"] == 2
+    assert scores["compA"]["evidence_url"] == "https://valid.com/a"
+    assert scores["compB"]["score"] == 1
+    assert scores["compB"]["evidence_url"] is None
+    assert scores["compB"]["source_missing_reason"]  # 已自动补
+    assert scores["compC"]["score"] == 0
+    assert scores["compC"]["evidence_url"] is None
+    assert scores["compC"]["source_missing_reason"] == "未找到"  # 保留原始 reason
 
 
 # ============ S5 ============

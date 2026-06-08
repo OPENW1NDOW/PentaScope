@@ -1,4 +1,6 @@
 """S1 功能迭代场景规整器"""
+from typing import Optional
+
 from src.agents.normalizers._common import INTENSITY_MAP, drop_keys, each, map_enum
 
 WAVE_POSITION_MAP = {
@@ -26,7 +28,7 @@ RECOMMENDATION_MAP = {
 }
 
 
-def _normalize_s1_raw(raw: dict) -> dict:
+def _normalize_s1_raw(raw: dict, *, discovered_urls: Optional[set[str]] = None) -> dict:
     # vendor_profiles.wave_position
     for vp in each(raw.get("vendor_profiles")):
         if "wave_position" in vp:
@@ -40,6 +42,29 @@ def _normalize_s1_raw(raw: dict) -> dict:
         drop_keys(fm, ["weighted_scores"])
         for cat in each(fm.get("categories")):
             drop_keys(cat, ["weight"])
+            # [v3-R14] FeatureScore evidence_url 不在 discovered_urls 时降 score=2 → score=1
+            # 保护 score=2 必须有合法 evidence_url 的 model_validator
+            if discovered_urls is not None:
+                for f in each(cat.get("features")):
+                    scores = f.get("scores")
+                    if isinstance(scores, dict):
+                        for comp_name, fs in scores.items():
+                            if not isinstance(fs, dict):
+                                continue
+                            ev_url = fs.get("evidence_url")
+                            if fs.get("score") == 2 and (
+                                not ev_url or ev_url not in discovered_urls
+                            ):
+                                # 降为 score=1 + 清空非法 evidence_url + 设 source_missing_reason
+                                fs["score"] = 1
+                                fs["evidence_url"] = None
+                                fs.setdefault(
+                                    "source_missing_reason",
+                                    "evidence_url 不在采集发现的 URL 列表中（normalizer 自动降级）",
+                                )
+                            elif fs.get("score") == 0 and ev_url and ev_url not in discovered_urls:
+                                # score=0 时也清掉幻觉 URL，但保留 source_missing_reason
+                                fs["evidence_url"] = None
 
     # feature_gaps: recommendation + estimated_effort + estimated_impact
     for fg in each(raw.get("feature_gaps")):

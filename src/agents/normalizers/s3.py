@@ -1,4 +1,6 @@
 """S3 定价策略场景规整器"""
+from typing import Optional
+
 from src.agents.normalizers._common import (
     CONFIDENCE_MAP, INTENSITY_MAP, drop_keys, each, map_enum,
 )
@@ -104,7 +106,23 @@ def _normalize_tier(tier: dict) -> None:
         tier["currency"] = map_enum(tier["currency"], CURRENCY_MAP, default="unknown")
 
 
-def _normalize_s3_raw(raw: dict) -> dict:
+def _has_valid_source_refs(item: dict) -> bool:
+    """[v3-R14] 判断条目是否有 ≥1 个非空 source_ref（含 url 字段非空字符串）"""
+    refs = item.get("source_refs")
+    if not isinstance(refs, list) or not refs:
+        return False
+    for r in refs:
+        if isinstance(r, dict) and r.get("url"):
+            return True
+    return False
+
+
+def _normalize_s3_raw(
+    raw: dict,
+    *,
+    discovered_urls: Optional[set[str]] = None,
+    warnings: Optional[list[str]] = None,
+) -> dict:
     # pricing_baseline
     pb = raw.get("pricing_baseline")
     if isinstance(pb, dict):
@@ -120,6 +138,12 @@ def _normalize_s3_raw(raw: dict) -> dict:
             wtp["method"] = map_enum(wtp["method"], WTP_METHOD_MAP, default="proxy_from_competitor_pricing")
         if "confidence" in wtp:
             wtp["confidence"] = map_enum(wtp["confidence"], CONFIDENCE_MAP, default="low")
+        # [v3-R15] method=proxy_from_competitor_pricing 强制 confidence=low（不论 LLM 填了什么）
+        if wtp.get("method") == "proxy_from_competitor_pricing":
+            wtp["confidence"] = "low"
+            # 同步补 limitations 占位（schema model_validator 要求）
+            if not wtp.get("limitations"):
+                wtp["limitations"] = "基于公开竞品定价反推，未做正式 WTP 调研（normalizer 自动补占位）"
 
     # packaging.tiers (RecommendedPriceTier)
     pkg = raw.get("packaging")
@@ -128,15 +152,43 @@ def _normalize_s3_raw(raw: dict) -> dict:
             _normalize_tier(tier)
 
     # competitive_pricing_matrix.tiers (ObservedCompetitorTier)
-    for cp in each(raw.get("competitive_pricing_matrix")):
-        if "pricing_model" in cp:
-            cp["pricing_model"] = map_enum(cp["pricing_model"], PRICING_MODEL_MAP, default="unknown")
-        if "free_plan_strategy" in cp and cp["free_plan_strategy"] is not None:
-            cp["free_plan_strategy"] = map_enum(
-                cp["free_plan_strategy"], FREE_PLAN_MAP, default="no_free_plan"
+    # [v3-R14] 删除空 source_refs 的 ObservedCompetitorTier 与整条 CompetitorPricing
+    cp_list = raw.get("competitive_pricing_matrix")
+    if isinstance(cp_list, list):
+        cleaned_cp_list = []
+        dropped_tier_count = 0
+        for cp in cp_list:
+            if not isinstance(cp, dict):
+                continue
+            if "pricing_model" in cp:
+                cp["pricing_model"] = map_enum(cp["pricing_model"], PRICING_MODEL_MAP, default="unknown")
+            if "free_plan_strategy" in cp and cp["free_plan_strategy"] is not None:
+                cp["free_plan_strategy"] = map_enum(
+                    cp["free_plan_strategy"], FREE_PLAN_MAP, default="no_free_plan"
+                )
+            # 过滤无 source_refs 的 ObservedCompetitorTier
+            tiers = cp.get("tiers")
+            if isinstance(tiers, list):
+                cleaned_tiers = []
+                for tier in tiers:
+                    if not isinstance(tier, dict):
+                        continue
+                    _normalize_tier(tier)
+                    if _has_valid_source_refs(tier):
+                        cleaned_tiers.append(tier)
+                    else:
+                        dropped_tier_count += 1
+                cp["tiers"] = cleaned_tiers
+            # CompetitorPricing 自身 source_refs 也要 ≥1
+            if _has_valid_source_refs(cp) and cp.get("tiers"):
+                cleaned_cp_list.append(cp)
+            else:
+                dropped_tier_count += 1
+        raw["competitive_pricing_matrix"] = cleaned_cp_list
+        if dropped_tier_count and warnings is not None:
+            warnings.append(
+                f"dropped_unverified_entries:s3.competitive_pricing_matrix:{dropped_tier_count}"
             )
-        for tier in each(cp.get("tiers")):
-            _normalize_tier(tier)
 
     # pricing_page_audit: 删 computed_field overall_score_pct
     for pa in each(raw.get("pricing_page_audit")):

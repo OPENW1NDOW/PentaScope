@@ -1,4 +1,6 @@
 """S4 持续监控场景规整器"""
+from typing import Optional
+
 from src.agents.normalizers._common import (
     DIRECTION_MAP, INTENSITY_MAP, PRIORITY_MAP, drop_keys, each, map_enum,
 )
@@ -100,7 +102,37 @@ def _normalize_change_severity(items: list) -> None:
             item["severity"] = map_enum(item["severity"], INTENSITY_MAP, default="medium")
 
 
-def _normalize_s4_raw(raw: dict) -> dict:
+def _has_valid_source_refs(item: dict) -> bool:
+    """[v3-R14] 判断条目是否有 ≥1 个非空 source_ref"""
+    refs = item.get("source_refs")
+    if not isinstance(refs, list) or not refs:
+        return False
+    for r in refs:
+        if isinstance(r, dict) and r.get("url"):
+            return True
+    return False
+
+
+def _filter_changes_by_source_refs(
+    raw: dict, key: str, warnings: Optional[list[str]] = None,
+) -> None:
+    """[v3-R14] 删除 raw[key] 中无 source_refs 的 _BaseChange，原地修改"""
+    items = raw.get(key)
+    if not isinstance(items, list):
+        return
+    cleaned = [item for item in items if isinstance(item, dict) and _has_valid_source_refs(item)]
+    dropped = len(items) - len(cleaned)
+    raw[key] = cleaned
+    if dropped and warnings is not None:
+        warnings.append(f"dropped_unverified_entries:s4.{key}:{dropped}")
+
+
+def _normalize_s4_raw(
+    raw: dict,
+    *,
+    discovered_urls: Optional[set[str]] = None,
+    warnings: Optional[list[str]] = None,
+) -> dict:
     rp = raw.get("review_period") or {}
     is_first_review = rp.get("prior_trace_id") in (None, "", "null")
 
@@ -185,6 +217,11 @@ def _normalize_s4_raw(raw: dict) -> dict:
             ma["owner_team"] = map_enum(ma["owner_team"], OWNER_TEAM_MAP, default="product")
         if "priority_tier" in ma:
             ma["priority_tier"] = map_enum(ma["priority_tier"], PRIORITY_MAP, default="important")
+
+    # [v3-R14] 删除空 source_refs 的 5 类 changes（必须在枚举规整之后做，避免误删合法条目）
+    for key in ("feature_changes", "pricing_changes", "messaging_changes",
+                "news_events", "org_changes"):
+        _filter_changes_by_source_refs(raw, key, warnings=warnings)
 
     # battlecards: 删 last_updated_at（computed_field）+ 各 section
     for bc in each(raw.get("battlecards")):

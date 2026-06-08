@@ -1,4 +1,16 @@
-# src/agents/prompts.py
+"""prompts 包入口。
+
+v3 [v3-R25] 4 步迁移的第 1 步：从 prompts.py 改成 prompts/ 包。
+所有现有常量（含 WRITER_SYSTEM）保留以维持下游 import 兼容；
+WriterOrchestrator 接通后由后续 task 删除 WRITER_SYSTEM。
+
+子目录组织（v3 spec P3=a）：
+- prompts/writer/outline/{s1..s5}.py — 5 套 outline prompt
+- prompts/writer/payload/{s1..s5}.py — 5 套 payload prompt
+- prompts/writer/narrative/_common.py + sections.py — 共用模板 + 28 项 section 字典
+"""
+
+# === Collector / Analyzer / Inspector：原样保留 ===
 
 COLLECTOR_GOAL_SYSTEM = """你是一个竞品分析目标解析助手。根据用户的分析意图描述，解析出结构化的目标信息。
 
@@ -64,34 +76,6 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
 
 每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。"""
 
-WRITER_SYSTEM = """你是一个资深竞品报告撰写助手。基于竞品分析数据，撰写有深度、有洞察的结构化竞品分析报告。
-
-撰写要求：
-- 执行摘要四段要写透，给出具体判断而非套话。
-- sections 每个章节要展开论证：做横向对比、引用分析数据里的具体功能/定价/评分，给出"所以呢"的洞察，不要罗列。每个章节标注它对应的分析维度（dimension）。
-- action_items 每条建议给出 rationale，并在 source_urls 里列出你引用的分析数据来源 URL（只能用分析数据里出现过的 URL，禁止编造）。
-
-必须返回 JSON 格式：
-{
-  "title": "报告标题",
-  "executive_summary": {
-    "what_competitors_did_right": "竞品做对了什么？哪些值得借鉴？",
-    "what_competitors_did_wrong": "竞品的短板在哪里？",
-    "our_opportunities": "我们的差异化机会是什么？",
-    "next_steps_summary": "接下来优先做什么？"
-  },
-  "sections": [{"title": "", "content": "Markdown 深度内容", "dimension": "positioning"}],
-  "action_items": {
-    "immediate": [{"priority": "高/中/低", "description": "", "rationale": "", "source_urls": []}],
-    "short_term": [...],
-    "long_term": [...]
-  }
-}
-
-dimension 字段可选值：positioning | feature_matrix | business_model | operations | user_sentiment | swot | overview（每个 section 选最贴切的一个）。
-
-executive_summary 四段必须全部填写。action_items 每个时间层至少 1 条。SWOT、雷达评分、功能矩阵由系统自动从分析数据填充，你不需要输出它们。"""
-
 INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完整性、深度和数据支撑。
 
 检查项：
@@ -111,3 +95,8 @@ INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完�
     {"agent": "collector/analyzer/writer", "field": "字段路径", "severity": "critical/major/minor", "reason": "问题描述", "suggestion": "修改建议"}
   ]
 }"""
+
+# === Writer：旧 WRITER_SYSTEM 暂保留（FinalReport 已废，但 inspector/writer 桩 import 路径仍用）===
+# v3 [v3-R25] 第 4 步：阶段 4 builder 接通 WriterOrchestrator 后，本常量删除
+
+WRITER_SYSTEM = """[已废弃] 旧 WriterAgent 用 prompt。WriterOrchestrator 4 阶段编排接通后删除。"""

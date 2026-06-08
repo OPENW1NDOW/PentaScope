@@ -9,9 +9,53 @@ st.title("竞品分析 Agent 系统")
 # 输入区
 st.header("输入")
 
+analysis_context = st.text_area(
+    "分析意图描述",
+    placeholder="例：分析飞书和语雀的协作文档差异，重点看定价",
+    height=80,
+    key="analysis_context",
+)
+
+# AI 帮选场景：根据 analysis_context 调后端推断
+col_pick, col_info = st.columns([1, 4])
+with col_pick:
+    if st.button("AI 帮我选场景", help="根据分析意图描述自动推断最合适的场景"):
+        if not (analysis_context or "").strip():
+            st.warning("请先填写分析意图描述")
+        else:
+            try:
+                with st.spinner("AI 正在推断..."):
+                    pr = httpx.post(
+                        f"{API_BASE}/pick-scenario",
+                        json={"user_text": analysis_context},
+                        timeout=60,
+                    )
+                if pr.status_code == 200:
+                    pj = pr.json()
+                    st.session_state["picked_scenario"] = pj["scenario"]
+                    st.session_state["pick_confidence"] = pj["confidence"]
+                    st.session_state["pick_rationale"] = pj["rationale"]
+                else:
+                    st.error(f"推断失败（{pr.status_code}）：{pr.text}")
+            except httpx.ConnectError:
+                st.error("无法连接后端服务")
+            except Exception as e:
+                st.error(f"推断出错: {e}")
+with col_info:
+    if "picked_scenario" in st.session_state:
+        conf = st.session_state.get("pick_confidence", "low")
+        emoji = {"high": "🟢", "medium": "🟡", "low": "🟠"}.get(conf, "")
+        st.caption(
+            f"AI 推荐：**{st.session_state['picked_scenario']}**（置信度 {emoji} {conf}）— "
+            f"{st.session_state.get('pick_rationale', '')}"
+        )
+
+_options = ["S1", "S2", "S3", "S4", "S5"]
+_default_idx = _options.index(st.session_state["picked_scenario"]) if st.session_state.get("picked_scenario") in _options else 0
 scenario = st.selectbox(
     "选择分析场景",
-    options=["S1", "S2", "S3", "S4", "S5"],
+    options=_options,
+    index=_default_idx,
     format_func=lambda s: {
         "S1": "S1 功能迭代（已有产品对标）",
         "S2": "S2 市场进入（无产品调研）",
@@ -19,12 +63,6 @@ scenario = st.selectbox(
         "S4": "S4 持续监控",
         "S5": "S5 战略定位",
     }[s],
-)
-
-analysis_context = st.text_area(
-    "分析意图描述",
-    placeholder="例：分析飞书和语雀的协作文档差异，重点看定价",
-    height=80,
 )
 
 # 按 scenario 切换字段

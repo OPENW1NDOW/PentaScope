@@ -3,10 +3,17 @@ import re
 import json
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
-from src.api.schemas import AnalysisRequest, AnalysisResponse, TraceResponse
+from src.api.schemas import (
+    AnalysisRequest,
+    AnalysisResponse,
+    PickScenarioRequest,
+    PickScenarioResponse,
+    TraceResponse,
+)
 from src.tools.llm_client import LLMClient
 from src.tools.http_client import HttpClient
 from src.tools.html_parser import HtmlParser
+from src.tools.scenario_picker import ai_pick_scenario
 from src.tools.trace_writer import TraceWriter
 from src.graph.builder import build_graph
 from src.utils.paths import runs_dir
@@ -94,6 +101,14 @@ async def analyze(request: AnalysisRequest):
             logging.getLogger().removeHandler(run_handler)
             run_handler.close()
         await http.close()
+
+
+@router.post("/pick-scenario", response_model=PickScenarioResponse)
+async def pick_scenario(request: PickScenarioRequest):
+    """AI 帮用户选场景（前端不确定时调用）"""
+    llm = LLMClient()
+    result = await ai_pick_scenario(request.user_text, llm=llm)
+    return PickScenarioResponse(**result)
 
 
 _TRACE_RE = re.compile(r"\d{8}-\d{6}-[0-9a-f]{6}")

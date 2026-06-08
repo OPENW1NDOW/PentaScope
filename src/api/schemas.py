@@ -34,3 +34,15 @@ class TraceResponse(BaseModel):
     stages: dict = Field(default_factory=dict)
     snapshots: list[str] = Field(default_factory=list)
     log: str = ""
+
+
+class PickScenarioRequest(BaseModel):
+    """AI 选场景请求（用户描述自由文本）"""
+    user_text: str = Field(min_length=1, max_length=2000)
+
+
+class PickScenarioResponse(BaseModel):
+    """AI 选场景响应"""
+    scenario: Literal["S1", "S2", "S3", "S4", "S5"]
+    confidence: Literal["high", "medium", "low"]
+    rationale: str

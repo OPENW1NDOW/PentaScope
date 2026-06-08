@@ -16,6 +16,43 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-08（深夜 / v3 spec 实施 D-G 全部完成）
+- 完成（单 session 单线推进，~10+ commit）：
+  - **阶段 1（A1-A6 master 适配）**：LLMClient.call_json 加 max_tokens / config 加 WRITER_MAX_LLM_CALLS=18 + WRITER_NARRATIVE_CONCURRENCY=3 / state.py 改 BaseReport + ScenarioInput / writer.py 改桩 / inspector.py 仅修 import
+  - **阶段 2（B1-B5 prompts + normalizers）**：prompts 目录搬迁（保留旧 import 兼容）/ 5 套 outline + 5 套 payload / narrative 模板 + 28 项 SECTION_CONTEXT_MAP / 5 套 normalizers v3 R-14/R-15 升级
+  - **阶段 3（C1-C6 WriterOrchestrator）**：1029 行 4 阶段编排（outline / payload / narrative / assemble），含 Phase 1 Pydantic 失败重试、Phase 2 build_payload_model + S4 prior diff 注入、Phase 3 asyncio.Semaphore 并发 + 半数硬闸门、Phase 4 9 步组装 + URL 双通道收集；LLM quota 熝断 + placeholder 兜底；21 单测全绿
+  - **阶段 4（D1-D4 graph 接通）**：D1 RecommenderAgent + 3 单测；D2 ai_pick_scenario + 4 单测；D3 builder.py 全面改造（recommender_node / scenario 路由 / writer_node 接 WriterOrchestrator / 异常路由 / S4 prior 读盘 + 路径穿越校验）+ 21 单测；D3 code review 后修 3 Critical（C1 自定义异常类替代字符串子串匹配 / C2 移除 recommender 重复 merge / 新 Critical 路径穿越白名单）；D4 前端 scenario_picker 接通 + AI 帮我选场景按钮
+  - **阶段 5（E1-E3 inspector 重写）**：E1 quality_score.py 三项加权（source_coverage / confidence_avg / inspector_pass_rate，缺值降权重新归一化）+ 17 单测；E2 inspector.py 重写为 _check_common + _check_s1..s5 dispatcher，dispatcher 通过 globals() 间接查找便于测试 monkeypatch + 25 单测；E3 _check_warnings_prefix + quality_score cap 0.5（v3-R17 placeholder warnings 强制降分）+ 5 单测
+  - **阶段 6（F1-F3 前端渲染）**：F1 BaseReport 通用部分渲染（at_a_glance / executive_summary 5 段 / methodology / key_findings / analysis_sections / swot / recommendations 按 timeline / appendix / metadata 含 quality_score 可视化）拆出 src/frontend/render.py；F2 5 场景 payload 渲染（vendor_profiles / market_sizing / packaging / battlecards / perceptual_map 等关键结构表格化）；F3 Plotly 图表（S1 5 维雷达 / S2 五力蜘蛛网 / S5 Perceptual Map + Magic Quadrant + Strategy Canvas）；新依赖 plotly>=5.20.0；42 单测全绿
+  - **阶段 7（G1 E2E 集成测试）**：5 场景 E2E 跑通 graph 真编排（mock 5 agent 方法 + 真 BaseReport fixture），验证节点访问顺序 + scenario 路由 + 终态合法 + quality_score 真接通；6 单测全绿（重写旧 skip 桩 test_graph.py）
+  - **测试现状**：311 passed / 5 skipped / 2 xfailed；ruff clean；新增 ~135 单测（E1 17 + E2 25 + E3 5 + F1 17 + F2 17 + F3 8 + D4 0 + G1 6 + 其他）
+- 进行中：阶段 7 G2 手动验收 + 文档收尾
+- 下一步：
+  1. Cooper 手动验收清单（见下）
+  2. 提交完整改动 + push origin master
+  3. 准备答辩材料（PRD / DECISIONS / 评分项实现映射）
+- 阻塞：无
+- 协作模型实证：subagent-driven-development 流程在阶段 3 抓到多个隐藏 bug（C1 异常路由脆弱 / C3 phase 2 缺重试 / C-new 路径穿越）；后期 D4-G1 改用直接动手（中等任务无需 subagent 开销），D3 修复 implementer 单次 49 分钟教训记下，复杂任务拆小后再派
+- 安全提醒：本次纯代码实现，无 key 引入
+
+### 手动验收清单（Cooper 跑）
+1. 启动后端 + 前端：
+   - `uvicorn src.api.main:app --reload`
+   - `streamlit run src/frontend/app.py`（另一终端）
+2. **场景路由验收**（5 场景各试一次）：
+   - S1 功能迭代：填我方产品名 + 2 个竞品名 + 分析意图 → 应直跳 collector 不经过 recommender
+   - S2 市场进入：仅填行业名 → 应先经过 recommender 推荐 Top 3-5 玩家
+   - S3 / S4 / S5：参考前端表单提示填字段
+3. **AI 帮我选场景**：填分析意图 → 点 "AI 帮我选场景"按钮 → 验证返回的 scenario + 置信度 emoji + rationale
+4. **报告渲染验收**（任一场景跑完后）：
+   - 通用部分：at_a_glance / 执行摘要 5 段 / 方法论 / 关键发现 / 分析章节 / SWOT / 行动建议按 timeline 分组
+   - 场景专属：S1 雷达图 + 功能矩阵 / S2 五力蜘蛛网 + TAM/SAM/SOM 三 metric / S3 GBB 套餐卡片 / S4 5 类 changes 表 + 战卡 / S5 MQ + Perceptual Map + Strategy Canvas 折线
+   - 元数据面板：quality_score 显示 + warnings 列表
+5. **追溯面板**：填 trace_id → 验证 4 阶段产物 + run.log 可见
+6. **错误路径**：尝试 prior_trace_id 含 `..` → 应被路径穿越白名单拒绝（log warning，不崩）
+
+---
+
 ## 2026-06-08（晚 / v3 spec）（双轮 doubt-driven 复审 v2 → v3 spec 落盘）
 - 完成（单 session 单线，第二轮 doubt-driven）：
   - **重新跑 doubt-driven 复审 v2 spec**（接手备忘里 v2 复查的 14 条只有标题摘要，原审查记录已随 worktree B 丢失，按 Cooper 决策"退后一步重审"）：

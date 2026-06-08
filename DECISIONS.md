@@ -15,6 +15,46 @@
 
 ---
 
+## 2026-06-08（深夜 / E-G 实施）: 5 个关键技术决策
+
+### D3 修复 3 Critical（异常路由 + S2 推荐去重 + 路径穿越校验）
+- 选择（C1 异常路由）：在 writer_orchestrator.py 引入三个自定义异常类 WriterRouteToCollector / WriterRouteToWriter / WriterRouteToEnd（皆继承 RuntimeError），把 6 处 raise RuntimeError 全数换成对应子类；builder.py writer_node 用 isinstance 顺序判（End→Collector→Writer→兜底 RuntimeError），WriterRouteToEnd 设 feedback.passed=True 强制 should_continue 走 end 分支
+- 理由：原实现用中文措辞子串匹配（"URL whitelist" / "scope" / "构造"）路由 LLM quota 超限和 scope 不可构造错误，code reviewer 实证"纯属侥幸命中"；自定义异常类用 isinstance 判脱离措辞依赖、可静态校验
+- 6 处 RuntimeError 替换映射：profiles 0 个 URL → Collector / LLM quota 超限 → End / phase 3 半数闸门 → Collector / final_urls 空 → Writer / S2 scope 全空 → End / scope 无法构造 → End
+- 选择（C2 S2 推荐合并）：移除 recommender_node 把推荐竞品名合并到 user_input.competitors 的逻辑，让 WriterOrchestrator phase 4 的 union 成为唯一合并点；collector_node 同步改为自行 union（ui.competitors + state.competitor_recommendations.recommended_competitors，按 name 去重）
+- 理由：v3 spec 593 行 phase 4 union 是 S2 scope 构造的官方位置；recommender_node merge 让 phase 4 的 + rec_names 变成 dead path，spec 偏离 + 数据流双重；collector_node 自行 union 保持 ui = 用户原始输入不被改写
+- 选择（C-new 路径穿越校验）：_load_prior_report_data 函数顶部加 ^[a-f0-9-]+$ 白名单 + 长度 ≤64 + 空值/None 早返；任何非法 trace_id 拒绝 + log warning
+- 理由：prior_trace_id 来自前端用户输入，未做合法字符校验直接拼 RUNS_DIR / prior_trace_id，可能逃逸（如 ../../etc/passwd）。reviewer 标 Critical
+
+### E1 quality_score 三项加权公式（复用作废 worktree A 的算法设计）
+- 选择：实现 src/agents/quality_score.py 三项加权——source_coverage（BaseReport 4 类条目带 source_refs 的占比，包括 key_findings/analysis_sections/recommendations/swot.entries）+ confidence_avg（metadata.data_sources 各 confidence 数值化平均，high=1.0/medium=0.6/low=0.3）+ inspector_pass_rate（1.0 - sum(severity_penalty), clamp[0,1]，critical=0.4/major=0.2/minor=0.05）；三项各 1/3 等权，缺项时剩余项重新归一化；最终 score round 到 3 位
+- 理由：v3 spec 锁定 confidence_level 由 writer phase 4 派生（数据采集面），quality_score 由 inspector 一次性回填（报告内容面）；R-22 强调二者独立。三项设计正好覆盖"溯源完整度 + 数据可信度 + 内容质量"三维。算法本身与作废 worktree A 接口假设无关，可放心复用
+- 备选 a（按 issue 严重度倒推单一公式 1.0 - sum(penalty)）：master 旧实现已采用，但忽略采集质量 + 来源完整度（排除）
+- 备选 c（spec 说"按 issue 总数动态算满分"）：单 critical 和 10 个 critical 落同区间不合理（排除）
+
+### E2 inspector dispatcher 通过 globals() 间接查找
+- 选择：dispatcher 不预定义 _DISPATCHER dict，而是 `globals().get(f"_check_{scenario.lower()}")` 间接查找
+- 理由：测试用 monkeypatch.setattr 替换单个 _check_sX 时，预定义 dict 已绑死函数引用 monkeypatch 替换不到；间接查找让每次调用查 globals()，monkeypatch 生效
+- 备选：每个测试参数化时手动重建 dict 或用 mock dict（排除：测试样板代码冗余）
+
+### E3 quality_score cap 0.5 触发（v3-R17 锁定）
+- 选择：inspector.inspect 在 calc_quality_score 之后检查 metadata.warnings 是否含 placeholder_section: / placeholder_swot / dropped_unverified_entries: 三类前缀，含则强制 cap 到 0.5
+- 理由：v3-R17 spec 明确"writer 写 placeholder warnings 时 inspector 必须降分到 ≤0.5"；这是硬指标不是建议
+- 实现细节：cap 仅在 score > 0.5 时触发，note 追加 "; capped to 0.5 due to placeholder warnings (v3-R17)" 便于追溯
+
+### F1 前端拆出 src/frontend/render.py 模块
+- 选择：BaseReport + scenario payload 渲染逻辑全部拆到 src/frontend/render.py（~600 行），app.py 仅调用入口 render_base_report()
+- 理由：渲染代码量 ~150-600 行（F1+F2+F3 累加），全堆 app.py 会突破 600+ 行单文件可读性；render.py 独立可测、关注点分离
+- 备选：所有渲染塞在 if data["status"] == "completed" 分支里（排除：单文件膨胀难维护）
+
+### G1 E2E mock 策略（不造完整 LLM JSON fixture）
+- 选择：mock 5 个 agent 类的核心方法（collect / analyze / write / inspect / recommend）为 AsyncMock，writer 直接返回预制合法 BaseReport，inspector 用真 calc_quality_score 但绕过 _programmatic_checks（避免 _check_sX 触发图重试递归到 GraphRecursionError）；不造 5 套合法 LLM JSON fixture（每场景至少 LLM 调用 12 次，写完整 fixture 工作量 1500+ 行）
+- 理由：G1 E2E 真正的独特价值是"graph 拓扑装配 + scenario 路由 + state 传递契约"，agent 内部逻辑已被 unit test 覆盖；mock 到 agent 方法层够用，不必再造一遍 LLM JSON
+- 实施代价：BaseReport fixture 仍要满足 schema min_length 等硬约束（_LONG 通用占位常量统一）；schema 的 min_length=20/50/100 字段防 LLM 占位敷衍是合理设计但对测试 fixture 是负担——本次接受
+- 备选：mock 整个 BaseReport 为 MagicMock(spec=BaseReport)（排除：失去 quality_score 真接通验证；无法验证 scenario 字段一致性）
+
+---
+
 ## 2026-06-08（晚 / v3 spec）: writer 4 阶段编排 v2 → v3 修订（双轮 doubt-driven 复审后 28 条）
 - 选择：保持 v2 已锁定的 18 条决策（C1-C9 + Q2 + P2-P3 + M1-M10），叠加 v3 新增的 28 条 reconciled 修订（11 critical + 12 major + 5 minor）。v3 spec 长度从 v2 的 433 行扩到 1014 行，新增「Pre-flight: master 适配」章节、18 处 `[v3-RXX]` 标记的修订段、完整 v3 修订日志表
 - 理由（产品决策部分，6 条）：

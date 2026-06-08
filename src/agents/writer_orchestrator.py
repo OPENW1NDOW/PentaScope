@@ -126,20 +126,25 @@ class WriterOrchestrator:
         """LLM 调用 + Pydantic 校验，校验失败时把错误回灌给 LLM 重试一次。
 
         [v3-R04] 重试也走 _llm_call_with_quota，绕开熔断会让最坏情况无限。
+        基于 base_user_prompt 重建 prompt，避免重试时错误摘要在 loop 内累积膨胀。
         """
+        base_user_prompt = user_prompt
+        last_error_summary: str | None = None
         for attempt in range(max_retries + 1):
+            current_user_prompt = base_user_prompt
+            if last_error_summary:
+                current_user_prompt = (
+                    f"{base_user_prompt}\n\n【上次校验失败，请修复】\n{last_error_summary}"
+                )
             raw = await self._llm_call_with_quota(
-                system_prompt, user_prompt, max_tokens=max_tokens
+                system_prompt, current_user_prompt, max_tokens=max_tokens
             )
             try:
                 return schema_cls(**raw)
             except ValidationError as e:
                 if attempt >= max_retries:
                     raise
-                error_summary = self._serialize_validation_error(e, max_chars=1500)
-                user_prompt = (
-                    f"{user_prompt}\n\n【上次校验失败，请修复】\n{error_summary}"
-                )
+                last_error_summary = self._serialize_validation_error(e, max_chars=1500)
 
     @staticmethod
     def _serialize_validation_error(e: ValidationError, max_chars: int = 1500) -> str:

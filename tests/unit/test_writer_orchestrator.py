@@ -137,6 +137,15 @@ async def test_call_with_validation_retries_on_validation_error():
     assert result.field == "valid_value"
     assert mock_llm.call_json.call_count == 2
 
+    # [I2] 验证第 2 次调用的 user_prompt 含错误回灌（防误改回灌逻辑而测试无感）
+    second_call_args = mock_llm.call_json.call_args_list[1]
+    second_user_prompt = (
+        second_call_args.args[1]
+        if len(second_call_args.args) >= 2
+        else second_call_args.kwargs.get("user_prompt", "")
+    )
+    assert "上次校验失败" in second_user_prompt
+
 
 # ---------- 测试 5：_serialize_validation_error 长度 ----------
 

@@ -50,6 +50,20 @@ from src.utils.config import settings
 logger = logging.getLogger(__name__)
 
 
+# ============= [v3-R02] writer 异常路由错误码（D3 code review C1 修法 a）=============
+# 用 isinstance 区分路由意图，不再依赖 builder 端中文措辞子串匹配。
+class WriterRouteToCollector(RuntimeError):
+    """writer 阶段错误，需上游 collector 重新采集（如 profiles URL 0、半数 section 失败）。"""
+
+
+class WriterRouteToWriter(RuntimeError):
+    """writer 自身可重试错误（如 final_urls 空、单 section narrative 异常但未触发闸门）。"""
+
+
+class WriterRouteToEnd(RuntimeError):
+    """writer 不可恢复错误，应直接终止图（LLM quota 超限、scope 全空、scope 无法构造）。"""
+
+
 _PAYLOAD_CLASSES: dict[str, type] = {
     "S1": S1FeatureIterationPayload,
     "S2": S2MarketEntryPayload,
@@ -282,7 +296,7 @@ class WriterOrchestrator:
             {u for p in profiles for u in collect_profile_urls(p)}
         )
         if not discovered_urls:
-            raise RuntimeError(
+            raise WriterRouteToCollector(
                 "writer phase 4: profiles 中收集到 0 个 URL，无法构造可溯源报告。"
                 "建议 graph 回 collector 重新采集。"
             )
@@ -360,7 +374,7 @@ class WriterOrchestrator:
         """[v3-R04] 所有 LLM 调用必须走这里（含 _call_with_validation 重试），统一熔断。"""
         self._call_counter += 1
         if self._call_counter > settings.WRITER_MAX_LLM_CALLS:
-            raise RuntimeError(
+            raise WriterRouteToEnd(
                 f"writer LLM 调用超限 {self._call_counter} 次"
                 f"（上限 {settings.WRITER_MAX_LLM_CALLS}），疑似无限重试"
             )
@@ -802,7 +816,7 @@ class WriterOrchestrator:
 
         - asyncio.gather(return_exceptions=True) 接住单 section 失败
         - 失败回 _build_placeholder_section + warnings 加 placeholder_section:{type}:{ExcName}
-        - 失败数 ≥ ⌈expected_n / 2⌉ → raise RuntimeError 触发 graph 回 collector
+        - 失败数 ≥ ⌈expected_n / 2⌉ → raise WriterRouteToCollector 触发 graph 回 collector
         """
         section_types = _DEFAULT_SECTION_TYPES[scenario]
         expected_n = len(section_types)
@@ -841,7 +855,7 @@ class WriterOrchestrator:
         # [v3-R05] 半数闸门：失败数 ≥ ⌈expected_n / 2⌉ 即 raise
         threshold = (expected_n + 1) // 2
         if failed_n >= threshold:
-            raise RuntimeError(
+            raise WriterRouteToCollector(
                 f"phase 3 失败数 {failed_n} >= {threshold}（expected={expected_n}），"
                 f"触发半数闸门，建议回 collector 重新采集"
             )
@@ -936,7 +950,7 @@ class WriterOrchestrator:
 
         # ----- 步骤 4：[v3-R06] final_urls 空集合时 raise（让 graph 回 writer 重试）-----
         if not data_sources_models:
-            raise RuntimeError(
+            raise WriterRouteToWriter(
                 "writer phase 4: 报告内 0 个 source_refs 引用了 profiles 中的真实 URL，"
                 "无法构造合规 ReportMetadata（data_sources min_length=1）。"
                 "建议 graph 回 writer 重试。"
@@ -991,13 +1005,13 @@ class WriterOrchestrator:
                     seen.add(name)
                     scope_competitors.append(name)
             if not scope_competitors:
-                raise RuntimeError(
+                raise WriterRouteToEnd(
                     "S2 scope.competitors 空：用户未填且 recommender 也未产出"
                 )
         elif scenario_input.competitors:
             scope_competitors = [c.name for c in scenario_input.competitors]
         else:
-            raise RuntimeError(
+            raise WriterRouteToEnd(
                 f"scope.competitors 无法构造：scenario={scenario}, competitors=[]，"
                 f"ScenarioInput model_validator 应该先一步 raise"
             )

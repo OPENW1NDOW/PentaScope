@@ -97,6 +97,33 @@ def test_load_prior_report_data_validates_schema_version(tmp_path, monkeypatch):
     assert result is None
 
 
+def test_load_prior_data_rejects_path_traversal(tmp_path, monkeypatch):
+    """[D3 review C-new] prior_trace_id 含 ../ \\ : 等非法字符 → 返回 None，不读盘。"""
+    monkeypatch.setattr("src.graph.builder.RUNS_DIR", tmp_path)
+
+    # 反正常情况：先在 tmp_path 之外放一个伪敏感文件，确保越过去能命中
+    secret = tmp_path.parent / "secret_run" / "03_report.json"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text(
+        '{"metadata":{"scenario":"S4","schema_version":"2.0"},"leaked":true}',
+        encoding="utf-8",
+    )
+
+    # 各种路径穿越尝试都应被白名单拒绝
+    for bad_id in [
+        "../secret_run",
+        "..\\secret_run",
+        "../../etc/passwd",
+        "abc/../def",
+        "abc:def",
+        "abc\\def",
+        "ABC123",  # 大写字母不在 [a-f0-9-]
+        "abc_123",  # 下划线不在白名单
+        "a" * 65,  # 超长
+    ]:
+        assert _load_prior_report_data(bad_id) is None, f"{bad_id!r} 未被白名单拦截"
+
+
 def test_load_prior_report_data_returns_data_when_valid(tmp_path, monkeypatch):
     """prior 报告 scenario=S4 + schema_version=2.0 → 返回 data dict。"""
     monkeypatch.setattr("src.graph.builder.RUNS_DIR", tmp_path)
@@ -135,10 +162,13 @@ def _make_minimal_state(scenario: str = "S1"):
 
 @pytest.mark.asyncio
 async def test_writer_node_runtime_error_routes_to_collector(monkeypatch):
-    """[v3-R02] writer raise RuntimeError('回 collector ...') → feedback.issues[0].agent='collector' + retry_count+1。"""
-    # patch WriterOrchestrator.write 抛 RuntimeError("...回 collector...")
+    """[v3-R02] writer raise WriterRouteToCollector → feedback.issues[0].agent='collector' + retry_count+1。"""
+    from src.agents.writer_orchestrator import WriterRouteToCollector
+
     async def _raise(*args, **kwargs):
-        raise RuntimeError("phase 4: profiles 0 个 URL，建议 graph 回 collector 重新采集")
+        raise WriterRouteToCollector(
+            "phase 4: profiles 0 个 URL，建议 graph 回 collector 重新采集"
+        )
 
     monkeypatch.setattr(
         "src.agents.writer_orchestrator.WriterOrchestrator.write",
@@ -163,9 +193,11 @@ async def test_writer_node_runtime_error_routes_to_collector(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_writer_node_runtime_error_routes_to_writer(monkeypatch):
-    """[v3-R02] writer raise RuntimeError('回 writer ...') → feedback.issues[0].agent='writer'。"""
+    """[v3-R02] writer raise WriterRouteToWriter → feedback.issues[0].agent='writer'。"""
+    from src.agents.writer_orchestrator import WriterRouteToWriter
+
     async def _raise(*args, **kwargs):
-        raise RuntimeError("phase 4: 0 个 source_refs，建议 graph 回 writer 重试")
+        raise WriterRouteToWriter("phase 4: 0 个 source_refs，建议 graph 回 writer 重试")
 
     monkeypatch.setattr(
         "src.agents.writer_orchestrator.WriterOrchestrator.write",
@@ -178,6 +210,61 @@ async def test_writer_node_runtime_error_routes_to_writer(monkeypatch):
 
     fb = result["feedback"]
     assert fb.issues[0].agent == "writer"
+    assert fb.issues[0].field == "writer_runtime"
+    assert result["retry_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_writer_node_routes_to_end_on_unrecoverable_error(monkeypatch):
+    """[D3 review C1] writer raise WriterRouteToEnd → feedback.passed=True 强制结束图，retry 不增。"""
+    from src.agents.writer_orchestrator import WriterRouteToEnd
+
+    async def _raise(*args, **kwargs):
+        raise WriterRouteToEnd(
+            "writer LLM 调用超限 13 次（上限 12），疑似无限重试"
+        )
+
+    monkeypatch.setattr(
+        "src.agents.writer_orchestrator.WriterOrchestrator.write",
+        _raise,
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    fb = result["feedback"]
+    # 关键：passed=True 让 should_continue 走 end 分支
+    assert fb.passed is True
+    assert fb.issues[0].agent == "writer"
+    assert fb.issues[0].field == "writer_unrecoverable"
+    assert fb.issues[0].severity == "critical"
+    # 不可恢复错误不应增加 retry_count（直接结束）
+    assert "retry_count" not in result
+
+
+@pytest.mark.asyncio
+async def test_writer_node_routes_to_collector_on_url_rejection(monkeypatch):
+    """[D3 review C1] WriterRouteToCollector 即使 message 不含旧关键词也能正确路由（不依赖子串匹配）。"""
+    from src.agents.writer_orchestrator import WriterRouteToCollector
+
+    async def _raise(*args, **kwargs):
+        # 故意不含旧的「回 collector」中文措辞，证明 isinstance 路由不再依赖文本
+        raise WriterRouteToCollector("URL whitelist rejected all sources")
+
+    monkeypatch.setattr(
+        "src.agents.writer_orchestrator.WriterOrchestrator.write",
+        _raise,
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    fb = result["feedback"]
+    assert fb.passed is False
+    assert fb.issues[0].agent == "collector"
+    assert result["retry_count"] == 1
 
 
 @pytest.mark.asyncio

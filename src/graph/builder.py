@@ -10,6 +10,7 @@
 """
 import json
 import logging
+import re
 from pathlib import Path
 
 from langgraph.graph import StateGraph, END
@@ -19,7 +20,12 @@ from src.agents.collection_pipeline import CollectionPipeline
 from src.agents.collector import CollectorAgent
 from src.agents.inspector import InspectorAgent
 from src.agents.recommender import RecommenderAgent
-from src.agents.writer_orchestrator import WriterOrchestrator
+from src.agents.writer_orchestrator import (
+    WriterOrchestrator,
+    WriterRouteToCollector,
+    WriterRouteToEnd,
+    WriterRouteToWriter,
+)
 from src.graph.state import AnalysisState
 from src.schemas.feedback import FeedbackIssue, RejectionFeedback
 from src.schemas.input import CompetitorBasic
@@ -34,13 +40,25 @@ logger = logging.getLogger(__name__)
 RUNS_DIR: Path = runs_dir()
 
 
+_TRACE_ID_PATTERN = re.compile(r"^[a-f0-9\-]+$")
+
+
 def _load_prior_report_data(prior_trace_id: str) -> dict | None:
     """[v3-R02 / v3-R09] 读上轮 BaseReport JSON。
 
     校验 metadata.scenario == 'S4' + schema_version == '2.0'，否则返回 None（降级首次模式）。
     文件不存在 / JSON 解析失败 / 字段不匹配 都安全返回 None（log warning）。
+
+    [D3 review C-new] prior_trace_id 来自前端用户输入，必须白名单校验后再拼路径，
+    否则 ../../etc/passwd 一类输入可越过 RUNS_DIR 读任意文件。
     """
     if not prior_trace_id:
+        return None
+    # 安全闸：仅允许 UUID 类字符（含连字符），长度 ≤ 64
+    if not _TRACE_ID_PATTERN.match(prior_trace_id) or len(prior_trace_id) > 64:
+        logger.warning(
+            "[graph] prior_trace_id 含非法字符，拒绝加载: %r", prior_trace_id
+        )
         return None
     prior_path = Path(RUNS_DIR) / prior_trace_id / "03_report.json"
     if not prior_path.exists():
@@ -105,7 +123,8 @@ def build_graph(llm, http, parser, trace_writer=None):
     async def recommender_node(state: AnalysisState) -> dict:
         """[v3] S2 专用：根据 industry + 用户 context 产出 CompetitorRecommendations。
 
-        把推荐 + 用户填的合并到 user_input.competitors，让 collector 能直接用。
+        [D3 review C2] 不再合并到 user_input.competitors。phase 4 union 是唯一合并点，
+        collector_node 自行读两处构造采集列表。
         """
         logger.info("[graph] → recommender")
         node_trace.append("recommender")
@@ -115,23 +134,32 @@ def build_graph(llm, http, parser, trace_writer=None):
             context=ui.analysis_context,
             user_provided_competitors=[c.name for c in ui.competitors],
         )
-        existing_names = {c.name for c in ui.competitors}
-        merged = list(ui.competitors) + [
-            CompetitorBasic(name=r.name, company=r.company)
-            for r in rec.recommended_competitors
-            if r.name not in existing_names
-        ]
-        new_input = ui.model_copy(update={"competitors": merged})
         return {
-            "user_input": new_input,
             "competitor_recommendations": rec,
             "current_node": "recommender",
         }
 
     async def collector_node(state: AnalysisState) -> dict:
+        """[D3 review C2] 静态采集名单 = user_input.competitors ∪ recommendations（按 name 去重）。
+
+        recommender_node 不再合并到 ui.competitors，所以这里要主动 union；
+        非 S2 场景 competitor_recommendations 为 None，退化为只读 ui.competitors。
+        """
         logger.info("[graph] → collector")
         node_trace.append("collector")
-        profiles, goal = await collector.collect(state["user_input"])
+        ui = state["user_input"]
+        rec = state.get("competitor_recommendations")
+        if rec is not None and rec.recommended_competitors:
+            existing_names = {c.name for c in ui.competitors}
+            merged = list(ui.competitors) + [
+                CompetitorBasic(name=r.name, company=r.company)
+                for r in rec.recommended_competitors
+                if r.name and r.name not in existing_names
+            ]
+            collect_input = ui.model_copy(update={"competitors": merged})
+        else:
+            collect_input = ui
+        profiles, goal = await collector.collect(collect_input)
         _save("01_profiles", profiles)
         return {"profiles": profiles, "analysis_goal": goal, "current_node": "collector"}
 
@@ -148,8 +176,9 @@ def build_graph(llm, http, parser, trace_writer=None):
         """[v3-R02] writer_node 接通 WriterOrchestrator + 异常路由。
 
         - [v3-R09] S4 场景前置读 prior_report_data
-        - RuntimeError 含 "回 collector" / "回 writer" → 按 hint 转 feedback agent
-        - 其他异常（含 ValidationError）→ feedback agent=writer
+        - [D3 review C1] 用 WriterRouteToCollector/Writer/End 三类异常 isinstance 判路由，
+          不再依赖 RuntimeError 的中文措辞子串匹配
+        - 其他 RuntimeError / Exception（含 ValidationError）→ feedback agent=writer
         """
         logger.info("[graph] → writer")
         node_trace.append("writer")
@@ -172,27 +201,80 @@ def build_graph(llm, http, parser, trace_writer=None):
             )
             _save("03_report", report)
             return {"report": report, "current_node": "writer"}
-        except RuntimeError as e:
-            msg = str(e)
-            if "回 collector" in msg:
-                agent = "collector"
-            elif "回 writer" in msg:
-                agent = "writer"
-            else:
-                agent = "writer"
+        except WriterRouteToEnd as e:
+            # 不可恢复（LLM quota / scope 全空 / scope 无法构造）→ passed=True 强制结束
+            logger.warning("[graph] writer 不可恢复错误，强制终止图: %s", e)
             feedback = RejectionFeedback(
-                passed=False,
+                passed=True,
                 issues=[FeedbackIssue(
                     severity="critical",
-                    agent=agent,
-                    field="writer_runtime",
-                    reason=msg[:200],
-                    suggestion="见 message",
+                    agent="writer",
+                    field="writer_unrecoverable",
+                    reason=str(e)[:200],
+                    suggestion="不可恢复错误，图直接终止",
                 )],
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
-            logger.warning("[graph] writer raised RuntimeError → 转 feedback agent=%s", agent)
+            return {
+                "feedback": feedback,
+                "current_node": "writer",
+            }
+        except WriterRouteToCollector as e:
+            logger.warning("[graph] writer raised WriterRouteToCollector → 回 collector")
+            feedback = RejectionFeedback(
+                passed=False,
+                issues=[FeedbackIssue(
+                    severity="critical",
+                    agent="collector",
+                    field="writer_runtime",
+                    reason=str(e)[:200],
+                    suggestion="重新采集补齐 URL / 内容",
+                )],
+                retry_count=state.get("retry_count", 0),
+                max_retries=state.get("max_retries", 2),
+            )
+            return {
+                "feedback": feedback,
+                "current_node": "writer",
+                "retry_count": state.get("retry_count", 0) + 1,
+            }
+        except WriterRouteToWriter as e:
+            logger.warning("[graph] writer raised WriterRouteToWriter → 回 writer")
+            feedback = RejectionFeedback(
+                passed=False,
+                issues=[FeedbackIssue(
+                    severity="critical",
+                    agent="writer",
+                    field="writer_runtime",
+                    reason=str(e)[:200],
+                    suggestion="writer 重试",
+                )],
+                retry_count=state.get("retry_count", 0),
+                max_retries=state.get("max_retries", 2),
+            )
+            return {
+                "feedback": feedback,
+                "current_node": "writer",
+                "retry_count": state.get("retry_count", 0) + 1,
+            }
+        except RuntimeError as e:
+            # last resort：未来如果有遗漏的 RuntimeError 子类，兜底回 writer 重试一次
+            logger.warning(
+                "[graph] writer raised 未分类 RuntimeError，兜底回 writer: %s", e
+            )
+            feedback = RejectionFeedback(
+                passed=False,
+                issues=[FeedbackIssue(
+                    severity="critical",
+                    agent="writer",
+                    field="writer_runtime",
+                    reason=str(e)[:200],
+                    suggestion="未分类 RuntimeError，兜底走 writer 重试",
+                )],
+                retry_count=state.get("retry_count", 0),
+                max_retries=state.get("max_retries", 2),
+            )
             return {
                 "feedback": feedback,
                 "current_node": "writer",

@@ -101,6 +101,8 @@ async def test_write_raises_when_no_discovered_urls():
             analysis=MagicMock(),
             profiles=[profile],
         )
+    # 闸门顺序验证：discovered_urls 空时应在 phase 1 LLM 调用之前 raise
+    mock_llm.call_json.assert_not_called()
 
 
 # ---------- 测试 3：调用次数熔断 ----------

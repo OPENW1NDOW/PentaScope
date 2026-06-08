@@ -13,7 +13,7 @@ import uuid
 from datetime import date
 from typing import Any, Optional
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from src.agents.normalizers import normalize_for_scenario
 from src.agents.prompts.writer import WRITER_OUTLINE_PROMPTS, WRITER_PAYLOAD_PROMPTS
@@ -189,8 +189,8 @@ def _build_placeholder_swot() -> Swot:
     """[v3-R12] analysis.swot 缺失时的占位 SWOT。
 
     字符数硬约束（schema min=10，留 ≥15 字硬缓冲防文案微调跌破）：
-    - point_text 36 字 ≥25
-    - evidence_text 28 字 ≥25
+    - point_text 41 字 ≥25 + 16 字硬缓冲
+    - evidence_text 51 字 ≥25 + 26 字硬缓冲
     """
     point_text = "采集数据不足，本象限当前由代码自动占位，等待数据补齐后由 LLM 重新生成具体条目"
     evidence_text = "详见报告 metadata.warnings 中以 placeholder_swot 为前缀的告警条目"
@@ -318,12 +318,13 @@ class WriterOrchestrator:
 
         # ========== Phase 3: narrative ==========
         # 用 model_dump() 转 payload_dict 给 narrative prompt 拼装上下文（[v3-R20] dot-walk 路径取值）
-        payload_dict_for_phase3 = payload_model.model_dump()
+        # phase 4 也复用此 dump 结果避免重复序列化
+        payload_dict = payload_model.model_dump()
         sections, warnings = await self._phase3_narratives(
             scenario=scenario,
             scenario_input=scenario_input,
             outline=outline,
-            payload_dict=payload_dict_for_phase3,
+            payload_dict=payload_dict,
             analysis=analysis,
             discovered_urls=discovered_urls,
             warnings=warnings,
@@ -344,6 +345,7 @@ class WriterOrchestrator:
             competitor_recommendations=competitor_recommendations,
             discovered_urls=discovered_urls,
             competitor_names=competitor_names,
+            payload_dict=payload_dict,  # 复用 phase 3 已 dump 的结果
         )
         logger.info("[writer] phase 4 完成: %s", (report.title or "")[:30])
         return report
@@ -441,9 +443,10 @@ class WriterOrchestrator:
             )
 
         # Analysis 摘要：截断到 ~5000 字符
-        try:
+        # 用 isinstance 判 BaseModel，比 try/except AttributeError 更精准（C4 carry-over M7）
+        if isinstance(analysis, BaseModel):
             analysis_json = analysis.model_dump_json()
-        except AttributeError:
+        else:
             analysis_json = json.dumps(analysis, ensure_ascii=False, default=str)
         if len(analysis_json) > 5000:
             analysis_json = analysis_json[:5000] + "...[truncated]"
@@ -501,9 +504,10 @@ class WriterOrchestrator:
             )
 
         # Analysis 摘要：截断到 ~5000 字符（与 phase 1 一致）
-        try:
+        # 用 isinstance 判 BaseModel，比 try/except AttributeError 更精准（C4 carry-over M7）
+        if isinstance(analysis, BaseModel):
             analysis_json = analysis.model_dump_json()
-        except AttributeError:
+        else:
             analysis_json = json.dumps(analysis, ensure_ascii=False, default=str)
         if len(analysis_json) > 5000:
             analysis_json = analysis_json[:5000] + "...[truncated]"
@@ -866,12 +870,16 @@ class WriterOrchestrator:
         competitor_recommendations: Any,
         discovered_urls: list[str],
         competitor_names: list[str],
+        payload_dict: dict | None = None,
     ) -> BaseReport:
         """[Q1=C][v3-R06/R07/R08/R11/R13/R19/R24] 代码合成 BaseReport，0 LLM 调用。
 
         9 步：SWOT 透传 → URL 双通道聚合 → 全字段 DataSource → 空集合兜底 raise →
         confidence_level 派生 → uuid fallback report_id → ReportMetadata →
         scope.competitors S2 union → BaseReport 实例化。
+
+        payload_dict：可选，调用方已 dump 过的 payload_model.model_dump() 结果。
+        提供时复用避免重复序列化（性能优化，对大 S2 payload 可省 50-100ms）。
         """
         _ = competitor_names  # 为对外签名稳定保留；scope.competitors 来自 scenario_input + recommender
 
@@ -884,10 +892,13 @@ class WriterOrchestrator:
             warnings.append("placeholder_swot")
 
         # ----- 步骤 2：URL 双通道聚合 + 幻觉过滤（[v3-R07/R08] + [v3-R06]）-----
+        # 注意：SWOT 也吃进 dump（SwotEntry.source_refs 也是 SourceRef-like，参与回收）
         discovered_set: set[str] = set(discovered_urls)
+        # 复用 phase 3 已 dump 过的 payload_dict，避免再 dump 一次
+        payload_for_dump = payload_dict if payload_dict is not None else payload_model.model_dump()
         dump = {
             "outline": outline,
-            "payload": payload_model.model_dump(),
+            "payload": payload_for_dump,
             "sections": [s.model_dump() for s in sections],
             "swot": swot.model_dump(),
         }

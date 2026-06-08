@@ -1,6 +1,8 @@
-"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2 部分）。
+"""WriterOrchestrator — 4 阶段编排（v3 spec Task 21.1+21.2+21.3 部分）。
 
-阶段 3-C1 范围：骨架 + Phase 1 outline。Phase 2/3/4 由 C3-C5 后续 task 实现。
+阶段 3-C1 范围：骨架 + Phase 1 outline。
+阶段 3-C3 范围：Phase 2 payload（含 normalize 接通 + S2/S4 前置注入 + 实例化场景 Payload schema）。
+Phase 3/4 由 C4-C5 后续 task 实现。
 """
 import asyncio
 import json
@@ -9,14 +11,29 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
-from src.agents.prompts.writer import WRITER_OUTLINE_PROMPTS
+from src.agents.normalizers import normalize_for_scenario
+from src.agents.prompts.writer import WRITER_OUTLINE_PROMPTS, WRITER_PAYLOAD_PROMPTS
 from src.schemas.input import ScenarioInput
 from src.schemas.profile import CompetitorProfile
 from src.schemas.report import BaseReport
+from src.schemas.scenarios.s1 import S1FeatureIterationPayload
+from src.schemas.scenarios.s2 import S2MarketEntryPayload
+from src.schemas.scenarios.s3 import S3PricingStrategyPayload
+from src.schemas.scenarios.s4 import S4MonitoringPayload
+from src.schemas.scenarios.s5 import S5PositioningPayload
 from src.tools.llm_client import LLMClient
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+_PAYLOAD_CLASSES: dict[str, type] = {
+    "S1": S1FeatureIterationPayload,
+    "S2": S2MarketEntryPayload,
+    "S3": S3PricingStrategyPayload,
+    "S4": S4MonitoringPayload,
+    "S5": S5PositioningPayload,
+}
 
 
 def collect_profile_urls(profile: CompetitorProfile) -> set[str]:
@@ -82,8 +99,8 @@ class WriterOrchestrator:
                 "建议 graph 回 collector 重新采集。"
             )
 
-        # outline 留给 phase 2-4 使用；C1 在 phase 1 后即终止
-        await self._phase1_outline(
+        # outline 留给 phase 2-4 使用
+        outline = await self._phase1_outline(
             scenario,
             scenario_input,
             analysis,
@@ -93,10 +110,35 @@ class WriterOrchestrator:
             our_product_brief,
             discovered_urls,
         )
-        logger.info("[writer] phase 1 完成, 进入 phase 2-4（待实现）")
+        logger.info("[writer] phase 1 完成, 进入 phase 2")
 
-        # 触达占位：C3-C5 task 接续实现
-        raise NotImplementedError("phase 2-4 待 Task 21.3-21.5 实现")
+        # ========== Phase 2: payload ==========
+        warnings: list[str] = []
+        payload_dict = await self._phase2_payload(
+            scenario,
+            scenario_input,
+            analysis,
+            profiles,
+            competitor_recommendations,
+            prior_report_data,
+            competitor_names,
+            competitor_basics,
+            discovered_urls,
+        )
+        payload_model = self._build_payload_model(
+            scenario,
+            payload_dict,
+            discovered_urls=discovered_urls,
+            competitor_recommendations=competitor_recommendations,
+            prior_report_data=prior_report_data,
+            scenario_input=scenario_input,
+            warnings=warnings,
+        )
+        # outline / payload_model / warnings 留给 phase 3-4 使用，避免未使用告警
+        _ = (outline, payload_model)
+
+        # 触达占位：C4-C5 task 接续实现
+        raise NotImplementedError("phase 3-4 待 Task 21.4-21.5 实现")
 
     async def _llm_call_with_quota(
         self,
@@ -223,3 +265,178 @@ class WriterOrchestrator:
         title_preview = (outline.get("title") or "(no title)")[:30] if isinstance(outline, dict) else "(no title)"
         logger.info("[writer] phase 1 outline 完成: %s", title_preview)
         return outline
+
+    # ========== Phase 2: payload ==========
+
+    async def _phase2_payload(
+        self,
+        scenario: str,
+        scenario_input: ScenarioInput,
+        analysis: Any,
+        profiles: list[CompetitorProfile],
+        competitor_recommendations: Any,
+        prior_report_data: Optional[dict],
+        competitor_names: list[str],
+        competitor_basics: list[dict],
+        discovered_urls: list[str],
+    ) -> dict:
+        """Phase 2：一次 LLM 调用产出场景特有 scenario_payload 原始 dict。
+
+        不在此处 normalize 或实例化 schema——这是 _build_payload_model 的职责。
+        """
+        # Profiles 摘要（与 phase 1 一致：basic_info 维度，控制 token）
+        profile_summaries: list[dict] = []
+        for p in profiles:
+            profile_summaries.append(
+                {
+                    "name": p.basic_info.name,
+                    "company": p.basic_info.company,
+                    "version": p.basic_info.version,
+                    "platform": p.basic_info.platform,
+                }
+            )
+
+        # Analysis 摘要：截断到 ~5000 字符（与 phase 1 一致）
+        try:
+            analysis_json = analysis.model_dump_json()
+        except AttributeError:
+            analysis_json = json.dumps(analysis, ensure_ascii=False, default=str)
+        if len(analysis_json) > 5000:
+            analysis_json = analysis_json[:5000] + "...[truncated]"
+
+        our_product_brief = {
+            "name": scenario_input.our_product_name or "",
+            "brief": scenario_input.our_product_brief or "",
+            "industry": scenario_input.industry or "",
+        }
+
+        sections: list[tuple[str, Any]] = [
+            ("=== 场景 ===", scenario),
+            ("=== 我方产品 ===", our_product_brief),
+            ("=== 竞品列表 ===", competitor_basics),
+            ("=== 分析意图 ===", scenario_input.analysis_context),
+            ("=== Profiles 摘要 ===", profile_summaries),
+            ("=== Analysis 摘要 ===", analysis_json),
+            ("=== 可用溯源 URL ===", discovered_urls),
+        ]
+
+        # [v3-R10] S2 推荐竞品仅作为只读上下文给 LLM（phase 2 后会被代码强制覆盖）
+        if scenario == "S2" and competitor_recommendations is not None:
+            sections.append(
+                (
+                    "=== 推荐竞品（只读上下文，不要重写）===",
+                    competitor_recommendations.model_dump(),
+                )
+            )
+
+        # [v3-R09] S4 prior 监控提示（具体 diff 由代码注入；这里只告知 LLM 是否首次）
+        if scenario == "S4":
+            mode_hint = (
+                "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
+                if scenario_input.prior_trace_id is None
+                else f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
+            )
+            sections.append(("=== prior 监控信息（如有）===", mode_hint))
+
+        parts: list[str] = []
+        for label, value in sections:
+            if isinstance(value, str):
+                parts.append(f"{label}\n{value}")
+            else:
+                parts.append(f"{label}\n{json.dumps(value, ensure_ascii=False, indent=2)}")
+        user_prompt = "\n\n".join(parts)
+
+        system_prompt = WRITER_PAYLOAD_PROMPTS[scenario]
+        raw = await self._llm_call_with_quota(
+            system_prompt, user_prompt, max_tokens=4096
+        )
+        logger.info("[writer] phase 2 payload 完成: scenario=%s", scenario)
+        return raw
+
+    def _build_payload_model(
+        self,
+        scenario: str,
+        payload_dict: dict,
+        *,
+        discovered_urls: list[str],
+        competitor_recommendations: Any,
+        prior_report_data: Optional[dict],
+        scenario_input: ScenarioInput,
+        warnings: list[str],
+    ):
+        """normalize → S2/S4 前置注入 → 实例化场景 Payload schema。
+
+        ValidationError 不在此处捕获——直接冒到 graph 层由 builder.writer_node 转 RejectionFeedback。
+        """
+        discovered_set: set[str] = set(discovered_urls)
+        cleaned = normalize_for_scenario(
+            scenario, payload_dict, discovered_urls=discovered_set, warnings=warnings
+        )
+
+        # [v3-R10] S2 recommender 强制覆盖（不论 LLM 写了什么）
+        if scenario == "S2" and competitor_recommendations is not None:
+            cleaned["competitor_recommendations"] = competitor_recommendations.model_dump()
+
+        # [v3-R09] S4 prior diff 必须在 model 实例化之前注入
+        if scenario == "S4":
+            cleaned = self._inject_s4_prior_diff(
+                cleaned, prior_report_data, scenario_input
+            )
+
+        payload_cls = _PAYLOAD_CLASSES[scenario]
+        payload_model = payload_cls(**cleaned)
+        logger.info(
+            "[writer] phase 2 payload schema 实例化完成: %s, dropped_warnings=%d",
+            scenario,
+            len(warnings),
+        )
+        return payload_model
+
+    def _inject_s4_prior_diff(
+        self,
+        payload_dict: dict,
+        prior_report_data: Optional[dict],
+        scenario_input: ScenarioInput,
+    ) -> dict:
+        """[v3-R09] S4 场景：从 prior_report_data 解析 newly_added/dropped competitors，写入 review_period。
+
+        - prior_report_data 为 None → 首次监控模式（normalizer 已确保 changes 全 baseline）
+        - prior 报告 scenario / schema_version 不匹配 → logger.warning + 降级为首次监控
+        """
+        review_period = payload_dict.setdefault("review_period", {})
+
+        # ScenarioInput.prior_trace_id 由代码注入（不让 LLM 自填）
+        if scenario_input.prior_trace_id:
+            review_period["prior_trace_id"] = scenario_input.prior_trace_id
+
+        if not prior_report_data:
+            return payload_dict
+
+        prior_meta = (
+            prior_report_data.get("metadata", {})
+            if isinstance(prior_report_data, dict)
+            else {}
+        )
+        if (
+            prior_meta.get("scenario") != "S4"
+            or prior_meta.get("schema_version") != "2.0"
+        ):
+            logger.warning(
+                "[writer] S4 prior 报告 scenario/schema_version 不匹配，降级为首次监控"
+            )
+            return payload_dict
+
+        prior_payload = prior_report_data.get("scenario_payload", {}) or {}
+        prior_review_period = prior_payload.get("review_period", {}) or {}
+        prior_competitors = set(prior_review_period.get("monitored_competitors", []) or [])
+
+        current_competitors = set(review_period.get("monitored_competitors", []) or [])
+
+        review_period["newly_added_competitors"] = sorted(
+            current_competitors - prior_competitors
+        )
+        review_period["dropped_competitors"] = sorted(
+            prior_competitors - current_competitors
+        )
+
+        return payload_dict

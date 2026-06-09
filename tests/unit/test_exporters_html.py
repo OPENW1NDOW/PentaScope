@@ -25,7 +25,7 @@ def test_html_kpi_strip_present():
     assert "质检评分" in out
     assert "场景标签" in out
     assert "竞品数量" in out
-    assert "数据源数" in out
+    assert "参考资料" in out
     assert "可信度" in out
 
 

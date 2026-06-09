@@ -101,6 +101,49 @@ def test_executive_summary_subheaders_chinese_only():
 
 # ============ 4. 附录加参考资料小节 ============
 
+def test_kpi_card_label_renamed_data_sources_to_references():
+    """KPI 卡第 4 张应叫「参考资料」（跟附录小节名对齐），不叫「数据源数」。
+
+    Cooper 2026-06-10 反馈：metadata.data_sources 是 writer 落盘的 5 条 URL，
+    既是数据源也是报告里实际用到的引用——跟附录新加的「参考资料」小节是同一组
+    数据。统一文案让用户更易理解。
+    """
+    captured = []
+
+    def fake_columns(_n):
+        # 返回 5 个 fake col context
+        class _FakeCol:
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+        return [_FakeCol() for _ in range(5)]
+
+    def fake_markdown(text, **_):
+        captured.append(text)
+
+    import streamlit as st
+    saved = (st.columns, st.markdown)
+    st.columns, st.markdown = fake_columns, fake_markdown
+    try:
+        render._render_kpi_strip({
+            "metadata": {
+                "scenario": "S4",
+                "data_sources": [
+                    {"url": "https://a.com", "confidence": "medium"},
+                ],
+                "confidence_level": "medium",
+                "raw_quality_score": 0.6,
+                "quality_score": 0.6,
+            },
+            "scope": {"competitors": ["A"]},
+        })
+    finally:
+        st.columns, st.markdown = saved
+
+    full = "\n".join(captured)
+    assert "参考资料" in full, "KPI 第 4 张应叫「参考资料」"
+    assert "数据源数" not in full, "「数据源数」标签应被换掉"
+
+
 def test_appendix_renders_references_section_from_full_report():
     """_render_appendix 新增「参考资料」小节，扫全报告 source_refs 收集去重链接。
 

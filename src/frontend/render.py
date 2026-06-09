@@ -1329,7 +1329,7 @@ def _render_kpi_strip(report: dict) -> None:
         (cols[0], "质检评分", qs_main, qs_sub, None),
         (cols[1], "场景标签", scenario, scenario_sub, None),
         (cols[2], "竞品数量", comp_main, comp_sub, None),
-        (cols[3], "数据源数", src_main, src_sub, None),
+        (cols[3], "参考资料", src_main, src_sub, None),
         (cols[4], "可信度", conf_level, "", conf_color),
     ]
     for col, label, main, sub, color in cards:

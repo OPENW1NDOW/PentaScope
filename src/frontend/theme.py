@@ -59,17 +59,42 @@ html, body, [class*="css"] {
 /* 数字字体 */
 .kpi-num, .num { font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; }
 
-/* KPI 卡片 */
+/* KPI 卡片：flex 布局保 5 卡等高 */
 .kpi-card {
   background: var(--color-surface);
-  padding: 16px;
+  padding: 16px 18px;
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   border-left: 3px solid var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 120px;
+  height: 100%;
+  box-sizing: border-box;
 }
-.kpi-card-label { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
-.kpi-card-main { font-size: 28px; font-weight: 600; color: var(--color-primary); }
-.kpi-card-sub { font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; }
+.kpi-card-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+.kpi-card-main {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary);
+  margin: 6px 0;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-card-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  min-height: 1.4em;
+  line-height: 1.4em;
+}
 
 /* Section 卡片 */
 .section-card {

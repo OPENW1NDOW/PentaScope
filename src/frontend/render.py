@@ -1185,12 +1185,8 @@ def _render_export_buttons(trace_id: str) -> None:
     html_url = f"{_EXPORT_API_BASE}/trace/{trace_id}/export?format=html"
     st.markdown(
         f"""<div style="margin-bottom:16px">
-  <a href="{md_url}" download class="btn-export">
-    <span class="material-symbols-outlined">download</span> 导出 Markdown
-  </a>
-  <a href="{html_url}" download class="btn-export">
-    <span class="material-symbols-outlined">download</span> 导出 HTML
-  </a>
+  <a href="{md_url}" download class="btn-export">导出 Markdown</a>
+  <a href="{html_url}" download class="btn-export">导出 HTML</a>
   <span style="color:var(--color-text-secondary);font-size:12px;margin-left:12px">
     Trace: <code>{trace_id}</code>
   </span>

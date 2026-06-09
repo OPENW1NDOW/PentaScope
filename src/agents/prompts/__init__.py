@@ -81,6 +81,8 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
 
 **关键差异**：维度级用 `source_urls` (字符串数组)；swot 的每个 entry 用 `source_refs` (对象数组)。不要混淆——schema 强制 SwotEntry.source_refs 是对象列表，写成 source_urls 会被静默丢弃。
 
+**source_refs 对象的 url 字段必填、至少 8 字符的合法 URL**（如 https://xxx.com/yyy）。空字符串/'#'/省略号/占位文本会被 schema 直接拒绝。如果某条 entry 真的找不到对应 source，可以让 source_refs 为空数组 []，但不要塞空 url 占位。
+
 source_type 枚举值（必须从中选）：official_website / third_party_review / industry_report / news / user_review / regulatory / other
 
 每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。

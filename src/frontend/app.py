@@ -2,11 +2,19 @@ import streamlit as st
 import httpx
 
 from render import render_analysis_response, render_trace_report_tab
+from theme import inject_theme
 
 API_BASE = "http://localhost:8000/api/v1"
 
-st.set_page_config(page_title="竞品分析 Agent 系统", layout="wide")
-st.title("竞品分析 Agent 系统")
+st.set_page_config(
+    page_title="AI 驱动竞品分析系统",
+    page_icon=":material/analytics:",
+    layout="wide",
+)
+inject_theme()
+
+st.title("AI 驱动竞品分析系统")
+st.caption("多 Agent 协作 · 5 场景专业报告 · 全链路可追溯")
 
 # 输入区
 st.header("输入")

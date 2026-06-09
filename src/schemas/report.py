@@ -119,6 +119,16 @@ class ReportMetadata(BaseModel):
     data_sources: list[DataSource] = Field(min_length=1)
     confidence_level: Literal["high", "medium", "low"]
     quality_score: Optional[float] = Field(default=None, ge=0, le=1)
+    raw_quality_score: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description=(
+            "cap 前的初始加权分（含 placeholder pass_rate 影响）。"
+            "用于 KPI 卡显示模型实际算分。命名 raw 仅指 cap 前，"
+            "不代表完全无任何惩罚——v3-R17 cap 仅是惩罚之一。"
+        ),
+    )
     quality_score_calculation_note: str = Field(default="")
     warnings: list[str] = Field(default_factory=list)
 

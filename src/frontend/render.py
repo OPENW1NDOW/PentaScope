@@ -340,18 +340,55 @@ def _render_recommendations(recs: list[dict]) -> None:
         if not items:
             continue
         st.subheader(tl_label)
-        for r in items:
-            priority = r.get("priority", "")
-            target = r.get("target_role", "")
-            action = r.get("action", "")
-            rationale = r.get("rationale", "")
-            badge = {"critical": "🔴", "important": "🟡", "consider": "🟢"}.get(priority, "")
-            st.markdown(f"{badge} **[{priority}]** {action}")
-            if target:
-                st.caption(f"对象：{target}")
-            if rationale:
-                st.caption(f"依据：{rationale}")
-            _render_source_refs(r.get("source_refs"))
+        # grid 布局：每行 2 张卡
+        for i in range(0, len(items), 2):
+            cols = st.columns(2)
+            for col_idx, item_idx in enumerate(range(i, min(i + 2, len(items)))):
+                r = items[item_idx]
+                priority = r.get("priority", "")
+                target = r.get("target_role", "")
+                action = r.get("action", "")
+                rationale = r.get("rationale", "")
+                # 保留 PD-5 emoji 状态点（recommendations badge 在白名单内）
+                badge = {"critical": "🔴", "important": "🟡", "consider": "🟢"}.get(priority, "")
+                priority_class = (
+                    f"priority-{priority}"
+                    if priority in ("critical", "important", "consider")
+                    else ""
+                )
+                with cols[col_idx]:
+                    refs = r.get("source_refs") or []
+                    refs_html = ""
+                    if refs:
+                        parts = []
+                        for ref in refs:
+                            if isinstance(ref, dict):
+                                url = ref.get("url", "")
+                                title = ref.get("title", "") or "链接"
+                                if url:
+                                    parts.append(f'<a href="{url}" target="_blank">{title}</a>')
+                        if parts:
+                            refs_html = (
+                                f'<small style="color:var(--color-text-secondary)">'
+                                f'来源：{" · ".join(parts)}</small>'
+                            )
+                    target_html = (
+                        f'<small style="color:var(--color-text-secondary)">对象：{target}</small><br>'
+                        if target else ''
+                    )
+                    rationale_html = (
+                        f'<small style="color:var(--color-text-secondary)">依据：{rationale}</small><br>'
+                        if rationale else ''
+                    )
+                    st.markdown(
+                        f"""<div class="action-card {priority_class}">
+  <div style="font-size:14px;font-weight:600">{badge} [{priority}] {action}</div>
+  {target_html}
+  {rationale_html}
+  {refs_html}
+</div>""",
+                        unsafe_allow_html=True,
+                    )
 
 
 def _render_appendix(appendix: dict | None) -> None:

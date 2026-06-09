@@ -1123,9 +1123,33 @@ def render_trace_report_tab(report: dict | None, *, trace_id: str | None = None)
         st.json(report)
 
 
+# API_BASE 与 app.py 同源；render.py 独立提供常量避免循环 import
+_EXPORT_API_BASE = "http://localhost:8000/api/v1"
+
+
 def _render_export_buttons(trace_id: str) -> None:
-    """占位，Task 8 实现真实双按钮。"""
-    pass
+    """报告区顶部导出双按钮：直链 <a download>，浏览器原生触发下载。
+
+    使用 HTML <a> 而非 st.download_button：
+    - st.download_button 要求 data 已 materialized（不接受 lazy callable）
+    - HTML <a download> 让浏览器直接调后端 GET /export 路由，零前端预拉
+    """
+    md_url = f"{_EXPORT_API_BASE}/trace/{trace_id}/export?format=md"
+    html_url = f"{_EXPORT_API_BASE}/trace/{trace_id}/export?format=html"
+    st.markdown(
+        f"""<div style="margin-bottom:16px">
+  <a href="{md_url}" download class="btn-export">
+    <span class="material-symbols-outlined">download</span> 导出 Markdown
+  </a>
+  <a href="{html_url}" download class="btn-export">
+    <span class="material-symbols-outlined">download</span> 导出 HTML
+  </a>
+  <span style="color:var(--color-text-secondary);font-size:12px;margin-left:12px">
+    Trace: <code>{trace_id}</code>
+  </span>
+</div>""",
+        unsafe_allow_html=True,
+    )
 
 
 _SCENARIO_LABELS = {

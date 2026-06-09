@@ -119,7 +119,7 @@ html, body, [class*="css"] {
 .action-card.priority-important { border-left-color: var(--color-warning); }
 .action-card.priority-consider { border-left-color: var(--color-primary); }
 
-/* 导出按钮 */
+/* 导出按钮（!important 覆盖 Streamlit 默认 a 下划线） */
 .btn-export {
   display: inline-flex;
   align-items: center;
@@ -128,7 +128,7 @@ html, body, [class*="css"] {
   background: var(--color-primary);
   color: white !important;
   border-radius: var(--radius);
-  text-decoration: none;
+  text-decoration: none !important;
   font-size: 14px;
   margin-right: 8px;
   transition: var(--transition);
@@ -136,7 +136,7 @@ html, body, [class*="css"] {
 .btn-export:hover {
   background: var(--color-primary-hover);
   color: white !important;
-  text-decoration: none;
+  text-decoration: none !important;
 }
 
 /* Material Symbols 默认配置 */

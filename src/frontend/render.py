@@ -194,7 +194,7 @@ def _render_source_refs(refs: list[dict] | None, *, prefix: str = "来源") -> N
 def _render_at_a_glance(items: list[str]) -> None:
     if not items:
         return
-    st.subheader("一图看懂")
+    st.subheader("核心要点")
     for it in items:
         st.markdown(f"- {it}")
 
@@ -205,9 +205,9 @@ def _render_executive_summary(es: dict) -> None:
         return
     st.header("执行摘要")
     for label, key in [
-        ("背景定位 Context", "context"),
-        ("核心论断 Core Thesis", "core_thesis"),
-        ("现实启示 Implications", "implications"),
+        ("背景定位", "context"),
+        ("核心论断", "core_thesis"),
+        ("现实启示", "implications"),
     ]:
         val = es.get(key, "")
         if val:
@@ -222,7 +222,7 @@ def _render_executive_summary(es: dict) -> None:
 
     pf = es.get("path_forward") or []
     if pf:
-        st.subheader("行动路径 Path Forward")
+        st.subheader("行动路径")
         for p in pf:
             st.markdown(f"- {p}")
 
@@ -391,12 +391,47 @@ def _render_recommendations(recs: list[dict]) -> None:
                     )
 
 
-def _render_appendix(appendix: dict | None) -> None:
-    if not appendix:
-        return
-    glossary = appendix.get("glossary") or {}
-    sources_full = appendix.get("data_sources_full") or []
-    if not (glossary or sources_full):
+def _collect_all_references(report: dict) -> list[dict]:
+    """扫全报告所有 source_refs + metadata.data_sources，按 url 去重，保留首次 title。
+
+    覆盖：metadata.data_sources / key_findings / analysis_sections /
+    swot.{strengths,weaknesses,opportunities,threats} / recommendations。
+    """
+    seen_urls: set[str] = set()
+    refs: list[dict] = []
+
+    def _add(url: str, title: str = "") -> None:
+        if not url or url in seen_urls:
+            return
+        seen_urls.add(url)
+        refs.append({"url": url, "title": title or url})
+
+    def _scan_refs(items: list) -> None:
+        for it in items or []:
+            for ref in (it or {}).get("source_refs") or []:
+                if isinstance(ref, dict):
+                    _add(ref.get("url", ""), ref.get("title", ""))
+
+    # metadata.data_sources
+    for ds in (report.get("metadata") or {}).get("data_sources") or []:
+        if isinstance(ds, dict):
+            _add(ds.get("url", ""), ds.get("title", ""))
+    # key_findings / analysis_sections / recommendations
+    _scan_refs(report.get("key_findings") or [])
+    _scan_refs(report.get("analysis_sections") or [])
+    _scan_refs(report.get("recommendations") or [])
+    # swot 四象限
+    swot = report.get("swot") or {}
+    for key in ("strengths", "weaknesses", "opportunities", "threats"):
+        _scan_refs(swot.get(key) or [])
+    return refs
+
+
+def _render_appendix(appendix: dict | None, *, report: dict | None = None) -> None:
+    glossary = (appendix or {}).get("glossary") or {}
+    sources_full = (appendix or {}).get("data_sources_full") or []
+    references = _collect_all_references(report or {}) if report else []
+    if not (glossary or sources_full or references):
         return
     with st.expander("附录", expanded=False):
         if glossary:
@@ -414,6 +449,11 @@ def _render_appendix(appendix: dict | None) -> None:
                     st.markdown(f"- {badge} [{title}]({url})")
                 else:
                     st.markdown(f"- {badge} {title}")
+        if references:
+            st.subheader("参考资料")
+            st.caption(f"全报告共引用 {len(references)} 处独立链接")
+            for ref in references:
+                st.markdown(f"- [{ref['title']}]({ref['url']})")
 
 
 def _render_metadata_panel(metadata: dict) -> None:
@@ -1347,5 +1387,5 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
 
     render_scenario_payload(report.get("scenario_payload"))
 
-    _render_appendix(report.get("appendix") or {})
+    _render_appendix(report.get("appendix") or {}, report=report)
     _render_metadata_panel(report.get("metadata") or {})

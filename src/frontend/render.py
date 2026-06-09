@@ -1105,28 +1105,46 @@ def render_analysis_response(data: dict) -> None:
     st.success(f"分析完成！Trace ID: {trace_id}")
     if trace_id:
         st.session_state["last_trace_id"] = trace_id
-    render_base_report(report)
+    render_base_report(report, trace_id=trace_id)
 
 
-def render_trace_report_tab(report: dict | None) -> None:
+def render_trace_report_tab(report: dict | None, *, trace_id: str | None = None) -> None:
     """[fix16] 追溯面板「报告」tab 用：渲染历史 trace 的美化报告 + 折叠原始 JSON。
 
     解决问题：之前追溯面板只 st.json 展示原始 BaseReport JSON，可读性差。
     现在 default 渲染美化版，旁边折叠区保留原始 JSON 供诊断使用。
+    trace_id 不为空时顶部也显示导出双按钮。
     """
     if not report:
         st.warning("该 trace 报告为空（可能 graph 失败强制结束 / 未跑到 writer 阶段）")
         return
-    render_base_report(report)
+    render_base_report(report, trace_id=trace_id)
     with st.expander("查看原始 JSON（诊断用）", expanded=False):
         st.json(report)
 
 
-def render_base_report(report: dict) -> None:
-    """主入口：按 BaseReport schema 顺序渲染。"""
+def _render_export_buttons(trace_id: str) -> None:
+    """占位，Task 8 实现真实双按钮。"""
+    pass
+
+
+def _render_kpi_strip(report: dict) -> None:
+    """占位，Task 7 实现 5 张 KPI 卡。"""
+    pass
+
+
+def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
+    """主入口：按 BaseReport schema 顺序渲染。
+
+    trace_id 不为空时顶部显示导出双按钮（Markdown / HTML）+ KPI 5 卡。
+    """
     if not report:
         st.warning("报告为空")
         return
+
+    if trace_id:
+        _render_export_buttons(trace_id)
+    _render_kpi_strip(report)
 
     title = report.get("title", "")
     subtitle = report.get("subtitle", "")

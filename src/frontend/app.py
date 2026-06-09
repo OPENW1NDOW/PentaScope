@@ -175,7 +175,7 @@ with st.expander("执行追溯（中间产物）", expanded=False):
                 with tabs[2]:
                     st.json(t["stages"].get("analysis"))
                 with tabs[3]:
-                    render_trace_report_tab(t["stages"].get("report"))
+                    render_trace_report_tab(t["stages"].get("report"), trace_id=tid_input)
                 with tabs[4]:
                     st.json(t["stages"].get("feedback"))
                 with tabs[5]:

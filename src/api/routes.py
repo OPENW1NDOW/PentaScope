@@ -2,7 +2,11 @@ import logging
 import re
 import json
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Response
+from pydantic import ValidationError
+
 from src.api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
@@ -10,6 +14,8 @@ from src.api.schemas import (
     PickScenarioResponse,
     TraceResponse,
 )
+from src.api.exporters.markdown import render_markdown
+from src.schemas.report import BaseReport
 from src.tools.llm_client import LLMClient
 from src.tools.http_client import HttpClient
 from src.tools.html_parser import HtmlParser
@@ -161,3 +167,61 @@ async def get_trace(trace_id: str, version: str | None = None):
         snapshots=snapshots,
         log=log_text,
     )
+
+
+@router.get("/trace/{trace_id}/export")
+async def export_trace(trace_id: str, format: Literal["md", "html"] = "md"):
+    """导出指定 trace 的报告为 markdown 或 html。
+
+    - 路径穿越防护：复用 GET /trace/{id} 的 fullmatch + resolve 双层校验
+    - 旧 trace schema 漂移容忍：BaseReport.model_validate 失败时回退 dict 模式（M10）
+    """
+    if not _TRACE_RE.fullmatch(trace_id):
+        raise HTTPException(status_code=404, detail="trace not found")
+    base = runs_dir()
+    trace_dir = (base / trace_id).resolve()
+    if base.resolve() not in trace_dir.parents and trace_dir != base.resolve():
+        raise HTTPException(status_code=404, detail="trace not found")
+    if not trace_dir.is_dir():
+        raise HTTPException(status_code=404, detail="trace not found")
+    report_path = trace_dir / "03_report.json"
+    if not report_path.is_file():
+        raise HTTPException(status_code=404, detail="该 trace 未产出报告")
+
+    raw = _load_json(report_path)
+    if raw is None:
+        raise HTTPException(status_code=500, detail="report.json 解析失败")
+
+    # M10 修入：旧 trace schema 漂移容忍
+    try:
+        report = BaseReport.model_validate(raw)
+        report_dict = report.model_dump()
+    except ValidationError as e:
+        logger.warning(
+            "[export] BaseReport.model_validate failed for %s, dict fallback: %s",
+            trace_id, str(e)[:200],
+        )
+        report_dict = raw
+
+    if format == "md":
+        body = render_markdown(report_dict, trace_id=trace_id)
+        return Response(
+            content=body,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="report-{trace_id}.md"'
+            },
+        )
+    elif format == "html":
+        # Task 15 实现 render_html
+        from src.api.exporters.html import render_html
+        body = render_html(report_dict, trace_id=trace_id)
+        return Response(
+            content=body,
+            media_type="text/html; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="report-{trace_id}.html"'
+            },
+        )
+    else:
+        raise HTTPException(status_code=400, detail="format must be md or html")

@@ -527,10 +527,10 @@ async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
     assert len(captured_prompts) == 1
     user_prompt = captured_prompts[0]
     assert "增量监控" in user_prompt, (
-        f"prior_trace_id=prior-abc-123 时 user_prompt 应含 '增量监控'，实际不含"
+        "prior_trace_id=prior-abc-123 时 user_prompt 应含 '增量监控'，实际不含"
     )
     assert "prior-abc-123" in user_prompt, (
-        f"user_prompt 应包含 prior_trace_id 值，实际不含"
+        "user_prompt 应包含 prior_trace_id 值，实际不含"
     )
 
 

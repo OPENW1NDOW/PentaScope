@@ -627,7 +627,11 @@ class WriterOrchestrator:
                 if attempt >= max_retries:
                     raise
                 last_error_summary = self._serialize_validation_error(e, max_chars=1500)
-                logger.warning("[writer] phase 2 ValidationError 重试 1 次")
+                # 把摘要落 log 便于诊断（log 只取前 400 字防爆）
+                logger.warning(
+                    "[writer] phase 2 ValidationError 重试 1 次, 错误摘要: %s",
+                    last_error_summary[:400].replace("\n", " | "),
+                )
 
     def _build_payload_model(
         self,
@@ -1033,17 +1037,25 @@ class WriterOrchestrator:
 
         # [06-09 source_refs 透传修复] outline phase 1 LLM 不写 source_refs（prompt 故意不要求）
         # 但 schema 允许空 → 透传到最终报告 → inspector 报"全空缺溯源" major issue。
-        # 修法：从 final_refs 池里挑最多 3 条 SourceRef 作为兜底注入到没 source_refs 的 Finding / Recommendation。
-        # 不挑全部以避免单条结论 ref 数膨胀；不去重以保留 LLM 自己写的优先。
-        default_refs = [
+        # 修法：从 final_refs 池里轮换分配 SourceRef 给每个无 ref 的 Finding/Recommendation。
+        # 轮换而非全用前 N 条——避免所有结论指向同一来源被 inspector 抓"引用与结论不匹配"。
+        # 每条 item 取 2 条 ref（覆盖度 + 不膨胀）。
+        ref_pool = [
             {"url": r["url"], "title": r["title"], "accessed_at": r["accessed_at"], "source_type": r["source_type"]}
-            for r in final_refs[:3]
+            for r in final_refs
         ]
 
         def _inject_default_refs(items: list[dict]) -> list[dict]:
-            for it in items:
+            if not ref_pool:
+                return items
+            n = len(ref_pool)
+            for idx, it in enumerate(items):
                 if not it.get("source_refs"):
-                    it["source_refs"] = default_refs
+                    # 轮换：每条 item 从池里取 2 条（idx*2, idx*2+1），mod n 防越界
+                    it["source_refs"] = [
+                        ref_pool[(idx * 2) % n],
+                        ref_pool[(idx * 2 + 1) % n],
+                    ] if n >= 2 else [ref_pool[0]]
             return items
 
         key_findings = [

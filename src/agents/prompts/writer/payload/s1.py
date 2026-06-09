@@ -37,7 +37,7 @@ S1_PAYLOAD_PROMPT = f"""你是一个资深竞品分析师，正在产出 S1 功�
   - 不要填 categories[].weight（代码自动从 tier 派生）
 - radar_scores: list[S1RadarScore]（每个竞品 1 条，5 维评分）
   - artifact_id: str
-  - artifact_type: "radar_score"
+  - artifact_type: "s1_radar_score"（注意带 s1_ 前缀，与 schema Literal 严格一致）
   - competitor_name: str
   - feature_breadth: 0-5（int）
   - usability: 0-5

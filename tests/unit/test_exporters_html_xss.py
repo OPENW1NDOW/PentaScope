@@ -50,6 +50,31 @@ def test_safe_markdown_preserves_safe_html():
     assert "<a " in out and "https://example.com" in out
 
 
+def test_html_export_renders_narrative_markdown_as_html_tags():
+    """narrative markdown 应被渲染为 HTML 标签（<h3>/<p>/<strong>），不是字面文本。
+
+    Cooper 2026-06-10 验收发现：HTML 导出里 narrative 显示字面 '<h3>...'
+    根因：_safe_markdown 返回 str，Jinja2 autoescape 把整段当不可信文本二次转义。
+    修：_safe_markdown 返回 jinja2.Markup 标记已安全（nh3 已 sanitize）。
+    """
+    rep = _minimal_base_report("S1", {})
+    # narrative 是 markdown，会被 markdown lib 转成 <h3>...</h3><p>...</p>
+    rep["analysis_sections"][0]["narrative"] = (
+        "### 子标题\n\n这是 **加粗** 段落。\n\n- 列表项 1\n- 列表项 2"
+    )
+    out = render_html(rep, trace_id="t-md")
+
+    # 应渲染为真实 HTML 标签（不应是字面字符）
+    assert "<h3>子标题</h3>" in out, "markdown ### 应转为真实 <h3> 标签"
+    assert "<strong>加粗</strong>" in out, "markdown ** 应转为真实 <strong>"
+    assert "<li>列表项 1</li>" in out, "markdown - 应转为真实 <li>"
+
+    # 不应含字面被转义的标签字符串
+    assert "&lt;h3&gt;" not in out, "<h3> 不应被 autoescape 二次转义"
+    assert "&lt;p&gt;" not in out
+    assert "&lt;strong&gt;" not in out
+
+
 def test_html_export_strips_script_in_narrative():
     """端到端：恶意 narrative 通过 render_html 后 HTML 不含 <script>。"""
     rep = _minimal_base_report("S1", {})
@@ -57,8 +82,7 @@ def test_html_export_strips_script_in_narrative():
         "正常分析。<script>alert('XSS')</script> 文末。"
     )
     out = render_html(rep, trace_id="t-xss")
-    # 注意：autoescape 会把字面 < > 转义；nh3 strip 真实标签
-    # 最终 HTML 不应含可执行的 <script> 标签
+    # nh3 strip <script>，最终 HTML 不应含可执行的 <script>alert（可执行 JS）
     assert "<script>alert" not in out
     assert "正常分析" in out
 

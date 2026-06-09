@@ -13,6 +13,7 @@ from pathlib import Path
 import jinja2
 import markdown as md_lib
 import nh3
+from markupsafe import Markup
 
 from src.api.exporters import check_fonts
 
@@ -49,7 +50,7 @@ _NH3_ALLOWED_TAGS = {
 _NH3_ALLOWED_ATTRS = {"a": {"href", "title"}}
 
 
-def _safe_markdown(text: str) -> str:
+def _safe_markdown(text: str) -> Markup:
     """C5 修入：narrative 等 LLM 文本走 markdown→html→nh3 sanitize 三步。
 
     nh3 strips:
@@ -57,15 +58,19 @@ def _safe_markdown(text: str) -> str:
     - inline event handlers (onclick=...)
     - javascript: URIs
     - 任何不在 _NH3_ALLOWED_TAGS 内的标签
+
+    返回 markupsafe.Markup（标记为已 sanitize 的可信 HTML），让 Jinja2 autoescape
+    不再二次转义。autoescape 仍对其他字段（title / scenario / 等）生效。
     """
     if not text or not isinstance(text, str):
-        return ""
+        return Markup("")
     raw_html = md_lib.markdown(text, extensions=["extra", "nl2br"])
-    return nh3.clean(
+    cleaned = nh3.clean(
         raw_html,
         tags=_NH3_ALLOWED_TAGS,
         attributes=_NH3_ALLOWED_ATTRS,
     )
+    return Markup(cleaned)
 
 
 # Jinja2 environment（autoescape 强开 = C5 双层防护）

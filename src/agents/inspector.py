@@ -385,6 +385,7 @@ class InspectorAgent:
 
         # 回填 quality_score（v3-R22 inspector 一次性写入）
         score, note = calc_quality_score(report, unique_issues)
+        report.metadata.raw_quality_score = score  # PD-3：保留 cap 前真实分供 KPI 显示
         # v3-R17：placeholder warnings 强制 cap 到 0.5
         if _detect_placeholder_warnings(report) and score > _QUALITY_SCORE_CAP_ON_PLACEHOLDER:
             note = f"{note}; capped to {_QUALITY_SCORE_CAP_ON_PLACEHOLDER} due to placeholder warnings (v3-R17)"

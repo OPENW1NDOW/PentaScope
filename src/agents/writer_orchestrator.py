@@ -558,6 +558,16 @@ class WriterOrchestrator:
             ("=== Analysis 摘要 ===", analysis_json),
             ("=== 可用溯源 URL ===", discovered_urls),
         ]
+
+        # [v3-R09] S4 prior 监控提示：告知 LLM 首次/增量，影响 title 写法
+        if scenario == "S4":
+            mode_hint = (
+                "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
+                if scenario_input.prior_trace_id is None
+                else f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
+            )
+            sections.append(("=== prior 监控信息 ===", mode_hint))
+
         parts: list[str] = []
         for label, value in sections:
             if isinstance(value, str):

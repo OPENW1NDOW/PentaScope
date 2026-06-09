@@ -481,6 +481,101 @@ def test_phase2_s4_prior_schema_mismatch_does_not_inject_trace_id():
     assert "dropped_competitors" not in result["review_period"]
 
 
+# ---------- 测试 10b：Phase 1 S4 mode_hint 注入 ----------
+
+
+@pytest.mark.asyncio
+async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
+    """[v3-R09 prove-it] S4 + prior_trace_id 存在时，Phase 1 user_prompt 应含 '增量监控' 而非 '首次监控'。
+
+    现象：Phase 1 outline prompt 未收到 prior 监控信息，LLM 照抄 analysis_context 里的
+    '首次监控' 生成 title，即使这是第二轮增量分析。
+    修：_phase1_outline 构建 user_prompt 时注入 mode_hint。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    captured_prompts: list[str] = []
+
+    async def _capture_llm(system_prompt, user_prompt, *, max_tokens=None):
+        captured_prompts.append(user_prompt)
+        return {"title": "测试标题", "subtitle": "", "at_a_glance": ["a"]}
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=_capture_llm)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id="prior-abc-123",
+        competitors=[CompetitorBasic(name="Mixpanel")],
+        analysis_context="这是首次监控基线",
+        our_product_name="MyAnalytics",
+    )
+    profile = _make_profile(data_sources=["https://example.com"])
+
+    await orch._phase1_outline(
+        scenario="S4",
+        scenario_input=scenario_input,
+        analysis=MagicMock(model_dump_json=MagicMock(return_value="{}")),
+        profiles=[profile],
+        competitor_names=["Mixpanel"],
+        competitor_basics=[{"name": "Mixpanel"}],
+        our_product_brief={"name": "MyAnalytics"},
+        discovered_urls=["https://example.com"],
+    )
+
+    assert len(captured_prompts) == 1
+    user_prompt = captured_prompts[0]
+    assert "增量监控" in user_prompt, (
+        f"prior_trace_id=prior-abc-123 时 user_prompt 应含 '增量监控'，实际不含"
+    )
+    assert "prior-abc-123" in user_prompt, (
+        f"user_prompt 应包含 prior_trace_id 值，实际不含"
+    )
+
+
+@pytest.mark.asyncio
+async def test_phase1_s4_no_prior_trace_id_injects_baseline_mode_hint():
+    """[v3-R09 prove-it] S4 + prior_trace_id=None 时，Phase 1 user_prompt 应含 '首次监控'。"""
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    captured_prompts: list[str] = []
+
+    async def _capture_llm(system_prompt, user_prompt, *, max_tokens=None):
+        captured_prompts.append(user_prompt)
+        return {"title": "测试标题", "subtitle": "", "at_a_glance": ["a"]}
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=_capture_llm)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id=None,
+        competitors=[CompetitorBasic(name="Mixpanel")],
+        analysis_context="首次监控",
+        our_product_name="MyAnalytics",
+    )
+    profile = _make_profile(data_sources=["https://example.com"])
+
+    await orch._phase1_outline(
+        scenario="S4",
+        scenario_input=scenario_input,
+        analysis=MagicMock(model_dump_json=MagicMock(return_value="{}")),
+        profiles=[profile],
+        competitor_names=["Mixpanel"],
+        competitor_basics=[{"name": "Mixpanel"}],
+        our_product_brief={"name": "MyAnalytics"},
+        discovered_urls=["https://example.com"],
+    )
+
+    assert len(captured_prompts) == 1
+    user_prompt = captured_prompts[0]
+    assert "首次监控" in user_prompt, (
+        "prior_trace_id=None 时 user_prompt 应含 '首次监控'，实际不含"
+    )
+
+
 # ---------- 测试 11：I2——Phase 2 ValidationError 重试后仍失败抛出 ----------
 
 @pytest.mark.asyncio

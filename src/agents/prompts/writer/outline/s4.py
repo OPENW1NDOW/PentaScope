@@ -12,6 +12,7 @@ S4 服务于"已有产品 + 例行跟踪竞品动态"的团队（情报组、产
 
 【撰写要求】
 - title 含 review_period 标签（如 "2026 Q2 竞品监控简报"）
+- 如果「=== prior 监控信息 ===」显示「首次监控」，title 可含"首次基线"；如果显示「增量监控」，title 必须含"增量"而非"首次"，例如 "2026 Q3 竞品监控增量简报"
 - core_thesis 一句话总结本期最重要的 1-2 个 findings
 - key_findings 至少各有 1 条针对：高严重度竞品动作 / 重大趋势变化 / 紧急机会
 - recommendations 至少 1 条 immediate timeline（应对本期 act_now 威胁）

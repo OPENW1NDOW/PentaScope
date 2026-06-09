@@ -84,12 +84,14 @@ def test_common_detects_too_few_data_sources():
 # ============ _check_s1 ============
 
 def test_s1_detects_vendor_undercoverage():
+    """vendor_profiles 缺竞品 → 报警（feature_matrix.competitors 含我方需排除）"""
     payload = SimpleNamespace(
         feature_matrix=SimpleNamespace(
-            competitors=["A", "B", "C"],
+            our_product_name="Us",
+            competitors=["Us", "A", "B", "C"],  # 含我方
             categories=[SimpleNamespace(features=[SimpleNamespace(scores={"A": SimpleNamespace(score=2)})])],
         ),
-        vendor_profiles=[SimpleNamespace(competitor_name="A")],
+        vendor_profiles=[SimpleNamespace(competitor_name="A")],  # 仅 A，缺 B/C
         white_space_features=["any"],
         feature_gaps=["any"],
     )
@@ -97,10 +99,32 @@ def test_s1_detects_vendor_undercoverage():
     assert any(i.field == "scenario_payload.vendor_profiles" for i in issues)
 
 
+def test_s1_no_warning_when_vendor_covers_all_competitors_excl_self():
+    """vendor 数 = matrix.competitors - our_product 数 → 不报警（修复 06-09 误报）"""
+    payload = SimpleNamespace(
+        feature_matrix=SimpleNamespace(
+            our_product_name="Notion",
+            competitors=["Notion", "飞书", "语雀", "WPS"],  # 4 个含我方
+            categories=[SimpleNamespace(features=[SimpleNamespace(scores={"飞书": SimpleNamespace(score=2)})])],
+        ),
+        vendor_profiles=[
+            SimpleNamespace(competitor_name="飞书"),
+            SimpleNamespace(competitor_name="语雀"),
+            SimpleNamespace(competitor_name="WPS"),
+        ],  # 3 个，恰好覆盖所有非我方
+        white_space_features=["any"],
+        feature_gaps=["any"],
+    )
+    issues = _check_s1(payload)
+    # 不应有 vendor_profiles 报警
+    assert not any(i.field == "scenario_payload.vendor_profiles" for i in issues)
+
+
 def test_s1_detects_all_zero_feature_matrix():
     payload = SimpleNamespace(
         feature_matrix=SimpleNamespace(
-            competitors=["A", "B"],
+            our_product_name="Us",
+            competitors=["Us", "A", "B"],
             categories=[SimpleNamespace(features=[
                 SimpleNamespace(scores={"A": SimpleNamespace(score=0), "B": SimpleNamespace(score=0)}),
             ])],
@@ -116,7 +140,8 @@ def test_s1_detects_all_zero_feature_matrix():
 def test_s1_detects_no_feature_iteration_output():
     payload = SimpleNamespace(
         feature_matrix=SimpleNamespace(
-            competitors=["A"],
+            our_product_name="Us",
+            competitors=["Us", "A"],
             categories=[SimpleNamespace(features=[SimpleNamespace(scores={"A": SimpleNamespace(score=2)})])],
         ),
         vendor_profiles=[SimpleNamespace(competitor_name="A")],
@@ -354,7 +379,8 @@ async def test_inspect_writes_quality_score_to_metadata():
         scenario="S1",
         scenario_payload=SimpleNamespace(
             feature_matrix=SimpleNamespace(
-                competitors=["A"],
+                our_product_name="Us",
+                competitors=["Us", "A"],
                 categories=[SimpleNamespace(features=[SimpleNamespace(scores={"A": SimpleNamespace(score=2)})])],
             ),
             vendor_profiles=[SimpleNamespace(competitor_name="A")],
@@ -432,7 +458,8 @@ async def test_inspect_caps_quality_score_at_0_5_when_placeholder_warnings_prese
         scenario="S1",
         scenario_payload=SimpleNamespace(
             feature_matrix=SimpleNamespace(
-                competitors=["A"],
+                our_product_name="Us",
+                competitors=["Us", "A"],
                 categories=[SimpleNamespace(features=[SimpleNamespace(scores={"A": SimpleNamespace(score=2)})])],
             ),
             vendor_profiles=[SimpleNamespace(competitor_name="A")],
@@ -470,7 +497,8 @@ async def test_inspect_dedups_issues_by_agent_field_keep_severest():
         scenario="S1",
         scenario_payload=SimpleNamespace(
             feature_matrix=SimpleNamespace(
-                competitors=["A"],
+                our_product_name="Us",
+                competitors=["Us", "A"],
                 categories=[SimpleNamespace(features=[SimpleNamespace(scores={"A": SimpleNamespace(score=2)})])],
             ),
             vendor_profiles=[SimpleNamespace(competitor_name="A")],

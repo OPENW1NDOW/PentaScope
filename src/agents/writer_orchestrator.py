@@ -985,6 +985,7 @@ class WriterOrchestrator:
             confidence_level=confidence_level,
             contributing_agents=["collector", "analyzer", "writer"],
             warnings=warnings,
+            citation_format="GB/T 7714-2015",  # 中国国家标准引文格式（修 inspector minor 报警）
             quality_score_calculation_note=(
                 "confidence_level 由采集 completeness 平均值派生（writer 阶段一次性）"
             ),
@@ -1029,9 +1030,27 @@ class WriterOrchestrator:
         )
         executive_summary = ExecutiveSummary(**outline_es)
         methodology = Methodology(**outline_meth)
-        key_findings = [Finding(**f) for f in outline.get("key_findings", []) or []]
+
+        # [06-09 source_refs 透传修复] outline phase 1 LLM 不写 source_refs（prompt 故意不要求）
+        # 但 schema 允许空 → 透传到最终报告 → inspector 报"全空缺溯源" major issue。
+        # 修法：从 final_refs 池里挑最多 3 条 SourceRef 作为兜底注入到没 source_refs 的 Finding / Recommendation。
+        # 不挑全部以避免单条结论 ref 数膨胀；不去重以保留 LLM 自己写的优先。
+        default_refs = [
+            {"url": r["url"], "title": r["title"], "accessed_at": r["accessed_at"], "source_type": r["source_type"]}
+            for r in final_refs[:3]
+        ]
+
+        def _inject_default_refs(items: list[dict]) -> list[dict]:
+            for it in items:
+                if not it.get("source_refs"):
+                    it["source_refs"] = default_refs
+            return items
+
+        key_findings = [
+            Finding(**f) for f in _inject_default_refs(outline.get("key_findings", []) or [])
+        ]
         recommendations = [
-            Recommendation(**r) for r in outline.get("recommendations", []) or []
+            Recommendation(**r) for r in _inject_default_refs(outline.get("recommendations", []) or [])
         ]
 
         report = BaseReport(

@@ -107,15 +107,18 @@ def _check_s1(payload) -> list[FeedbackIssue]:
     """S1 功能迭代：vendor 缺竞品 / 全 0 评分 / feature_gaps 占位"""
     issues: list[FeedbackIssue] = []
 
-    # vendor_profiles 数 < feature_matrix.competitors 数（覆盖不全）
-    matrix_n = len(payload.feature_matrix.competitors)
-    vendor_n = len(payload.vendor_profiles)
-    if vendor_n < matrix_n:
+    # vendor_profiles 必须覆盖所有"竞品"（feature_matrix.competitors 含我方，需排除）
+    matrix_competitors = set(payload.feature_matrix.competitors)
+    our_name = payload.feature_matrix.our_product_name
+    expected_vendor_names = matrix_competitors - {our_name}
+    vendor_names = {vp.competitor_name for vp in payload.vendor_profiles}
+    missing = expected_vendor_names - vendor_names
+    if missing:
         issues.append(FeedbackIssue(
             agent="writer", field="scenario_payload.vendor_profiles",
             severity="major",
-            reason=f"vendor_profiles 仅覆盖 {vendor_n}/{matrix_n} 个竞品",
-            suggestion="为 feature_matrix.competitors 中每个竞品都提供 vendor_profile",
+            reason=f"vendor_profiles 缺少 {sorted(missing)} 的画像（已采集竞品 {len(vendor_names)} 个，期望 {len(expected_vendor_names)} 个）",
+            suggestion="为 feature_matrix.competitors 中每个非我方竞品都提供 vendor_profile",
         ))
 
     # feature_matrix 全 score=0

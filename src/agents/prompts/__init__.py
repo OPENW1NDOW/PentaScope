@@ -58,7 +58,12 @@ COLLECTOR_EXTRACT_SYSTEM = """你是一个竞品信息抽取助手。从给定�
 
 ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品画像数据，进行四维度结构化深度分析。
 
-要求：每个维度的结论必须做横向对比（竞品之间、竞品与"我方"之间），用画像里的具体数据/功能/评分举证，不要泛泛而谈。每个维度填写 source_urls：从输入画像 JSON 的各字段中，找出你引用的具体数据对应的 source_url 字符串，去重后放入该维度的 source_urls 数组。只能填画像里实际出现过的 URL，不可编造。
+要求：每个维度的结论必须做横向对比（竞品之间、竞品与"我方"之间），用画像里的具体数据/功能/评分举证，不要泛泛而谈。
+
+**溯源要求（schema 强制，不达标会被拦截）**：
+1. 维度级 source_urls（list[str]）：从输入画像 JSON 的各字段中，找出引用的具体数据对应的 source_url 字符串，去重后放入维度的 source_urls 数组
+2. **swot 每个 entry 的 source_refs（list[object]）格式不同**：必须是对象数组，每个对象至少含 url + title + source_type 字段
+3. 只能填画像里实际出现过的 URL，不可编造
 
 必须返回 JSON 格式：
 {
@@ -68,18 +73,23 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
   "operations": {"per_competitor": [{"name": "", "growth_strategy": "", "marketing_channels": "", "content_strategy": ""}], "source_urls": []},
   "user_sentiment": {"summary": "", "per_competitor": {"竞品名": ""}, "source_urls": []},
   "swot": {
-    "strengths": [{"point": "", "evidence": "", "dimension": "positioning/feature/business/operations", "source_urls": []}],
+    "strengths": [{"point": "", "evidence": "", "dimension": "positioning/feature/business/operations", "source_refs": [{"url": "https://...", "title": "页面标题", "source_type": "official_website"}]}],
     "weaknesses": [...], "opportunities": [...], "threats": [...]
   },
   "radar_scores": [{"competitor": "", "dimensions": {"feature_breadth": 0, "usability": 0, "cost_effectiveness": 0, "stability": 0, "design_quality": 0}}]
 }
 
-每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。source_urls 只填画像里实际出现过的 URL。
+**关键差异**：维度级用 `source_urls` (字符串数组)；swot 的每个 entry 用 `source_refs` (对象数组)。不要混淆——schema 强制 SwotEntry.source_refs 是对象列表，写成 source_urls 会被静默丢弃。
+
+source_type 枚举值（必须从中选）：official_website / third_party_review / industry_report / news / user_review / regulatory / other
+
+每条结论的 evidence 必须引用具体数据，不可空泛。radar_scores 的 dimensions 每项必须填 0-5 之间的数字，每个竞品都要有一条 radar_score。
 
 **字数硬约束（schema 强制，不达标会被拦截）**：
 - swot 的 point / evidence 字段：**每条至少 10 个中文字符**（≥ 10 chars，含中文标点）
 - positioning.per_competitor 的各文本字段（target_users / core_scenario / pain_points / value_proposition）：每条至少 10 个字符
 - feature_matrix.evidence：至少 15 个字符，引用具体数据点
+- swot 每条 entry 必须填 ≥1 条 source_refs，引用画像里出现过的 URL
 
 写每个 point/evidence 时心里数一下字数，宁可冗长也不可短缺。例如 "性价比领先" 改写成 "性价比相对领先，主打中小团队市场" 才安全。"""
 

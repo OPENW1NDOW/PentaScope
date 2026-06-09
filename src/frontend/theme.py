@@ -1,8 +1,10 @@
 """前端主题系统：CSS 变量 + 字体 + Material Symbols 注入 + icon() 助手。
 
 只在 app.py 顶部 st.set_page_config() 之后调用 inject_theme() 一次。
+inject_theme 走 st.html 注入 <style> block（避开 markdown 引擎对 type 6
+HTML block 遇空行截断的行为）。
 图标通过 icon(name, size, color) 助手生成 HTML 字符串，传给
-st.markdown(..., unsafe_allow_html=True) 渲染。
+st.markdown(..., unsafe_allow_html=True) 渲染（行内 HTML 不含 <style> 不受影响）。
 """
 from __future__ import annotations
 
@@ -132,8 +134,14 @@ html, body, [class*="css"] {
 
 
 def inject_theme() -> None:
-    """注入主题 CSS + 字体 + Material Symbols。仅 app.py 顶部调用一次。"""
-    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+    """注入主题 CSS + 字体 + Material Symbols。仅 app.py 顶部调用一次。
+
+    用 st.html 而非 st.markdown(unsafe_allow_html=True)：后者会经 CommonMark/GFM
+    markdown 引擎处理，type 6 HTML block (<style>) 遇连续空行被判定为 block 结束，
+    剩余 CSS 文本回到 markdown 解析模式被当可见文本输出（Cooper 2026-06-10 bug）。
+    st.html 直接走 sanitized HTML 注入路径，是 Streamlit 1.33+ 注入 <style> 的官方方式。
+    """
+    st.html(_THEME_CSS)
 
 
 def icon(name: str, size: int = 20, color: str | None = None) -> str:

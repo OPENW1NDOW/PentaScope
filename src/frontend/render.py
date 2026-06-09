@@ -1128,9 +1128,110 @@ def _render_export_buttons(trace_id: str) -> None:
     pass
 
 
+_SCENARIO_LABELS = {
+    "S1": "功能迭代",
+    "S2": "市场进入",
+    "S3": "定价策略",
+    "S4": "持续监控",
+    "S5": "战略定位",
+}
+
+
+def _format_quality_score(meta: dict) -> tuple[str, str]:
+    """返回 (主数字, 副信息) 元组。
+
+    优先 raw_quality_score，回退 quality_score；皆无显「未质检」。
+    note 含 capped 时副信息显示 cap 后真实值。
+    """
+    raw = meta.get("raw_quality_score")
+    final = meta.get("quality_score")
+    note = meta.get("quality_score_calculation_note") or ""
+
+    if raw is not None:
+        main = f"{raw:.3f}"
+        if "capped" in note and final is not None and final < raw:
+            sub = f"⚠ cap 后 {final:.2f}"
+        else:
+            sub = ""
+    elif final is not None:
+        main = f"{final:.3f}"
+        sub = "（无 raw 字段）"
+    else:
+        main = "—"
+        sub = "未质检"
+    return main, sub
+
+
+def _format_data_sources(meta: dict) -> tuple[str, str]:
+    """KPI 数据源数 = 总数 + 三档分桶副信息。"""
+    sources = meta.get("data_sources") or []
+    total = len(sources)
+    if total == 0:
+        return "—", ""
+    high = sum(1 for s in sources if (s.get("confidence") or "") == "high")
+    mid = sum(1 for s in sources if (s.get("confidence") or "") == "medium")
+    low = sum(1 for s in sources if (s.get("confidence") or "") == "low")
+    return str(total), f"高 {high} 中 {mid} 低 {low}"
+
+
+def _format_competitors(report: dict) -> tuple[str, str]:
+    scope = report.get("scope") or {}
+    comps = scope.get("competitors") or []
+    total = len(comps)
+    if total == 0:
+        return "—", ""
+    payload = report.get("scenario_payload") or {}
+    sub = ""
+    if payload.get("scenario_type") == "S2":
+        rec = payload.get("competitor_recommendations") or {}
+        rec_list = rec.get("recommended_competitors") or []
+        if rec_list:
+            sub = f"含 {len(rec_list)} 推荐"
+    return str(total), sub
+
+
+def _confidence_color(level: str) -> str:
+    return {
+        "high": "#16A34A",
+        "medium": "#D97706",
+        "low": "#DC2626",
+    }.get(level or "", "#475569")
+
+
 def _render_kpi_strip(report: dict) -> None:
-    """占位，Task 7 实现 5 张 KPI 卡。"""
-    pass
+    """5 张 KPI 卡：质检评分 / 场景标签 / 竞品数量 / 数据源数 / 可信度。"""
+    if not report:
+        return
+    meta = report.get("metadata") or {}
+
+    qs_main, qs_sub = _format_quality_score(meta)
+    scenario = meta.get("scenario") or "—"
+    scenario_sub = _SCENARIO_LABELS.get(scenario, "")
+    comp_main, comp_sub = _format_competitors(report)
+    src_main, src_sub = _format_data_sources(meta)
+    conf_level = meta.get("confidence_level") or "—"
+    conf_color = _confidence_color(conf_level)
+
+    cols = st.columns(5)
+    cards = [
+        (cols[0], "质检评分", qs_main, qs_sub, None),
+        (cols[1], "场景标签", scenario, scenario_sub, None),
+        (cols[2], "竞品数量", comp_main, comp_sub, None),
+        (cols[3], "数据源数", src_main, src_sub, None),
+        (cols[4], "可信度", conf_level, "", conf_color),
+    ]
+    for col, label, main, sub, color in cards:
+        with col:
+            color_attr = f"color:{color}" if color else ""
+            st.markdown(
+                f"""<div class="kpi-card">
+  <div class="kpi-card-label">{label}</div>
+  <div class="kpi-card-main kpi-num" style="{color_attr}">{main}</div>
+  <div class="kpi-card-sub">{sub}</div>
+</div>""",
+                unsafe_allow_html=True,
+            )
+    st.markdown("")  # 空行间距
 
 
 def render_base_report(report: dict, *, trace_id: str | None = None) -> None:

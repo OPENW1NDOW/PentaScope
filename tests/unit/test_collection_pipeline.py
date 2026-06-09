@@ -1,7 +1,20 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from src.agents.collection_pipeline import CollectionPipeline
+from src.agents.collection_pipeline import CollectionPipeline, _SCENARIO_QUERIES
 from src.tools.sources import SourceResult
+
+
+def test_each_scenario_has_single_query():
+    """[bug1 prove-it] 每场景只调一次 query，避免输入量翻倍触发 Doubao token 上限。
+
+    现象（trace 20260609-150301-df17ff）：
+    飞书文档 collector 直接 400 'Total tokens exceed max message tokens'，
+    因为 SEARCH_TOP_N=5 × 2 query = 10 条 raw_content 合并后超 224K token 上限。
+    """
+    for scenario, queries in _SCENARIO_QUERIES.items():
+        assert len(queries) == 1, (
+            f"{scenario} query 数应为 1，当前 {len(queries)}：{queries}"
+        )
 
 
 @pytest.mark.asyncio
@@ -155,17 +168,19 @@ async def test_fallback_skipped_when_main_queries_have_results():
 
 
 @pytest.mark.asyncio
-async def test_one_query_exception_does_not_kill_others():
-    """N 条主 query 中 1 条抛错 → 其他正常返回 + trace 记 error"""
+async def test_query_exception_records_error_and_falls_back():
+    """主 query 抛错 → trace 记 error + 触发 fallback query 兜底（06-09 单 query 后语义）"""
     tav = MagicMock()
     tav.available.return_value = True
     tav.name = "tavily"
     async def search_side(q):
-        if "用户评价" in q:
-            raise RuntimeError("Tavily 临时挂")
-        return [SourceResult(url=f"https://q-{q[:5]}.com", text="正文内容足够长" * 20)]
+        if "官网" in q:  # fallback query
+            return [SourceResult(url="https://x.com", text="兜底正文" * 30)]
+        raise RuntimeError("主 query 临时挂")
     tav.search = AsyncMock(side_effect=search_side)
     pipe = CollectionPipeline(search_source=tav)
-    _, sources, trace, _ = await pipe.collect("飞书", scenario="S1")  # S1 有 "用户评价" 关键词
-    assert len(sources) >= 1, "至少有一条 query 成功"
+    _, sources, trace, _ = await pipe.collect("飞书", scenario="S1")
+    # 主 query 抛错时 trace 记 error
     assert any(t.get("step") == "tavily_query" and "error" in t for t in trace)
+    # 主 query 全空 → fallback 兜底成功
+    assert sources == ["https://x.com"]

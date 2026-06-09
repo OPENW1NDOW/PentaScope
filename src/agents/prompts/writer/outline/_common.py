@@ -20,7 +20,7 @@ OUTLINE_FIELDS_HARD_CONSTRAINT = """
   - regions (list[str])：覆盖地区，可空数组
   - exclusions (list[str])：明确不在研究范围的事项，可空数组
 - methodology (object)：
-  - data_collection_approach (str, ≥210 字)：数据采集方法描述
+  - data_collection_approach (str)：**该字段会被 Phase 4 代码合成覆盖，请填一个占位字符串如 "由代码合成" 即可，不要花精力写**
   - evaluation_criteria (list[str], ≥3 条)：评估口径
   - limitations (list[str], ≥2 条)：研究局限
   - sample_size_note (str, ≥85 字)：样本量与代表性说明

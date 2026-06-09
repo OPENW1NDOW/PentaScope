@@ -60,6 +60,12 @@ ANALYZER_SYSTEM = """你是一个资深竞品分析师。基于提供的竞品�
 
 要求：每个维度的结论必须做横向对比（竞品之间、竞品与"我方"之间），用画像里的具体数据/功能/评分举证，不要泛泛而谈。
 
+【SWOT 主体硬约束】
+SWOT 是针对**单一主体**的四象限分析（Strengths / Weaknesses / Opportunities / Threats），不是 N 个竞品各自优劣势的罗列。
+- 输入会在「本次分析的场景上下文」里明确告知 SWOT 主体（我方产品 或 赛道进入这件事）
+- 若上下文未提供主体（旧调用兼容路径），缺省主体为"我方产品"
+- 严禁把 SWOT 写成"竞品 A 的优势... 竞品 B 的优势..."这种罗列；正确写法是"我方/赛道在 X 维度的优势是..."
+
 **溯源要求（schema 强制，不达标会被拦截）**：
 1. 维度级 source_urls（list[str]）：从输入画像 JSON 的各字段中，找出引用的具体数据对应的 source_url 字符串，去重后放入维度的 source_urls 数组
 2. **swot 每个 entry 的 source_refs（list[object]）格式不同**：必须是对象数组，每个对象至少含 url + title + source_type 字段

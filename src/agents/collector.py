@@ -8,6 +8,11 @@ from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM,
 
 logger = logging.getLogger(__name__)
 
+# 喂给 LLM 的 labeled_text 字符上限：100K 字符 ≈ 70K-100K Doubao token，
+# Doubao-Seed-2.0-lite 输入上限 224K token，留 50%+ 安全垫防中文 BPE 计数偏差。
+# 飞书 trace 实测 raw_content 拼起来 >150K 字符会触发 400 错误。
+_EXTRACT_TEXT_MAX_CHARS = 100_000
+
 
 class CollectorAgent:
     """采集 Agent：目标解析 → 竞品分类 → 差异化采集"""
@@ -79,7 +84,16 @@ class CollectorAgent:
 
     async def _extract_profile(self, name: str, text: str, classification: dict,
                                sources: list[str], pipeline_trace: list[dict]) -> CompetitorProfile:
-        """从带来源标记的文本中抽取结构化竞品画像（不截断，依赖 256K 上下文）"""
+        """从带来源标记的文本中抽取结构化竞品画像。
+
+        labeled_text 超 _EXTRACT_TEXT_MAX_CHARS 时硬截断（保头部），防 Doubao 输入超限。
+        """
+        if len(text) > _EXTRACT_TEXT_MAX_CHARS:
+            logger.warning(
+                "[collector] %s labeled_text %d 字符超 %d 上限，截断头部以避免 LLM 输入超限",
+                name, len(text), _EXTRACT_TEXT_MAX_CHARS,
+            )
+            text = text[:_EXTRACT_TEXT_MAX_CHARS]
         prompt = f"竞品名称：{name}\n\n网页文本内容（每段前有【来源: URL】标记）：\n{text}"
         raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt),
                                   classification, sources, pipeline_trace)

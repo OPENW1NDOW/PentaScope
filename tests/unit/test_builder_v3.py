@@ -289,6 +289,118 @@ async def test_writer_node_validation_error_routes_to_writer(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_writer_node_skips_when_analyzer_failed(monkeypatch):
+    """[fix12 prove-it] analyzer 抛错时 state 不含 analysis 但带 feedback agent=analyzer
+    → writer 应直接 skip + 透传 feedback，不调 writer.write，避免拿不到 analysis 触发 KeyError。
+
+    现象（trace 20260609-201635-49d605）：
+    analyzer 抛 APITimeoutError → state.analysis 缺失 → writer_node 走 writer.write
+    时 state['analysis'] KeyError → 兜成 feedback agent=writer，污染反馈闭环
+    （应该回 analyzer 重试，结果回 writer 重试）。
+    """
+    from src.schemas.feedback import FeedbackIssue, RejectionFeedback
+
+    # writer.write 被 spy：如果它被调说明 skip 没生效
+    write_called = {"flag": False}
+
+    async def _spy_write(*args, **kwargs):
+        write_called["flag"] = True
+        raise AssertionError("writer.write 不应在 analyzer 失败时被调")
+
+    monkeypatch.setattr(
+        "src.agents.writer_orchestrator.WriterOrchestrator.write",
+        _spy_write,
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    # 构造 analyzer 失败后的 state：feedback 标记 analyzer 失败，analysis 缺失
+    analyzer_feedback = RejectionFeedback(
+        passed=False,
+        issues=[FeedbackIssue(
+            severity="critical", agent="analyzer", field="analyzer_validation",
+            reason="APITimeoutError",
+            suggestion="LLM 超时",
+        )],
+        retry_count=1, max_retries=2,
+    )
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    ui = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="ProdA")],
+        analysis_context="测试",
+        our_product_name="OurProd",
+    )
+    state = {
+        "user_input": ui,
+        "profiles": [MagicMock()],
+        # 故意不放 analysis 字段
+        "feedback": analyzer_feedback,
+        "retry_count": 1,
+        "max_retries": 2,
+    }
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    # 1) writer.write 不应被调
+    assert write_called["flag"] is False, "analyzer 失败时 writer.write 不应被调"
+    # 2) feedback 应透传（仍指向 analyzer，让 should_continue 路由回 analyzer）
+    assert result.get("feedback") is not None
+    assert result["feedback"].issues[0].agent == "analyzer"
+
+
+@pytest.mark.asyncio
+async def test_writer_node_persists_validation_error_to_trace(monkeypatch):
+    """[fix2 prove-it] writer 抛 ValidationError 时落盘完整 errors() 详情到 trace_writer。
+
+    现象（trace 20260609-161001-a2db5b）：
+    第 1 次 writer phase 4 ValidationError，但 builder 只把 str(e)[:200] 写到 reason，
+    run.log 看不到具体哪个字段错，下次诊断只能猜。修后必须落盘完整 errors()。
+    """
+    from pydantic import BaseModel, Field, ValidationError
+
+    class _Strict(BaseModel):
+        name: str = Field(min_length=10)
+
+    async def _raise_validation(*args, **kwargs):
+        try:
+            _Strict(name="too short")
+        except ValidationError as e:
+            raise e
+
+    monkeypatch.setattr(
+        "src.agents.writer_orchestrator.WriterOrchestrator.write",
+        _raise_validation,
+    )
+
+    saved_calls: list[tuple] = []
+
+    class _FakeTraceWriter:
+        def save_stage(self, *a, **k): pass
+        def save_raw(self, stage, data):
+            saved_calls.append((stage, data))
+
+    graph, _ = build_graph(
+        llm=MagicMock(), http=MagicMock(), parser=MagicMock(),
+        trace_writer=_FakeTraceWriter(),
+    )
+    state = _make_minimal_state("S1")
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    # 1) feedback 路由仍然走 writer_validation
+    assert result["feedback"].issues[0].field == "writer_validation"
+    # 2) trace_writer 收到 04_writer_error 落盘调用
+    assert len(saved_calls) == 1
+    stage, err_dict = saved_calls[0]
+    assert stage == "04_writer_error"
+    assert err_dict["error_type"] == "ValidationError"
+    # 3) 完整 errors 列表保留 loc + msg + type
+    assert len(err_dict["errors"]) >= 1
+    assert err_dict["errors"][0]["loc"] == ["name"]
+    assert "at least 10" in err_dict["errors"][0]["msg"]
+    # 4) 简短摘要可读
+    assert "name:" in err_dict["errors_summary"]
+
+
+@pytest.mark.asyncio
 async def test_writer_node_success_returns_report(monkeypatch):
     """writer 成功返回 report → state.report 写入，无 feedback。"""
     fake_report = MagicMock(name="BaseReport")

@@ -1,9 +1,11 @@
 import json
 import logging
+from typing import Optional
 from pydantic import ValidationError
 from src.schemas.profile import CompetitorProfile
 from src.schemas.analysis import CompetitiveAnalysis
 from src.schemas.feedback import FeedbackIssue
+from src.schemas.input import ScenarioInput
 from src.agents.prompts import ANALYZER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -92,12 +94,57 @@ class AnalyzerAgent:
             + "\n".join(lines)
         )
 
+    @staticmethod
+    def _format_scenario_context(scenario_input: Optional[ScenarioInput]) -> str:
+        """[fix7] 拼装场景信息块：让 LLM 知道场景 / 我方产品 / 分析意图。
+
+        关键效果：
+        - SWOT 主体能正确选定（S1/3/4/5 → 我方产品；S2 → 进入此赛道这件事）
+        - feature_matrix.our_product 字段能填准（之前 LLM 不知我方是谁，常填空或"无"）
+        - positioning / business_model 等维度能聚焦用户分析意图
+        """
+        if scenario_input is None:
+            return ""
+
+        scenario = scenario_input.scenario
+        # SWOT 主体说明
+        if scenario == "S2":
+            swot_subject = (
+                f"赛道进入（围绕『进入 {scenario_input.industry or '该赛道'} 这件事』展开 "
+                "S/W/O/T 四维分析，禁止写成竞品各自的优劣势罗列）"
+            )
+            our_block = f"我方状态：尚无产品（S2 市场进入场景，industry={scenario_input.industry}）"
+        else:
+            our_name = scenario_input.our_product_name or "（未填写我方产品名）"
+            our_brief = scenario_input.our_product_brief or ""
+            swot_subject = (
+                f"我方产品『{our_name}』（围绕该产品展开 S/W/O/T，"
+                "禁止写成竞品各自的优劣势罗列）"
+            )
+            our_block = f"我方产品名：{our_name}\n我方产品简介：{our_brief}"
+
+        return (
+            "\n\n=== 本次分析的场景上下文（必读）===\n"
+            f"场景：{scenario}\n"
+            f"{our_block}\n"
+            f"分析意图：{scenario_input.analysis_context}\n"
+            f"\nSWOT 主体：{swot_subject}\n"
+            "feature_matrix.our_product 字段：必须按上述我方信息真实填写有/无/部分支持，"
+            "未知时填『未知』而非『无』，禁止留空。\n"
+        )
+
     async def analyze(
         self,
         profiles: list[CompetitorProfile],
+        scenario_input: Optional[ScenarioInput] = None,
         feedback_issues: list[FeedbackIssue] | None = None,
     ) -> CompetitiveAnalysis:
-        """对采集数据进行结构化分析；feedback_issues 非空时附加定向修正指令（回边重跑）"""
+        """对采集数据进行结构化分析。
+
+        [fix7] scenario_input 注入：让 analyzer 能感知场景 + 我方产品 + 分析意图，
+        修正 SWOT 主体写偏 / feature_matrix.our_product 不准等场景失明问题。
+        feedback_issues 非空时附加定向修正指令（回边重跑）。
+        """
         logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
 
         # 序列化完整 profile 数据（不截断，依赖 256K 上下文）
@@ -106,6 +153,7 @@ class AnalyzerAgent:
 
         prompt = (
             f"请基于以下竞品数据进行四维度分析：\n\n{profiles_text}"
+            + self._format_scenario_context(scenario_input)
             + self._format_feedback(feedback_issues)
         )
         result = self._backfill_source_urls(

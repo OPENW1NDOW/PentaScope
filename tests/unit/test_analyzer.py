@@ -122,3 +122,144 @@ def test_backfill_feature_matrix_entry_source_urls():
     out = AnalyzerAgent._backfill_source_urls(result, [profile])
     assert out["feature_matrix"][0]["source_urls"] == ["https://fb.com"]
     assert out["feature_matrix"][1]["source_urls"] == ["https://already.com"]
+
+
+# ============ [fix7 prove-it] analyzer 注入 scenario_input 后的场景感知 ============
+
+@pytest.mark.asyncio
+async def test_analyze_injects_scenario_into_user_prompt():
+    """[fix7] 当传入 scenario_input 时，user prompt 必须含场景 + 我方产品 + 分析意图块"""
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    from src.schemas.profile import (
+        BasicInfo, Classification, CompetitorProfile, ProfileMetadata,
+    )
+
+    captured = {}
+
+    class _LLM:
+        async def call_json(self, system, user, **kwargs):
+            captured["user"] = user
+            # 返回最小合规 CompetitiveAnalysis dict（让 schema 实例化通过即可）
+            return {
+                "positioning": {"per_competitor": [], "source_urls": []},
+                "feature_matrix": [],
+                "business_model": {"per_competitor": [], "source_urls": []},
+                "operations": {"per_competitor": [], "source_urls": []},
+                "user_sentiment": {"summary": "", "per_competitor": {}, "source_urls": []},
+                "swot": {
+                    "strengths": [{"point": "占位 strength point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "weaknesses": [{"point": "占位 weakness point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "opportunities": [{"point": "占位 opportunity point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "threats": [{"point": "占位 threat point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                },
+                "radar_scores": [],
+            }
+
+    agent = AnalyzerAgent(llm=_LLM())
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="飞书"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=[]),
+    )
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="飞书")],
+        analysis_context="想了解飞书在协作文档领域的优势",
+        our_product_name="Notion",
+        our_product_brief="AI 驱动的协作文档平台",
+    )
+    await agent.analyze([profile], scenario_input=scenario_input)
+    user_prompt = captured["user"]
+    # 1) 场景信息进入 prompt
+    assert "S1" in user_prompt, "user prompt 未注入场景"
+    # 2) 我方产品名进入 prompt
+    assert "Notion" in user_prompt, "user prompt 未注入我方产品名"
+    # 3) 我方产品简介进入 prompt
+    assert "协作文档平台" in user_prompt, "user prompt 未注入我方产品简介"
+    # 4) 分析意图进入 prompt
+    assert "想了解飞书" in user_prompt, "user prompt 未注入分析意图"
+
+
+@pytest.mark.asyncio
+async def test_analyze_s2_no_our_product_marks_market_entry_swot():
+    """[fix7] S2 场景没有 our_product_name 时，prompt 应明确告诉 LLM SWOT 主体是赛道进入"""
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.input import ScenarioInput
+    from src.schemas.profile import (
+        BasicInfo, Classification, CompetitorProfile, ProfileMetadata,
+    )
+
+    captured = {}
+
+    class _LLM:
+        async def call_json(self, system, user, **kwargs):
+            captured["user"] = user
+            return {
+                "positioning": {"per_competitor": [], "source_urls": []},
+                "feature_matrix": [],
+                "business_model": {"per_competitor": [], "source_urls": []},
+                "operations": {"per_competitor": [], "source_urls": []},
+                "user_sentiment": {"summary": "", "per_competitor": {}, "source_urls": []},
+                "swot": {
+                    "strengths": [{"point": "占位 strength point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "weaknesses": [{"point": "占位 weakness point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "opportunities": [{"point": "占位 opportunity point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "threats": [{"point": "占位 threat point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                },
+                "radar_scores": [],
+            }
+
+    agent = AnalyzerAgent(llm=_LLM())
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="飞书"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=[]),
+    )
+    scenario_input = ScenarioInput(
+        scenario="S2",
+        industry="协作文档 SaaS",
+        analysis_context="想进入协作文档赛道",
+    )
+    await agent.analyze([profile], scenario_input=scenario_input)
+    user_prompt = captured["user"]
+    # S2 场景应有显式标记（市场进入 / 赛道）
+    assert "S2" in user_prompt
+    # industry 信息应注入
+    assert "协作文档" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_analyze_without_scenario_input_keeps_backward_compat():
+    """[fix7] 不传 scenario_input 也能正常运行（向后兼容）"""
+    from src.agents.analyzer import AnalyzerAgent
+    from src.schemas.profile import (
+        BasicInfo, Classification, CompetitorProfile, ProfileMetadata,
+    )
+
+    class _LLM:
+        async def call_json(self, system, user, **kwargs):
+            return {
+                "positioning": {"per_competitor": [], "source_urls": []},
+                "feature_matrix": [],
+                "business_model": {"per_competitor": [], "source_urls": []},
+                "operations": {"per_competitor": [], "source_urls": []},
+                "user_sentiment": {"summary": "", "per_competitor": {}, "source_urls": []},
+                "swot": {
+                    "strengths": [{"point": "占位 strength point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "weaknesses": [{"point": "占位 weakness point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "opportunities": [{"point": "占位 opportunity point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                    "threats": [{"point": "占位 threat point", "evidence": "占位 evidence", "dimension": "feature", "source_refs": []}],
+                },
+                "radar_scores": [],
+            }
+
+    agent = AnalyzerAgent(llm=_LLM())
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="X"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=[]),
+    )
+    # 不传 scenario_input
+    result = await agent.analyze([profile])
+    assert result is not None  # 没崩即通过

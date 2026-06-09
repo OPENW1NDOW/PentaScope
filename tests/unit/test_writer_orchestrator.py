@@ -492,11 +492,13 @@ async def test_phase2_validation_error_propagates_after_retry():
     from src.schemas.input import CompetitorBasic, ScenarioInput
 
     mock_llm = MagicMock(spec=LLMClient)
-    # 序列：phase 1 outline 一次（任意 dict）+ phase 2 两次（都非法）
+    # 序列：phase 1 outline 一次（任意 dict）+ phase 2 三次（都非法）
+    # [fix5] phase 2 max_retries 从 1 提到 2：首次 + 2 次重试 = 3 次
     mock_llm.call_json = AsyncMock(side_effect=[
         {"title": "ok"},  # phase 1 outline（不实例化 schema，任意 dict 即可）
-        {"scenario_type": "S1"},  # phase 2 第 1 次：严重漏字段（vendor_profiles 等）
-        {"scenario_type": "S1"},  # phase 2 第 2 次：仍漏
+        {"scenario_type": "S1"},  # phase 2 第 1 次
+        {"scenario_type": "S1"},  # phase 2 第 2 次（重试 1）
+        {"scenario_type": "S1"},  # phase 2 第 3 次（重试 2）
     ])
     orch = WriterOrchestrator(llm=mock_llm)
     profile = _make_profile(data_sources=["https://example.com"])
@@ -516,9 +518,19 @@ async def test_phase2_validation_error_propagates_after_retry():
             analysis=analysis,
             profiles=[profile],
         )
-    # 验证 phase 2 真的被调了 2 次（重试 1 次后仍失败）
-    # phase 1 占 1 次 + phase 2 重试 2 次 = 3 次 LLM call
-    assert mock_llm.call_json.call_count == 3
+    # phase 1 占 1 次 + phase 2 max_retries=2（首次 + 2 次重试）= 4 次 LLM call
+    assert mock_llm.call_json.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_phase2_default_max_retries_is_2():
+    """[fix5 prove-it] _call_phase2_with_validation 默认 max_retries=2，
+    给 LLM 多次修字段错位机会（每次只能修一两个字段）。
+    """
+    import inspect
+    sig = inspect.signature(WriterOrchestrator._call_phase2_with_validation)
+    default = sig.parameters["max_retries"].default
+    assert default == 2, f"phase 2 默认 max_retries 应为 2，当前 {default}"
 
 
 # ---------- Phase 3 narrative 测试辅助 ----------
@@ -839,6 +851,177 @@ def _make_phase4_sections(scenario: str = "s1") -> list:
 
 
 # ---------- 测试 16: phase 4 SWOT 透传 ----------
+
+
+def test_phase4_data_collection_approach_synthesized_by_code():
+    """[fix11 prove-it] data_collection_approach 由代码合成，不依赖 LLM 输出。
+
+    现象（trace 20260609-184652-f07f60 / 20260609-194204-efeba1）：
+    LLM 在 phase 1 outline 反复写不够 200 字符，每次 graph 重试后依然栽。
+    修：phase 4 用模板覆盖 outline.methodology.data_collection_approach，
+    无论 LLM 输出什么，最终报告该字段一定 ≥200 字符。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    from src.schemas.report import Swot, SwotEntry
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    swot_real = Swot(
+        strengths=[SwotEntry(point="占位优势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        weaknesses=[SwotEntry(point="占位劣势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        opportunities=[SwotEntry(point="占位机会点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        threats=[SwotEntry(point="占位威胁点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+    )
+    analysis = MagicMock()
+    analysis.swot = swot_real
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    profile = _make_profile(data_sources=["https://a.example.com/feature"])
+
+    # 关键：构造 outline 时 data_collection_approach 故意写成短字符串（模拟 LLM 偷懒）
+    outline = _make_minimal_outline_dict()
+    outline["methodology"]["data_collection_approach"] = "短"  # 1 字符，远低于 200
+
+    report = orch._phase4_assemble(
+        scenario="S1",
+        scenario_input=scenario_input,
+        outline=outline,
+        payload_model=_make_s1_payload_model_for_phase4(),
+        sections=_make_phase4_sections(),
+        profiles=[profile],
+        analysis=analysis,
+        trace_id="trace-fix11",
+        warnings=[],
+        competitor_recommendations=None,
+        discovered_urls=["https://a.example.com/feature"],
+        competitor_names=["竞品A", "竞品B"],
+    )
+    # data_collection_approach 必须 ≥200 字符（schema 强制）
+    assert len(report.methodology.data_collection_approach) >= 200, (
+        f"data_collection_approach 长度 {len(report.methodology.data_collection_approach)} < 200，代码合成未生效"
+    )
+    # 模板内容应包含关键信息
+    text = report.methodology.data_collection_approach
+    assert "竞品" in text  # 提到竞品数量
+    assert "S1" in text or "功能迭代" in text  # 提到场景
+
+
+def test_phase4_appendix_glossary_prefilled():
+    """[fix9 prove-it] Appendix.glossary 应预填常用术语，不再是空 dict。
+
+    现象（trace 20260609-184652-f07f60 inspector issue 3）：
+    报告正文出现 JTBD / Tier1 / Tier2 等专业术语但 glossary={} 没解释。
+    phase 4 应预置一组常用术语字典，让普通读者也能理解报告。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    from src.schemas.report import Swot, SwotEntry
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    swot_real = Swot(
+        strengths=[SwotEntry(point="占位优势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        weaknesses=[SwotEntry(point="占位劣势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        opportunities=[SwotEntry(point="占位机会点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        threats=[SwotEntry(point="占位威胁点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+    )
+    analysis = MagicMock()
+    analysis.swot = swot_real
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    profile = _make_profile(data_sources=["https://a.example.com/feature"])
+
+    report = orch._phase4_assemble(
+        scenario="S1",
+        scenario_input=scenario_input,
+        outline=_make_minimal_outline_dict(),
+        payload_model=_make_s1_payload_model_for_phase4(),
+        sections=_make_phase4_sections(),
+        profiles=[profile],
+        analysis=analysis,
+        trace_id="trace-fix9",
+        warnings=[],
+        competitor_recommendations=None,
+        discovered_urls=["https://a.example.com/feature"],
+        competitor_names=["竞品A", "竞品B"],
+    )
+    glossary = report.appendix.glossary
+    assert isinstance(glossary, dict)
+    assert len(glossary) >= 5, f"glossary 应预填 ≥5 条常用术语，当前 {len(glossary)} 条"
+    # 高频术语必须存在
+    for term in ["JTBD", "Tier1", "SWOT"]:
+        assert term in glossary, f"glossary 缺常用术语 {term}"
+        assert len(glossary[term]) >= 5, f"{term} 解释不应过短"
+
+
+def test_phase4_data_sources_accessed_at_falls_back_to_collected_at():
+    """[fix8 prove-it] DataSource.accessed_at 在 LLM 没填时用 profile.metadata.collected_at 兜底。
+
+    现象（trace 20260609-184652-f07f60 inspector issue 2）：
+    所有 data_sources.accessed_at 全 None → 数据时效性无法判断。
+    profile.metadata.collected_at 已经有 ISO 时间，phase 4 应取其日期部分兜底。
+    """
+    from datetime import date
+
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+    from src.schemas.report import Swot, SwotEntry
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(return_value={})
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    swot_real = Swot(
+        strengths=[SwotEntry(point="占位优势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        weaknesses=[SwotEntry(point="占位劣势点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        opportunities=[SwotEntry(point="占位机会点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+        threats=[SwotEntry(point="占位威胁点内容至少十字符", evidence="占位证据内容至少十字符", dimension="overall")],
+    )
+    analysis = MagicMock()
+    analysis.swot = swot_real
+
+    scenario_input = ScenarioInput(
+        scenario="S1",
+        competitors=[CompetitorBasic(name="竞品A"), CompetitorBasic(name="竞品B")],
+        analysis_context="测试",
+        our_product_name="我方",
+    )
+    # _make_profile 默认 collected_at="2026-06-08T00:00:00"
+    profile = _make_profile(data_sources=["https://a.example.com/feature"])
+
+    report = orch._phase4_assemble(
+        scenario="S1",
+        scenario_input=scenario_input,
+        outline=_make_minimal_outline_dict(),
+        payload_model=_make_s1_payload_model_for_phase4(),
+        sections=_make_phase4_sections(),
+        profiles=[profile],
+        analysis=analysis,
+        trace_id="trace-fix8",
+        warnings=[],
+        competitor_recommendations=None,
+        discovered_urls=["https://a.example.com/feature"],
+        competitor_names=["竞品A", "竞品B"],
+    )
+    # 应该至少有 1 条 data_source（在 metadata 上）
+    assert len(report.metadata.data_sources) >= 1
+    # 全部 data_sources 的 accessed_at 都不应该是 None（用 collected_at=2026-06-08 兜底）
+    for ds in report.metadata.data_sources:
+        assert ds.accessed_at is not None, f"data_source {ds.url} accessed_at 应被 collected_at 兜底"
+        assert ds.accessed_at == date(2026, 6, 8), \
+            f"应取 collected_at 的日期部分 2026-06-08，实际 {ds.accessed_at}"
 
 
 def test_phase4_swot_passthrough():

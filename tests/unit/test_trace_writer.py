@@ -88,3 +88,33 @@ def test_save_stage_failure_does_not_raise(tmp_path, monkeypatch):
     monkeypatch.setattr(tw, "_atomic_write_json", boom)
     # 不抛异常即通过（落盘失败仅 warning）
     tw.save_stage("01_profiles", _Dummy(name="x", when=datetime(2026, 6, 2)))
+
+
+# [bug2 prove-it] save_raw 把 dict 直接落盘（用于 ValidationError 详情等非 Pydantic 数据）
+
+def test_save_raw_writes_dict_to_named_stage(tmp_path):
+    """save_raw 接受 dict 并落盘到 {stage}.json（writer ValidationError 详情等场景）"""
+    tw = TraceWriter("t-raw", base_dir=tmp_path)
+    err_dict = {
+        "error_type": "ValidationError",
+        "errors": [{"loc": ["vendor_profiles", 0, "strengths"], "msg": "too short", "type": "too_short"}],
+        "phase": "phase_4_assemble",
+    }
+    tw.save_raw("04_writer_error", err_dict)
+    f = tmp_path / "t-raw" / "04_writer_error.json"
+    assert f.exists()
+    data = json.loads(f.read_text(encoding="utf-8"))
+    assert data["error_type"] == "ValidationError"
+    assert data["errors"][0]["loc"] == ["vendor_profiles", 0, "strengths"]
+
+
+def test_save_raw_versions_on_rewrite(tmp_path):
+    """同一 stage 重复 save_raw 时旧版本备份为 _vN（与 save_stage 语义一致）"""
+    tw = TraceWriter("t-raw-v", base_dir=tmp_path)
+    tw.save_raw("04_writer_error", {"err": "first"})
+    tw.save_raw("04_writer_error", {"err": "second"})
+    files = sorted((tmp_path / "t-raw-v").glob("04_writer_error*.json"))
+    assert len(files) == 2  # 当前 + v1 快照
+    # 当前文件应是第二次写入的内容
+    current = json.loads((tmp_path / "t-raw-v" / "04_writer_error.json").read_text(encoding="utf-8"))
+    assert current["err"] == "second"

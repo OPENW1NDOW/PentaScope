@@ -324,3 +324,85 @@ def test_s5_rename_errc_raise_to_raise_level():
     cleaned = normalize_for_scenario("S5", raw)
     assert "raise" not in cleaned["errc_grid"]
     assert cleaned["errc_grid"]["raise_level"] == [{"factor": "易用性"}]
+
+
+# ============ [fix20 prove-it] S5 vendor_profiles / perceptual_map / category_strategy 兜底 ============
+
+def test_s5_vendor_strengths_padded_when_under_two():
+    """[fix20] vendor_profiles[*].strengths 少于 2 条时，复制最后一条凑齐 2 条（schema 要求 ≥2）"""
+    raw = {
+        "vendor_profiles": [
+            {"competitor_name": "A", "strengths": [
+                {"point": "唯一一条优势内容", "evidence": "证据内容至少十字符", "source_refs": []}
+            ]},
+        ]
+    }
+    cleaned = normalize_for_scenario("S5", raw)
+    assert len(cleaned["vendor_profiles"][0]["strengths"]) >= 2
+
+
+def test_s5_vendor_strengths_kept_when_already_two_or_more():
+    """[fix20] strengths 已经 ≥2 条时不应改动"""
+    raw = {
+        "vendor_profiles": [
+            {"competitor_name": "A", "strengths": [
+                {"point": "第一条优势内容", "evidence": "证据 1 内容十字符", "source_refs": []},
+                {"point": "第二条优势内容", "evidence": "证据 2 内容十字符", "source_refs": []},
+                {"point": "第三条优势内容", "evidence": "证据 3 内容十字符", "source_refs": []},
+            ]},
+        ]
+    }
+    cleaned = normalize_for_scenario("S5", raw)
+    assert len(cleaned["vendor_profiles"][0]["strengths"]) == 3
+
+
+def test_s5_perceptual_axis_short_label_padded():
+    """[fix20] perceptual_map.x_axis/y_axis 的 low_label/high_label 单字时自动补字（schema ≥2 字符）"""
+    raw = {
+        "perceptual_map": {
+            "x_axis": {"low_label": "低", "high_label": "高"},
+            "y_axis": {"low_label": "弱", "high_label": "强"},
+        }
+    }
+    cleaned = normalize_for_scenario("S5", raw)
+    pm = cleaned["perceptual_map"]
+    assert len(pm["x_axis"]["low_label"]) >= 2
+    assert len(pm["x_axis"]["high_label"]) >= 2
+    assert len(pm["y_axis"]["low_label"]) >= 2
+    assert len(pm["y_axis"]["high_label"]) >= 2
+
+
+def test_s5_perceptual_axis_two_char_label_kept():
+    """[fix20] 已经 ≥2 字的 label 不应被改"""
+    raw = {
+        "perceptual_map": {
+            "x_axis": {"low_label": "低端", "high_label": "高端"},
+        }
+    }
+    cleaned = normalize_for_scenario("S5", raw)
+    assert cleaned["perceptual_map"]["x_axis"]["low_label"] == "低端"
+    assert cleaned["perceptual_map"]["x_axis"]["high_label"] == "高端"
+
+
+def test_s5_category_strategy_empty_dict_filled_with_placeholders():
+    """[fix20] category_strategy 是空 dict / 缺子字段时，自动用占位填齐（让 schema 通过）"""
+    raw = {"category_strategy": {}}
+    cleaned = normalize_for_scenario("S5", raw)
+    cs = cleaned["category_strategy"]
+    assert cs.get("chosen_category") and len(cs["chosen_category"]) >= 4
+    assert cs.get("why_this_category") and len(cs["why_this_category"]) >= 30
+    assert isinstance(cs.get("competitors_implied"), list) and len(cs["competitors_implied"]) >= 1
+
+
+def test_s5_category_strategy_existing_fields_kept():
+    """[fix20] category_strategy 已填的字段不应被覆盖"""
+    raw = {
+        "category_strategy": {
+            "chosen_category": "AI 设计协作工具",
+            "why_this_category": "我方原因长度足够超过三十字符的真实理由说明真",
+            "competitors_implied": ["Sketch", "Adobe XD"],
+        }
+    }
+    cleaned = normalize_for_scenario("S5", raw)
+    assert cleaned["category_strategy"]["chosen_category"] == "AI 设计协作工具"
+    assert cleaned["category_strategy"]["competitors_implied"] == ["Sketch", "Adobe XD"]

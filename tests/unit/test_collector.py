@@ -112,6 +112,66 @@ class TestCollectorAgent:
 
 
 @pytest.mark.asyncio
+async def test_extract_profile_truncates_oversize_text():
+    """[bug1 prove-it] labeled_text 超 100K 字符时必须截断，避免 Doubao 400 token 上限。
+
+    现象（trace 20260609-150301-df17ff / 20260609-161001-a2db5b）：
+    飞书文档 raw_content 拼起来 >150K 字符，Doubao 直接返 400
+    'Total tokens of multi-modal content and text exceed max message tokens'。
+    """
+    captured = {}
+
+    class _LLM:
+        async def call_json(self, system, user, **kwargs):
+            captured["user"] = user
+            return {
+                "basic_info": {"name": "X", "company": ""},
+                "feature_tree": [],
+                "pricing": {"model": "免费", "tiers": []},
+                "user_reviews": {"rating": 0, "total_reviews": 0, "sample_reviews": []},
+                "recent_updates": [],
+            }
+
+    agent = CollectorAgent(llm=_LLM(), pipeline=None)
+    # 200K 字符正文，远超 100K 阈值
+    huge_text = "【来源: https://a.com】\n" + "正文一段" * 50000
+    await agent._extract_profile(
+        "X", huge_text, {"competitor_type": "核心竞品", "reason": "r"},
+        ["https://a.com"], [],
+    )
+    # 实际喂给 LLM 的 user prompt 长度应受截断保护：≤ 100K + 头部 prefix(~500 字符)
+    assert len(captured["user"]) < 101_000, (
+        f"user prompt 长度 {len(captured['user'])} 超 100K，截断未生效"
+    )
+
+
+@pytest.mark.asyncio
+async def test_extract_profile_does_not_truncate_short_text():
+    """[bug1 prove-it] 短文本（<100K）不应被截断，避免误伤"""
+    captured = {}
+
+    class _LLM:
+        async def call_json(self, system, user, **kwargs):
+            captured["user"] = user
+            return {
+                "basic_info": {"name": "X", "company": ""},
+                "feature_tree": [],
+                "pricing": {"model": "免费", "tiers": []},
+                "user_reviews": {"rating": 0, "total_reviews": 0, "sample_reviews": []},
+                "recent_updates": [],
+            }
+
+    agent = CollectorAgent(llm=_LLM(), pipeline=None)
+    short_text = "【来源: https://a.com】\n" + "短正文" * 1000  # ~3K 字符
+    await agent._extract_profile(
+        "X", short_text, {"competitor_type": "核心竞品", "reason": "r"},
+        ["https://a.com"], [],
+    )
+    # 完整原文必须出现在 prompt 里
+    assert short_text in captured["user"]
+
+
+@pytest.mark.asyncio
 async def test_extract_uses_labeled_text_and_binds_source_url():
     """_extract_profile 把 labeled_text 传给 LLM，LLM 填的 feature source_url 被保留。"""
     captured = {}

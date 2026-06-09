@@ -43,6 +43,40 @@ RUNS_DIR: Path = runs_dir()
 _TRACE_ID_PATTERN = re.compile(r"^[a-f0-9\-]+$")
 
 
+def _serialize_writer_exception(e: Exception) -> dict:
+    """把 writer 阶段的异常（含 ValidationError）序列化为可落盘的 dict。
+
+    ValidationError 提取完整 errors() 列表 + 简短摘要；
+    其他异常仅记录类型和 str()。
+    """
+    err_dict: dict = {
+        "error_type": type(e).__name__,
+        "error_message": str(e)[:1000],
+    }
+    errors_method = getattr(e, "errors", None)
+    if callable(errors_method):
+        try:
+            errs = list(errors_method())
+        except Exception:  # noqa: BLE001
+            errs = None
+        if errs is not None:
+            # 去掉非 JSON 可序列化字段（如 ctx）
+            safe_errs = []
+            for err in errs:
+                safe_errs.append({
+                    "loc": list(err.get("loc", [])),
+                    "msg": err.get("msg", ""),
+                    "type": err.get("type", ""),
+                })
+            err_dict["errors"] = safe_errs
+            # log 用的简短摘要：前 5 条 loc+msg
+            err_dict["errors_summary"] = "; ".join(
+                f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
+                for err in safe_errs[:5]
+            )
+    return err_dict
+
+
 def _load_prior_report_data(prior_trace_id: str) -> dict | None:
     """[v3-R02 / v3-R09] 读上轮 BaseReport JSON。
 
@@ -174,7 +208,11 @@ def build_graph(llm, http, parser, trace_writer=None):
         feedback = state.get("feedback")
         issues = feedback.issues if feedback is not None else None
         try:
-            analysis = await analyzer.analyze(state["profiles"], feedback_issues=issues)
+            analysis = await analyzer.analyze(
+                state["profiles"],
+                scenario_input=state["user_input"],  # [fix7] 注入场景上下文
+                feedback_issues=issues,
+            )
         except Exception as e:
             logger.warning("[graph] analyzer 抛 %s: %s", type(e).__name__, str(e)[:200])
             failed_feedback = RejectionFeedback(
@@ -208,6 +246,15 @@ def build_graph(llm, http, parser, trace_writer=None):
         logger.info("[graph] → writer")
         node_trace.append("writer")
         ui = state["user_input"]
+
+        # [fix12] analyzer 失败兜底：state 没 analysis 但 feedback 标记 analyzer 失败时，
+        # writer 直接 skip 透传 feedback，让 should_continue 按 issue.agent='analyzer' 回 analyzer。
+        # 不 skip 的话 writer 拿 state['analysis'] 立刻 KeyError，污染反馈闭环路由到 writer 重试。
+        existing_feedback = state.get("feedback")
+        if state.get("analysis") is None and existing_feedback is not None and not existing_feedback.passed:
+            logger.info("[graph] writer skip：analyzer 失败兜底，透传 feedback agent=%s",
+                        existing_feedback.issues[0].agent if existing_feedback.issues else "?")
+            return {"feedback": existing_feedback, "current_node": "writer"}
 
         # [v3-R09] S4 场景前置读 prior_report_data
         prior_data = None
@@ -307,7 +354,14 @@ def build_graph(llm, http, parser, trace_writer=None):
             }
         except Exception as e:
             # Pydantic ValidationError 等其他异常 → feedback agent=writer
-            logger.warning("[graph] writer raised non-runtime error: %s", type(e).__name__)
+            # 记录完整错误详情到 log + trace 文件，便于诊断 schema 校验失败的具体字段
+            err_dict = _serialize_writer_exception(e)
+            logger.warning(
+                "[graph] writer raised non-runtime error: %s, errors=%s",
+                err_dict["error_type"], err_dict.get("errors_summary", ""),
+            )
+            if trace_writer is not None:
+                trace_writer.save_raw("04_writer_error", err_dict)
             feedback = RejectionFeedback(
                 passed=False,
                 issues=[FeedbackIssue(

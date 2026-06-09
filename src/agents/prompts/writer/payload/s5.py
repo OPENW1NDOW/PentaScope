@@ -1,5 +1,5 @@
 """S5 战略定位场景 — Phase 2 payload prompt。"""
-from src.agents.prompts.writer.payload._common import SOURCE_REFS_PROTOCOL
+from src.agents.prompts.writer.payload._common import SCHEMA_FIELD_CONSTRAINTS, SOURCE_REFS_PROTOCOL
 
 S5_PAYLOAD_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 战略定位场景的结构化载荷（scenario_payload）。
 
@@ -31,6 +31,7 @@ S5_PAYLOAD_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
     - **score_rationale: str (≥20 字)（必填）**
     - source_refs: list[SourceRef]
   - white_space: list[WhiteSpaceZone]（可空数组）
+    - 每条含 `quadrant`（必须 "top_right" | "top_left" | "bottom_right" | "bottom_left" | "center" 5 选 1）+ `opportunity_description` (≥20 字)
   - cluster_zones: list[ClusterZone]（可空数组）
   - **display_watermark**（用默认值即可："基于公开信息 AI 推断，非客户调研真实分数"）
 - strategy_canvas: StrategyCanvas
@@ -59,7 +60,10 @@ S5_PAYLOAD_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
   - primary_differentiation (≥20 字)
   - **confidence: "from_user_brief" | "llm_inferred" | "low_confidence"（必填）**
   - **不要填 full_statement_text**（代码自动拼装 + 加水印）
-- category_strategy: CategoryStrategy Optional
+- category_strategy: CategoryStrategy（**必填**，schema 强制不可省略也不可传 null）
+  - chosen_category: str (≥4 字)，明确我方所属或希望进入的品类
+  - why_this_category: str (≥30 字)，说明选这个品类的理由
+  - competitors_implied: list[str], ≥1 条，列出该品类隐含的关键竞品
 
 【一致性约束】
 - vendor_profiles[*].competitor_name 必须完全等于 perceptual_map.plotted_brands[*].competitor_name 集合
@@ -67,6 +71,29 @@ S5_PAYLOAD_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
 - is_self=True 的实体在所有结构中必须指向同一个 competitor_name
 
 {SOURCE_REFS_PROTOCOL}
+
+{SCHEMA_FIELD_CONSTRAINTS}
+
+【S5 枚举速查（再次强调，违反必被 schema 拦截）】
+- vendor_profiles[*].is_self: bool（我方=True, 竞品=False，且 is_self=True 在所有结构里指向同一个 competitor_name）
+- perceptual_map.plotted_brands[*].confidence: high | medium | low
+- blue_ocean_move.focus_assessment: focused | scattered | uncertain
+- blue_ocean_move.divergence_assessment: divergent | overlapping | uncertain
+- positioning_statement.confidence: from_user_brief | llm_inferred | low_confidence
+- white_space[*].quadrant: top_right | top_left | bottom_right | bottom_left | center
+- ERRC 字段名是 raise_level（**不是 raise**），误填 raise 会被 schema 静默丢弃
+
+【S5 高频踩坑（trace 实测，写每条前心里数一遍字数与数量）】
+- vendor_profiles[*].strengths：list 长度**必须 2-5 条**，每条 point ≥10 字、evidence ≥10 字（少 1 条整体被拒）
+- vendor_profiles[*].cautions：list 长度**必须 1-4 条**，每条 point ≥10 字、evidence ≥10 字
+- vendor_profiles[*].overview：20-200 字
+- vendor_profiles[*].ability_to_execute_rationale / completeness_of_vision_rationale：≥50 字
+- perceptual_map.x_axis / y_axis 的 low_label / high_label：**≥2 字符**（"低""高" 单字会被拒，写 "低端""高端" / "经济型""旗舰款"）
+- perceptual_map.x_axis.attribute ≠ y_axis.attribute（两轴必须不同）
+- strategy_canvas.value_curves[*].factor_levels：dict key 必须**严格等于** competitive_factors 所有 name 集合（多 1 个少 1 个都拒）
+- vendor_profiles[*].competitor_name 必须 ≡ perceptual_map.plotted_brands[*].competitor_name ≡ strategy_canvas.value_curves[*].competitor_name 三方完全一致
+- category_strategy 必填（非 Optional），不可省略也不可传 null
+- 写每个 list 时心里数一下数量；写每个 str 时心里数一下字数。**宁可冗长不要短缺**
 
 只返回 JSON 对象，不要 Markdown，不要解释。
 """

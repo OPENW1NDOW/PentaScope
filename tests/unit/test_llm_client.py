@@ -56,6 +56,20 @@ class TestLLMClient:
         call_kwargs = mock_create.call_args.kwargs
         assert "max_tokens" not in call_kwargs
 
+    def test_openai_client_disables_internal_retries(self):
+        """[bug2 prove-it] OpenAI client 的 max_retries 必须是 0，否则会与外层 LLM_MAX_RETRIES 嵌套放大。
+
+        现象（trace 20260609-150301-df17ff）：
+        - AsyncOpenAI 默认 max_retries=2 + LLMClient 外层 retry 3 次 = 9 次 HTTP × 120s timeout
+        - 最坏总耗时 18 分钟，前端 1800s timeout 都被打穿
+        - 修法：把内部 retry 关掉，只保留外层一层重试
+        """
+        client = LLMClient(api_key="t", base_url="https://t.com", model_ep="ep-t")
+        # openai SDK 暴露的 max_retries 在 client.max_retries（属性）
+        assert client.client.max_retries == 0, (
+            f"OpenAI client.max_retries 必须为 0，当前 {client.client.max_retries}（与外层 retry 嵌套放大）"
+        )
+
     @pytest.mark.asyncio
     async def test_call_json_max_tokens_passed_when_specified(self):
         """[v3-R03] 传 max_tokens=4096 时应进 OpenAI SDK kwargs"""

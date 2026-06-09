@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-字节跳动 CIS 部门 AI 全栈项目挑战赛课题。目标是构建一个多 Agent 协作的竞品分析系统，由信息采集、分析师、报告撰写、质检四个专职 Agent 组成，完成从公开信息采集到结构化竞品报告的全链路产出。
+字节跳动 CIS 部门 AI 全栈项目挑战赛课题。目标是构建一个多 Agent 协作的竞品分析系统，由信息采集、分析师、报告撰写、质检四个专职 Agent 组成（S2 场景前置一个推荐 Agent），完成从公开信息采集到结构化竞品报告的全链路产出。
 
 ## 上下文恢复
 
@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **编排框架**: LangGraph（StateGraph）
 - **Agent 构建**: 纯 Python 函数 + LangGraph 节点（手写，不用 LangChain 封装）
 - **后端**: FastAPI + uvicorn
-- **前端**: Streamlit（调用后端 API，前后端分离）
+- **前端**: Streamlit + Plotly（调用后端 API，前后端分离）
 - **数据校验**: Pydantic v2；HTTP 用 httpx；HTML 解析用 BeautifulSoup4
 
 ## 核心考察点（来自课题评分标准）
@@ -32,12 +32,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 4. 代码质量与文档（10%）— 模块化、文档齐全、Git 规范
 5. 合规与答辩（10%）— 数据采集合规、隐私安全
 
-## Schema 设计要求
+## Schema 设计
 
-Agent 产出必须符合预定义的竞品知识 Schema：
-- **功能树**：竞品功能模块、子功能、支持情况
-- **定价模型**：价格方案、计费方式、免费/付费划分
-- **用户画像**：目标用户、使用场景、满意度
+5 场景（S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 竞争监控 / S5 定位策略）共用一条契约链：
+
+`ScenarioInput`（输入，分支校验）→ `CompetitorProfile`（采集产出）→ `CompetitiveAnalysis`（分析产出）→ `BaseReport` + 场景 Payload（报告产出）→ `RejectionFeedback`（质检产出）
+
+各场景 Payload schema 在 `src/schemas/scenarios/s1..s5.py`，通用 schema 在 `src/schemas/{input,profile,analysis,report,feedback,common}.py`。改动数据流时先改这里。
 
 ## 项目约定
 
@@ -54,13 +55,6 @@ Agent 产出必须符合预定义的竞品知识 Schema：
 3. `git add` → `git commit` → `git push origin master` — 同步到远程仓库
    - **关键：push 前必须先跑 `git status`，确认本次实际参与项目开发、且保存在本地的所有新增/改动文件都已纳入提交，一个都不能漏。** 这包括但不限于代码、文档、配置，以及技能（spec-driven、writing-plans 等）产出并落盘到本地的过程文档（如 `docs/SPEC.md`、`docs/superpowers/plans/` 下的计划文件）。
    - 技能调用不会自动 `git add`，需显式添加。除 `.gitignore` 明确排除者（如 `.env`、密钥等敏感文件）外，本地的开发产物都应同步到远程，避免换电脑后丢失。
-
-## 时间节点
-
-- 5月20日：开营
-- 5月20日～6月10日：开发阶段（3周）
-- 6月10日：提交成果
-- 6月12日～6月19日：答辩
 
 ## 常用命令
 
@@ -88,6 +82,7 @@ streamlit run src/frontend/app.py
 pytest                                   # 全部测试（pytest-asyncio auto 模式）
 pytest tests/unit/test_collector.py      # 单个文件
 pytest tests/unit/test_collector.py::test_name   # 单个用例
+pytest tests/integration                 # 端到端集成测试（5 场景 graph E2E + API + trace）
 pytest -k collector                      # 按关键字筛选
 ruff check src tests                     # lint
 ruff check --fix src tests               # 自动修复
@@ -96,24 +91,57 @@ ruff check --fix src tests               # 自动修复
 运行需在项目根目录配置 `.env`：
 - `DOUBAO_API_KEY` 必填
 - `TAVILY_API_KEY` 选填——搜索主线 Tavily 的鉴权 key；缺 key 则跳过搜索主线、走占位降级（completeness=0.0）
-- 其余配置见 `src/utils/config.py` 默认值
+- 其余配置见 `src/utils/config.py` 默认值，writer 相关两项重点：
+  - `WRITER_MAX_LLM_CALLS=18` — writer 4 阶段总 LLM 调用熔断阈值
+  - `WRITER_NARRATIVE_CONCURRENCY=3` — Phase 3 narrative 并发上限
 
 ## 代码架构
 
-四 Agent 流水线由 LangGraph `StateGraph` 编排，核心在 `src/graph/builder.py`：
+5 节点流水线由 LangGraph `StateGraph` 编排（v3），核心在 `src/graph/builder.py`：
 
 ```
-collector → analyzer → writer → inspector ─┬─(passed)──────────────→ END
-                ↑          ↑                 ├─(issues→writer)──────→ writer
-                │          └─────────────────┼─(issues→collector)───→ collector
-                └────────────────────────────┴─(issues→analyzer)────→ analyzer
+                 ┌─(S2)─→ recommender ─┐
+   set_entry ───┤                       ├─→ collector → analyzer → writer → inspector ─┬─(passed)─→ END
+                 └─(其他)──────────────┘                  ↑          ↑          ↑      │
+                                                          │          │          │      ├─(issues→writer)────→ writer
+                                                          │          │          │      ├─(issues→analyzer)──→ analyzer
+                                                          │          │          │      └─(issues→collector)─→ collector
+                                                          └──────────┴──────────┴── 反馈闭环回边
 ```
 
-- **共享状态** `src/graph/state.py::AnalysisState`：一个 TypedDict，节点间通过返回 dict 增量更新（`profiles`/`analysis`/`report`/`feedback`/`retry_count` 等）。所有跨 Agent 数据都是 Pydantic 模型，而非裸 dict。
-- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`（analyzer 回边为保险，正常流程 SWOT/雷达/矩阵由 writer 代码透传 + analyzer 兜底已保证）；`retry_count >= max_retries`（默认 2）则强制结束。这是课题要求的「质检→上游反馈闭环」的实现点。
-- **Agent**（`src/agents/`）：对外暴露单个 async 方法（`collect`/`analyze`/`write`/`inspect`），所有 prompt 集中在 `src/agents/prompts.py`。**采集层已分层下沉**（06-03）：`CollectorAgent` 不再直持 `http`/`parser`，而是持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），后者编排「Tavily 搜索 → 质量闸门 → 全空兜底」主线，搜索源插件在 `src/tools/sources.py`（仅 Tavily，06-07 弃用 SerpAPI；iTunes 已于 06-06 因同名污染移除）。Tavily 一次调用直返带正文 SourceResult，跳过传统的「搜索→选页→抓取」三步走（_llm_pick/_rule_pick/_fetch_with_backfill 已于 06-07 删除）。analyzer/writer/inspector 仍为 `(llm)` 依赖。
-- **Schema**（`src/schemas/`）：竞品知识的契约层，对应 PRD 的功能树/定价模型/用户画像。`input`(输入) → `profile`(采集产出) → `analysis`(分析产出) → `report`(报告) → `feedback`(质检)，与流水线各阶段一一对应。改动数据流时先改这里。
-- **工具**（`src/tools/`）：`llm_client`（Doubao 纯 prompt 约束 + 代码块剥离，**不**用 `response_format`——06-01 实测端点不支持；带超时/重试）、`http_client`（httpx async，同域名限速 `COLLECT_INTERVAL` 加 per-domain 锁）、`sources`（Tavily 搜索源）、`quality_gate`（采集质量闸门）、`trace_writer`（中间产物落盘）、`html_parser`、`validators`。
-- **入口**：后端 `src/api/main.py`（路由 `src/api/routes.py` 的 `POST /api/v1/analyze`，每请求生成 `trace_id` 并构图执行）；前端 `src/frontend/app.py`。
-- **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（评分项之一，勿移除）。`quality_score` 由 `inspector_node` 按 issue 严重度倒推回填（06-01 决策），不靠 LLM 自评——改 inspector 时勿动这条回填链。
-- **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。追溯接口 `GET /api/v1/trace/{trace_id}`（路由 `src/api/routes.py`，含路径穿越双重防护，`?version=` 取历史版本），前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。
+- **场景路由**（v3）：`set_conditional_entry_point` 按 `ScenarioInput.scenario` 分流——S2「市场进入」先走 `recommender` 推荐 Top 3-5 玩家，再 union 到 `collector`；其余 4 个场景直接进 `collector`。
+- **共享状态** `src/graph/state.py::AnalysisState`：TypedDict，节点间通过返回 dict 增量更新（`profiles`/`analysis`/`report`/`feedback`/`competitor_recommendations`/`retry_count` 等）。所有跨 Agent 数据都是 Pydantic 模型，而非裸 dict。
+- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`；inspector 打回时 `retry_count +1`（06-09 修复，否则永远不触发上限），`retry_count >= max_retries`（默认 2）则强制结束。这是课题要求的「质检→上游反馈闭环」实现点。
+- **Agent**（`src/agents/`）：
+  - `RecommenderAgent.recommend`（S2 入口）— 搜索行业头部玩家 + LLM 推理产出 ≥3 条 `CompetitorRecommendations`
+  - `CollectorAgent.collect` — 持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），编排「Tavily 搜索 → 质量闸门 → 全空兜底」主线；Tavily 一次调用直返带正文 SourceResult，跳过传统三步走
+  - `AnalyzerAgent.analyze` — 产出 `CompetitiveAnalysis`；LLM ValidationError 时由 `analyzer_node` 兜底注入 feedback 不让 graph 崩溃（06-09 修复）
+  - `WriterOrchestrator.write` — **替代旧 WriterAgent**，4 阶段编排：
+    1. **outline**（LLM）— Phase 1 产出 section 骨架，Pydantic 失败重试
+    2. **payload**（LLM）— Phase 2 实例化场景 Payload schema，含 S2 recommender 强制覆盖、S4 prior diff 前置注入
+    3. **narrative**（LLM 并行）— Phase 3 `asyncio.Semaphore` 限速 + 半数硬闸门 + 占位降级
+    4. **assemble**（0 LLM）— Phase 4 代码合成 `BaseReport`（SWOT 透传 + URL 双通道收集 + scope.competitors S2 union + ReportMetadata 构造）
+  - `InspectorAgent.inspect` — `_check_common` + `_check_s1..s5` dispatcher + LLM 质检；`quality_score` 由 `src/agents/quality_score.py::calc_quality_score` 三项加权（source_coverage / confidence_avg / inspector_pass_rate），placeholder warnings 强制 cap 0.5（v3-R17 / v3-R22）。**改 inspector 时勿动这条 quality_score 回填链**。
+
+  所有 prompt 集中在 `src/agents/prompts/`（含 `writer/` 子目录的 outline/payload/narrative 三套）。
+
+  Writer 阶段错误用三类自定义异常路由（避免依赖中文措辞子串匹配）：`WriterRouteToCollector`（回采集）/ `WriterRouteToWriter`（重写）/ `WriterRouteToEnd`（不可恢复终止）。
+
+- **工具**（`src/tools/`）：
+  - `llm_client` — Doubao 纯 prompt 约束 + 代码块剥离，**不**用 `response_format`（06-01 实测端点不支持）；带超时/重试；`call_json` 支持 `max_tokens`
+  - `http_client` — httpx async，同域名限速 `COLLECT_INTERVAL` + per-domain 锁
+  - `sources` — Tavily 搜索源（仅此一家，06-07 弃用 SerpAPI；iTunes 06-06 因同名污染移除）
+  - `quality_gate` — 采集质量闸门
+  - `scenario_picker` — `ai_pick_scenario` 函数，前端「AI 帮我选场景」按钮 + `/api/v1/pick-scenario` 后端的核心
+  - `trace_writer` — 中间产物落盘
+  - `html_parser`、`validators`
+
+- **入口**：后端 `src/api/main.py` 暴露 3 个路由（`src/api/routes.py`）：
+  - `POST /api/v1/analyze` — 主分析入口，每请求生成 `trace_id` 并构图执行
+  - `POST /api/v1/pick-scenario` — 用户填了 `analysis_context` 后让 AI 选场景
+  - `GET /api/v1/trace/{trace_id}` — 中间产物追溯（含路径穿越双重防护，`?version=` 取历史版本）
+
+  前端 `src/frontend/app.py` + `src/frontend/render.py`（5 场景 BaseReport 渲染 + Plotly 图表：S1 5 维雷达、S2 五力蜘蛛网、S5 Perceptual Map / Magic Quadrant / Strategy Canvas）。
+
+- **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（评分项之一，勿移除）。
+- **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。

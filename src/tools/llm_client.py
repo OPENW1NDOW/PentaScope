@@ -1,9 +1,14 @@
 import json
 import logging
+import re
 from openai import AsyncOpenAI
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 合法的 JSON 转义起始字符：\\ \" \/ \b \f \n \r \t \uXXXX
+# 凡是反斜杠后接非这些字符的，均视为 LLM 输出的"裸反斜杠"，需自动转义为 \\
+_BARE_BACKSLASH_PATTERN = re.compile(r'\\(?!["\\/bfnrtu])')
 
 
 class LLMClient:
@@ -17,6 +22,9 @@ class LLMClient:
             api_key=self.api_key,
             base_url=self.base_url,
             timeout=settings.LLM_TIMEOUT,
+            # 关掉内部 retry：OpenAI SDK 默认 max_retries=2 会与外层 LLM_MAX_RETRIES 嵌套
+            # 形成 3×3=9 次 × 120s ≈ 18 分钟最坏耗时（trace 20260609-150301-df17ff 实证）
+            max_retries=0,
         )
 
     async def call_json(
@@ -39,8 +47,24 @@ class LLMClient:
                     **extra_kwargs,
                 )
                 content = response.choices[0].message.content
+                stripped = self._strip_json_fence(content)
                 # strict=False 允许字符串值内的裸控制字符（LLM 常在内容里直接输出换行）
-                return json.loads(self._strip_json_fence(content), strict=False)
+                try:
+                    return json.loads(stripped, strict=False)
+                except json.JSONDecodeError as inner:
+                    # 二次兜底：转义所有"非法"裸反斜杠（LLM 常在 path/regex/markdown 里漏转义 \）
+                    fixed = _BARE_BACKSLASH_PATTERN.sub(r'\\\\', stripped)
+                    try:
+                        return json.loads(fixed, strict=False)
+                    except json.JSONDecodeError as fallback_err:
+                        # 二次兜底也失败：把失败位置前后 200 字符 dump 出来便于定位
+                        pos = fallback_err.pos
+                        ctx = fixed[max(0, pos - 100):pos + 100]
+                        logger.warning(
+                            "[llm] 反斜杠兜底也失败 char=%d, 原始/修复后报错均存在; 上下文片段: %r",
+                            pos, ctx,
+                        )
+                        raise inner  # 抛原始错误，让外层 catch 走 attempt 重试
             except (json.JSONDecodeError, KeyError, IndexError) as e:
                 last_error = e
                 logger.warning(

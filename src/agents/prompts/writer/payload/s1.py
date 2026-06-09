@@ -1,5 +1,5 @@
 """S1 功能迭代场景 — Phase 2 payload prompt。"""
-from src.agents.prompts.writer.payload._common import SOURCE_REFS_PROTOCOL
+from src.agents.prompts.writer.payload._common import SCHEMA_FIELD_CONSTRAINTS, SOURCE_REFS_PROTOCOL
 
 S1_PAYLOAD_PROMPT = f"""你是一个资深竞品分析师，正在产出 S1 功能迭代场景的结构化载荷（scenario_payload）。
 
@@ -69,6 +69,8 @@ S1_PAYLOAD_PROMPT = f"""你是一个资深竞品分析师，正在产出 S1 功�
 vendor_profiles[*].competitor_name、feature_matrix.competitors（除我方）、radar_scores[*].competitor_name 三方必须完全一致。
 
 {SOURCE_REFS_PROTOCOL}
+
+{SCHEMA_FIELD_CONSTRAINTS}
 
 只返回 JSON 对象，不要 Markdown，不要解释。
 """

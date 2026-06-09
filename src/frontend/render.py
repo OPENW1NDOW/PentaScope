@@ -1041,20 +1041,22 @@ def _render_s5_payload(p: dict) -> None:
         if targets:
             st.caption(f"目标非客户：{', '.join(targets)}")
 
-    # positioning_statement
+    # positioning_statement —— [fix21] 6 位模板分行渲染 + 水印独立 warning
     ps = p.get("positioning_statement") or {}
     if ps:
         st.subheader("定位陈述（Geoffrey Moore 6 位模板）")
         st.caption(f"置信度：`{ps.get('confidence', '')}`")
-        if ps.get("full_statement_text"):
-            st.info(ps.get("full_statement_text", ""))
-        else:
-            st.markdown(
-                f"For **{ps.get('target_customer', '')}** who {ps.get('need_or_opportunity', '')}, "
-                f"**{ps.get('product_name', '')}** is a {ps.get('product_category', '')} that "
-                f"{ps.get('key_benefit', '')}. Unlike {ps.get('primary_alternative', '')}, "
-                f"our product {ps.get('primary_differentiation', '')}."
-            )
+        if ps.get("confidence") and ps["confidence"] != "from_user_brief":
+            st.warning("⚠️ 本定位陈述为 AI 推断版本，请人工校对后再对外使用")
+        # 6 位模板按 markdown 列表分行渲染（不再依赖 full_statement_text 的英文连接词长串）
+        st.markdown(
+            f"- **For**（目标客户）：{ps.get('target_customer', '')}\n"
+            f"- **who**（核心需求/机会）：{ps.get('need_or_opportunity', '')}\n"
+            f"- **{ps.get('product_name', '')} is a**（产品品类）：{ps.get('product_category', '')}\n"
+            f"- **that**（核心价值）：{ps.get('key_benefit', '')}\n"
+            f"- **Unlike**（主要替代方案）：{ps.get('primary_alternative', '')}\n"
+            f"- **our product**（差异化）：{ps.get('primary_differentiation', '')}"
+        )
 
     # category_strategy
     cs = p.get("category_strategy") or {}
@@ -1067,6 +1069,57 @@ def _render_s5_payload(p: dict) -> None:
             st.markdown(f"**隐含竞品**：{', '.join(implied)}")
         if cs.get("risk_of_category_choice"):
             st.caption(f"风险：{cs.get('risk_of_category_choice', '')}")
+
+
+def render_analysis_response(data: dict) -> None:
+    """统一处理 /analyze 响应：根据 status + report 决定 success/warning/error 文案。
+
+    fix3：report=None 或空时不显示"分析完成"误导文案，而是 warning 提示
+    用户去执行追溯面板查中间产物（包含 trace_id 链接）。
+
+    fix6：把完整 data 存到 session_state['last_response']。Streamlit 每次按钮
+    点击全脚本重跑，"开始分析" if 块在重跑时不再执行，报告会消失。主入口需在
+    if 块外读 session_state['last_response'] 重新调用本函数，让结果跨重跑保留。
+    """
+    status = data.get("status")
+    trace_id = data.get("trace_id", "")
+    report = data.get("report")
+
+    # fix6: 无条件持久化整个 response，便于主入口跨重跑恢复
+    st.session_state["last_response"] = data
+
+    if status != "completed":
+        err = data.get("error", "未知错误")
+        st.error(f"分析失败: {err}")
+        return
+
+    if not report:
+        st.warning(
+            f"分析未能产出有效报告（trace_id={trace_id}），"
+            "请展开下方「执行追溯（中间产物）」面板查看 4 阶段中间产物 + run.log 定位原因。"
+        )
+        if trace_id:
+            st.session_state["last_trace_id"] = trace_id
+        return
+
+    st.success(f"分析完成！Trace ID: {trace_id}")
+    if trace_id:
+        st.session_state["last_trace_id"] = trace_id
+    render_base_report(report)
+
+
+def render_trace_report_tab(report: dict | None) -> None:
+    """[fix16] 追溯面板「报告」tab 用：渲染历史 trace 的美化报告 + 折叠原始 JSON。
+
+    解决问题：之前追溯面板只 st.json 展示原始 BaseReport JSON，可读性差。
+    现在 default 渲染美化版，旁边折叠区保留原始 JSON 供诊断使用。
+    """
+    if not report:
+        st.warning("该 trace 报告为空（可能 graph 失败强制结束 / 未跑到 writer 阶段）")
+        return
+    render_base_report(report)
+    with st.expander("查看原始 JSON（诊断用）", expanded=False):
+        st.json(report)
 
 
 def render_base_report(report: dict) -> None:

@@ -304,6 +304,52 @@
 - 理由：writer 拿不到 profile 的 sources、LLM 自填的 quality_score 恒为 0 不可信；溯源应取自采集真实结果，质量分应取自质检 issue 严重度
 - 备选：让 writer prompt 填这两个字段（排除原因：writer 无 source 数据、LLM 自评分不客观）
 
+## 2026-06-10: collector 喂 LLM 前 100K 字符硬截断（fix1）
+- 选择：`src/agents/collector.py::_extract_profile` 入口处对 labeled_text 做 ≤100K 字符硬截断（保头部）；同时每场景 query 数从 2 条收敛到 1 条（`_SCENARIO_QUERIES`）
+- 理由：实测「飞书文档」labeled_text 拼起来 >150K 字符触发 Doubao 400 「Total tokens exceed max message tokens」（输入上限 224K token）；100K 字符 ≈ 70K token，留 50%+ 安全垫
+- 备选：分批 LLM 抽取再合并（排除：4-5 倍 token 成本 + 复杂 reduce 逻辑）；不截断（排除：飞书等富文本竞品必撞 400）
+
+## 2026-06-10: 关闭 OpenAI client 内部 retry 避免嵌套放大（fix Bug 2）
+- 选择：`AsyncOpenAI(max_retries=0)`，把 retry 完全交给 `LLMClient.call_json` 外层（LLM_MAX_RETRIES + 1 = 3 次）
+- 理由：默认 max_retries=2 与外层 3 次嵌套 = 9 次 HTTP × 120s timeout = 最坏 18 分钟，前端 1800s 都被打穿（trace 20260609-150301-df17ff 实证 collector 卡 10+ 分钟）
+- 备选：保留默认 + 缩短 timeout（排除：解决慢但仍不可控）；只关外层（排除：OpenAI client 内部 retry 不可见，调用方无法追溯）
+
+## 2026-06-10: writer ValidationError 完整 errors() 落 trace 文件（fix2）
+- 选择：`builder.py::writer_node` 异常分支用 `_serialize_writer_exception` 提取 `e.errors()` 完整列表，通过 `trace_writer.save_raw` 落到 `04_writer_error.json`；run.log 同时打 errors_summary
+- 理由：之前 `str(e)[:200]` 截断丢失关键 loc 信息，下次复发只能猜字段；ValidationError 的 errors() 含完整 loc/msg/type 三件套，是诊断 schema 失败的最重要材料
+- 备选：直接打到 run.log（排除：长摘要污染日志，结构化 dict 落盘更便于解析）
+
+## 2026-06-10: AnalyzerAgent 接口注入 ScenarioInput 解场景失明（fix7）
+- 选择：`AnalyzerAgent.analyze(profiles, scenario_input=None, feedback_issues=None)`，新增可选 scenario_input 参数；ANALYZER_SYSTEM 加 SWOT 主体硬约束（S2 主体=赛道进入这件事，其余=我方产品）
+- 理由：之前 analyzer 完全不知道 scenario / our_product_name / analysis_context，SWOT 主体只能脑补、feature_matrix.our_product 字段也填空"无"。trace 20260609-203430 实证：SWOT 写成 3 个竞品优劣势罗列而非围绕 Notion，inspector 标 major issue
+- 备选：每场景独立 prompt（排除：5 套 prompt 维护成本高）；改 system prompt 写死场景分支（排除：通用 system prompt + user 注入更灵活）
+
+## 2026-06-10: data_collection_approach 改代码合成模板（fix11）
+- 选择：phase 4 用 `_build_data_collection_approach()` 模板（含场景标签 + 竞品名 + URL 数 + 时间窗 + 完整度）覆盖 LLM 输出；outline prompt 标注「该字段代码合成」
+- 理由：LLM 反复在 phase 1 outline 写 `data_collection_approach` 不到 schema 要求的 200 字符，每次 graph 重试栽在同一处。该字段是「我们怎么采的数据」元描述，本就该模板化不该让 LLM 创作
+- 备选：phase 1 加 ReportMetadata 局部校验 + 重试（排除：代价大且不能保证 LLM 听话）；强化 prompt（排除：已写过明确字数要求，LLM 仍不执行）
+
+## 2026-06-10: writer_node 入口 skip 兜底防 analyzer 失败 KeyError（fix12）
+- 选择：`builder.py::writer_node` 入口检测 `state.analysis is None` + `feedback.passed=False` 时直接 skip 透传 feedback，让 should_continue 按 `issue.agent='analyzer'` 路由回 analyzer
+- 理由：analyzer 抛错（如 APITimeoutError）时返回 dict 没 analysis 字段，writer 直接 `state['analysis']` 触发 KeyError，被兜成 feedback agent=writer，**反馈闭环路由错误**——本应回 analyzer 重试，结果回 writer 重试浪费 retry quota
+- 备选：让 graph 边变 conditional（排除：改 langgraph 拓扑 + 影响其它路径）；analyzer_node 失败时仍返回桩 analysis（排除：桩对象在 writer 里更难处理）
+
+## 2026-06-10: prompt-schema 对齐成项目硬约束 + Prove-It 测试覆盖（fix4/10/14/15/17/18/19）
+- 选择：5 套 payload prompt 与 schema Literal/min_length/max_length 等所有字段约束严格对齐，新增 `tests/unit/test_writer_payload_prompts.py` 用 25+ 个测试断言关键枚举值、必填字段、高频踩坑短语都在 prompt 里
+- 理由：S2 trace 20260609 实证 prompt 写「value_basis 填 industry_report」但 schema 是 Literal[measured/estimated/inferred/unknown]，LLM 老老实实按 prompt 填值反复撞 schema。**永远是 prompt 跟着 schema 走，不能反过来**
+- 备选：从 schema 自动生成 prompt（排除：可读性差 + 无法表达"高频踩坑"等启发式经验）
+
+## 2026-06-10: Streamlit session_state 持久化 last_response（fix6）
+- 选择：`render_analysis_response` 把整个 API response 存到 `st.session_state["last_response"]`；主入口 `if button A else if "last_response" in session_state` 双轨恢复
+- 理由：Streamlit 每次按钮点击都全脚本重跑，"开始分析" if 块在追溯按钮重跑时不再 True，导致主报告区消失。这是 Streamlit 同步阻塞模型的已知特性
+- 备选：迁前端到 React+FastAPI（排除：迁移成本高，本项目用 Streamlit 是 demo 优先）
+
+## 2026-06-10: S5 normalizer 兜底是 LLM 服从性局限的临时补丁（迭代时优先撤回）
+- 选择：在 `src/agents/normalizers/s5.py` 加 `[fix20]` 标记的代码层兜底——vendor_profiles.strengths < 2 时复制最后一条凑齐 / perceptual_map 单字轴标签自动补字（"低"→"低端"）/ category_strategy 空 dict 时填占位子字段
+- 理由：实测 Doubao-Seed-2.0-lite 在 S5 密集约束（4 vendor × strengths 2-5 × cautions 1-4 + 多结构嵌套）下反复失误，2 次完整 S5 trace（20260609-234227 / 20260610-000505）走完反馈闭环 max_retries 仍无法产出合规报告。代码兜底让 happy path 跑通保答辩 demo
+- **后续迭代提示**：本兜底是 **LLM 服从性局限**导致，不是项目正确性需求。换更强的 LLM（Doubao-Seed-2.0-pro / GPT-4o / Claude Sonnet）后这部分代码应**优先撤回**，避免水印文本（"补充条目"、"normalizer 占位 LLM 未提供"）污染报告。撤回前用新模型在 S5 端到端跑若干次确认稳定后再删
+- 备选：换更强的 LLM（排除：今天答辩前没时间换 endpoint）；让 LLM 重试更多次（排除：fix5 已 max_retries=2，再加耗时不可控）；放弃 S5 happy path 当作已知局限（排除：5 场景验证完整度对答辩重要）
+
 ## 2026-06-02: 中间产物按 trace_id 落盘（独立 TraceWriter）
 - 选择：新建 src/tools/trace_writer.py，graph 各节点产出后调 save_stage 落盘到 runs/<trace_id>/，落盘逻辑单一出口
 - 理由：开题要求「每个 Agent 的决策过程与中间产物均可追溯」，是评分硬要求；独立模块容错/快照命名集中、builder.py 保持清爽、可独立单测

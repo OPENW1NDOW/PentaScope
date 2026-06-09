@@ -1,7 +1,7 @@
 import streamlit as st
 import httpx
 
-from render import render_base_report
+from render import render_analysis_response, render_trace_report_tab
 
 API_BASE = "http://localhost:8000/api/v1"
 
@@ -78,7 +78,7 @@ if scenario == "S2":
     industry = st.text_input("行业 / 赛道（必填）", placeholder="知识管理 SaaS")
     competitor_names = st.text_area(
         "已知竞品（可选，每行一个）",
-        placeholder="留空则由 AI 推荐 Top 5",
+        placeholder="留空则由 AI 推荐 Top 3-5",
         height=80,
     )
 else:
@@ -135,18 +135,18 @@ if st.button("开始分析", type="primary"):
                         st.error("请求校验失败：" + "；".join(msgs))
                     else:
                         st.error(f"请求失败（{response.status_code}）：{detail}")
-                elif data["status"] == "completed":
-                    report = data["report"]
-                    st.success(f"分析完成！Trace ID: {data['trace_id']}")
-                    st.session_state["last_trace_id"] = data["trace_id"]
-                    render_base_report(report)
                 else:
-                    st.error(f"分析失败: {data.get('error', '未知错误')}")
+                    render_analysis_response(data)
 
             except httpx.ConnectError:
                 st.error("无法连接后端服务，请确认 FastAPI 已启动 (uvicorn src.api.main:app --port 8000)")
             except Exception as e:
                 st.error(f"发生错误: {e}")
+
+# fix6：Streamlit 每次按钮点击全脚本重跑会让上面"开始分析"if 块跳过，
+# 导致报告消失。从 session_state 恢复上次结果，让追溯按钮等任何重跑都不丢报告。
+elif "last_response" in st.session_state:
+    render_analysis_response(st.session_state["last_response"])
 
 # 执行追溯面板（可观测性：查看每个 Agent 的中间产物与决策过程）
 st.divider()
@@ -167,7 +167,7 @@ with st.expander("执行追溯（中间产物）", expanded=False):
                 with tabs[2]:
                     st.json(t["stages"].get("analysis"))
                 with tabs[3]:
-                    st.json(t["stages"].get("report"))
+                    render_trace_report_tab(t["stages"].get("report"))
                 with tabs[4]:
                     st.json(t["stages"].get("feedback"))
                 with tabs[5]:

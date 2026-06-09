@@ -16,6 +16,61 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-09 ~ 06-10（端到端测试 + 21 个 fix 大规模 bug 修复 session）
+- 完成（单 session、systematic-debugging + agent-skills:test Prove-It pattern 严格模式）：
+  - **5 场景端到端跑通**：S1/S2/S3/S4/S5 各跑出 03_report.json，**3 个 happy path（S2 真跑 0.800 / S3 0.836 / S5 fix20 兜底后跑通）+ 2 个 max_retries 反馈闭环正常路径（S1 / S4）**
+  - **21 个 fix 全部 Prove-It 模式（先红测试 → 修 → 测试绿）**，每个 fix 平均 2-3 个新单测：
+    - **fix1**：collector labeled_text 100K 字符硬截断 + 每场景 1 条 query（避免 Doubao 224K token 上限）
+    - **fix2**：writer ValidationError 详情持久化到 trace_writer.save_raw → `04_writer_error.json` 含完整 errors() 列表
+    - **fix3**：前端 `render_analysis_response` 对 report=None 友好提示，不再裸调 render_base_report 触发 KeyError
+    - **fix4**：writer phase 2 通用 `SCHEMA_FIELD_CONSTRAINTS` 块注入到 5 套 payload prompt
+    - **fix5**：writer phase 2 内部重试 max_retries 1 → 2，给 LLM 更多次修字段错位机会
+    - **fix6**：前端 session_state 持久化 last_response，「加载追溯」等按钮重跑不再丢失主报告
+    - **fix7**：analyzer 场景失明根治——`analyze()` 入参增 `scenario_input`，prompt 加场景上下文块（SWOT 主体按 S1-5 分支约束）
+    - **fix8**：writer phase 4 `data_sources.accessed_at` 用 profile.collected_at 兜底（之前全 None）
+    - **fix9**：phase 4 Appendix.glossary 预填 11 条常用术语（JTBD/SWOT/Tier1/TAM/SAM/SOM/MQ/ARR/ICP/niche/niche_focus）
+    - **fix10**：S2 payload prompt 全文按 schema 重写（修 unit/value_basis/market_role/recommended_mode/impact_on_entry 5 处枚举错位）+ 末尾枚举速查清单
+    - **fix11**：phase 4 Methodology.data_collection_approach 改代码合成模板（含场景标签+竞品名+URL 数+时间窗+完整度），不再依赖 LLM 写够 200 字
+    - **fix12**：writer_node 入口检测 analyzer 失败 skip 兜底（避免 state.analysis 缺失触发 KeyError 污染反馈闭环）
+    - **fix13**：narrative prompt 加 markdown 段落约束（段落空行 / `### 子标题` / 列表 / `**加粗**` / 英文术语中文注释）
+    - **fix14**：S3 prompt 修 `expected_arr_uplift_basis` 4 个枚举错位 + `pricing_page_audit.rule_name` 8 枚举 + 末尾枚举速查 + 高频踩坑提示
+    - **fix15**：S4/S5 prompt 补遗漏枚举（S4 `MonitoringOpportunity.estimated_effort/expected_impact` / S5 `WhiteSpaceZone.quadrant`）
+    - **fix16**：追溯面板「报告」tab 用 `render_trace_report_tab` 渲染美化版报告 + 折叠原始 JSON
+    - **fix17**：S4 prompt 给 threats/opportunities/battlecards 显式补 `artifact_id` 必填提示（否则 LLM 反复漏写）
+    - **fix18**：S5 prompt `category_strategy` 从「Optional」改为「**必填**」+ 列子字段 chosen_category/why_this_category/competitors_implied
+    - **fix19**：S5 prompt 末尾加「S5 枚举速查」+「S5 高频踩坑」清单（vendor_profiles 数量字数、轴标签 ≥2 字、三方 competitor_name 一致性等）
+    - **fix20**：S5 normalizer 代码层兜底 3 大顽固坑（vendor_profiles.strengths < 2 复制凑齐 / 单字轴标签补字 / category_strategy 空 dict 占位填齐）—— **特别标注[LLM-CAPABILITY-WORKAROUND]，迭代时换更强 LLM 后应优先撤回**
+    - **fix21**：前端 PositioningStatement 6 位模板分行 markdown 列表渲染 + AI 推断水印独立 `st.warning`
+  - **测试增长**：311 → **387 passed**（新增 76 个，5 skipped / 2 xfailed 不变；ruff clean）
+  - **核心方法论实证**：
+    - `superpowers:systematic-debugging` 4 阶段（根因→对照→假设→修复）防止凭直觉乱改 bug；首次实战在 LLM JSON 解析问题上避免误诊（最初猜反斜杠，systematic 流程后定位真因是 OpenAI client 内部 retry × 外层 retry 嵌套放大 9× × 120s timeout = 18 分钟最坏耗时）
+    - `agent-skills:test` Prove-It pattern 21 次零回归零 false-fix
+    - 多个 fix 之间的因果链：fix12 兜底依赖 fix5 路由不污染、fix11 兜住的字段 fix13 prompt 又加约束、fix20 占位水印 fix21 前端分离展示
+  - **5 场景战报**：
+
+    | 场景 | trace | quality_score | passed | 备注 |
+    |---|---|---|---|---|
+    | S1 | 184652 | 0.65 | False (max_retries) | 反馈闭环正常路径 |
+    | S2 真跑 | 203430 | **0.800** | **True** | happy path |
+    | S2 错跑 | 212413 | 0.500 | False | placeholder cap |
+    | S3 | 220309 | **0.836** | **True** | happy path 最高分 |
+    | S4 | 222633 | 0.517 | False (max_retries) | inspector 严苛 |
+    | S5 | 004549 | 0.500 | False (max_retries) | fix20 兜底 + 2 占位 |
+
+- 进行中：本 session 收尾，commit + push
+- 下一步：
+  1. 答辩准备（PRD / DECISIONS / 评分项映射，本次新增的 21 个 fix 可作为「反馈闭环 + 容错降级」实证素材）
+  2. 后续迭代：换更强 LLM（Doubao-Seed-2.0-pro / GPT-4o）后**优先撤回 fix20**（见 DECISIONS.md），避免水印污染报告
+  3. 可选优化：narrative section 占位率仍较高（S5 perceptual_map_analysis / errc_analysis 两次都占位）—— LLM 能力问题，prompt 改进边际收益已趋零，等换模型再观察
+- 阻塞：无
+- 协作模型实证：
+  - **systematic-debugging + Prove-It 双流程严格执行**有效杜绝 bug 修复中"修一处错另一处"的状况
+  - **doubt-driven 不复用**——本 session 没用 doubt-driven 前置审查（修 bug 而非新设计），systematic-debugging 已经覆盖根因分析需求
+  - **monitor 流式事件**作为长任务可观测性的标配，本 session 21 次端到端跑都靠 monitor 抓节点切换 + WARNING/ERROR 实时定位
+- 安全提醒：本 session 全程纯代码 + prompt + 测试，无新增 key
+
+---
+
 ## 2026-06-08（深夜 / v3 spec 实施 D-G 全部完成）
 - 完成（单 session 单线推进，~10+ commit）：
   - **阶段 1（A1-A6 master 适配）**：LLMClient.call_json 加 max_tokens / config 加 WRITER_MAX_LLM_CALLS=18 + WRITER_NARRATIVE_CONCURRENCY=3 / state.py 改 BaseReport + ScenarioInput / writer.py 改桩 / inspector.py 仅修 import

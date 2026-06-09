@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -197,6 +197,89 @@ def collect_profile_urls(profile: CompetitorProfile) -> set[str]:
 _BARE_URL_FIELDS = frozenset({
     "evidence_url", "pricing_page_url", "source_url", "official_url", "url",
 })
+
+
+# [fix11] data_collection_approach 代码合成模板：5 场景共用，输出 ≥200 字符
+_SCENARIO_LABELS: dict[str, str] = {
+    "S1": "S1 功能迭代",
+    "S2": "S2 市场进入",
+    "S3": "S3 定价策略",
+    "S4": "S4 持续监控",
+    "S5": "S5 战略定位",
+}
+
+
+def _build_data_collection_approach(
+    profiles: list[CompetitorProfile],
+    scenario: str,
+    discovered_url_count: int,
+) -> str:
+    """[fix11] 代码合成 Methodology.data_collection_approach 文本。
+
+    Why：phase 1 outline LLM 反复写不够 200 字符，每次 graph 重试栽在同一处。
+    本字段属于"我们怎么采的数据"的元描述，不需要 LLM 创作，模板化即可。
+    """
+    label = _SCENARIO_LABELS.get(scenario, scenario)
+    competitor_count = len(profiles)
+    competitor_names = "、".join(p.basic_info.name for p in profiles) or "（无）"
+    avg_completeness = (
+        sum(p.metadata.completeness_score for p in profiles) / max(1, len(profiles))
+    )
+    collected_dates = sorted({(p.metadata.collected_at or "")[:10] for p in profiles if p.metadata and p.metadata.collected_at})
+    date_window = (
+        f"{collected_dates[0]} 至 {collected_dates[-1]}" if collected_dates else "本次会话内"
+    )
+
+    return (
+        f"本报告面向 {label} 场景，由「采集→分析→撰写→质检」四 Agent 流水线协作产出。"
+        f"采集 Agent 基于 Tavily 检索 API 对 {competitor_count} 个竞品（{competitor_names}）"
+        f"分别发起场景化关键词查询，单次返回 5 条结果并附带正文，按 quality_gate 过滤反爬/低质页面后"
+        f"得到 {discovered_url_count} 条有效溯源 URL。分析 Agent 在收集到的画像数据上做四维结构化对比"
+        f"（定位 / 功能矩阵 / 商业模式 / 用户口碑）+ SWOT + 雷达评分。撰写 Agent 通过 4 阶段 LLM 编排"
+        f"（outline → payload → narrative → assemble）合成结构化报告，溯源 URL 经过双通道收集与幻觉过滤。"
+        f"质检 Agent 按场景分派硬查 + LLM 语义审，按 issue 严重度路由打回上游。"
+        f"采集时间窗口：{date_window}；平均画像完整度：{avg_completeness:.2f}。"
+    )
+
+
+# [fix9] Appendix.glossary 预填常用术语
+_PREFILLED_GLOSSARY: dict[str, str] = {
+    "JTBD": "Jobs To Be Done，用户要完成的任务；从用户视角描述其目标与场景，而非功能本身。",
+    "SWOT": "Strengths/Weaknesses/Opportunities/Threats，针对单一主体的四象限分析框架。",
+    "Tier1": "竞品分级中的最高优先级层级，通常代表核心或行业头部玩家。",
+    "Tier2": "竞品分级中的次优先级层级，通常代表细分市场玩家或潜在挑战者。",
+    "TAM": "Total Addressable Market，潜在总市场规模，假设 100% 占有率下的市场总量。",
+    "SAM": "Serviceable Addressable Market，可服务市场，受地理/行业/合规等限制后的可触达市场。",
+    "SOM": "Serviceable Obtainable Market，可获取市场，结合自身资源现实可拿下的市场份额。",
+    "GBB": "Good-Better-Best，三档定价分层策略，用价值阶梯促成升档转化。",
+    "MQ": "Magic Quadrant，按两轴（如执行能力 × 愿景完整性）划分玩家的二维定位象限图。",
+    "ARR": "Annual Recurring Revenue，年度经常性收入，订阅业务核心指标。",
+    "ICP": "Ideal Customer Profile，理想客户画像，最适合产品的目标客户特征集合。",
+    "niche": "细分市场 / 利基市场，规模较小但竞争弱、需求明确的目标人群或场景。",
+    "niche_focus": "细分聚焦策略，避开主流大市场正面竞争，专攻一个特定 niche 群体。",
+}
+
+
+def _derive_fallback_accessed_at(profiles: list[CompetitorProfile]) -> Optional[date]:
+    """[fix8] 从 profiles.metadata.collected_at 派生 DataSource.accessed_at 兜底值。
+
+    取所有 collected_at 中最晚一个的日期部分（最近一次采集为准）。
+    profiles 为空 / collected_at 全无效时返回 None（schema 允许 accessed_at=None）。
+    """
+    candidates: list[date] = []
+    for p in profiles:
+        ts = (p.metadata.collected_at or "").strip() if p.metadata else ""
+        if not ts:
+            continue
+        try:
+            # 兼容 "2026-06-08T00:00:00" / "2026-06-08T00:00:00+00:00" / "2026-06-08"
+            iso = ts.replace("Z", "+00:00")
+            candidates.append(datetime.fromisoformat(iso).date())
+        except (ValueError, TypeError):
+            continue
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def _build_placeholder_swot() -> Swot:
@@ -581,7 +664,7 @@ class WriterOrchestrator:
         competitor_basics: list[dict],
         discovered_urls: list[str],
         warnings: list[str],
-        max_retries: int = 1,
+        max_retries: int = 2,  # [fix5] 1→2: LLM 一次只能修一两个字段错位，多给一次机会逐次修正
         max_tokens: int = 8192,
     ):
         """Phase 2 LLM call → normalize → 注入 → 实例化场景 Payload schema。
@@ -940,12 +1023,17 @@ class WriterOrchestrator:
 
         final_refs = list(ref_by_url.values())
 
+        # [fix8] accessed_at 兜底：取 profiles 里 collected_at 最晚的日期作为缺省值
+        # ProfileMetadata.collected_at 是 ISO 字符串（如 "2026-06-08T00:00:00"），
+        # 取日期部分塞给 DataSource.accessed_at（date 类型）。
+        fallback_accessed_at = _derive_fallback_accessed_at(profiles)
+
         # ----- 步骤 3：[v3-R11] 全字段 DataSource 构造 -----
         data_sources_models = [
             DataSource(
                 url=r["url"],
                 title=r["title"],
-                accessed_at=r["accessed_at"],
+                accessed_at=r["accessed_at"] or fallback_accessed_at,
                 source_type=r["source_type"],
                 confidence="medium",
             )
@@ -1033,6 +1121,13 @@ class WriterOrchestrator:
             exclusions=outline_scope.get("exclusions", []) or [],
         )
         executive_summary = ExecutiveSummary(**outline_es)
+        # [fix11] data_collection_approach 改为代码合成，覆盖 LLM 输出（无论 LLM 写没写够 200 字符）
+        outline_meth = dict(outline_meth)  # 浅拷贝避免污染调用方
+        outline_meth["data_collection_approach"] = _build_data_collection_approach(
+            profiles=profiles,
+            scenario=scenario,
+            discovered_url_count=len(discovered_urls),
+        )
         methodology = Methodology(**outline_meth)
 
         # [06-09 source_refs 透传修复] outline phase 1 LLM 不写 source_refs（prompt 故意不要求）
@@ -1079,7 +1174,7 @@ class WriterOrchestrator:
             swot=swot,
             conclusions=outline.get("conclusions", ""),
             recommendations=recommendations,
-            appendix=Appendix(),
+            appendix=Appendix(glossary=dict(_PREFILLED_GLOSSARY)),
             scenario_payload=payload_model,
         )
         return report

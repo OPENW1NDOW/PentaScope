@@ -491,3 +491,196 @@ def test_render_s5_with_perceptual_map_and_canvas(st_spy):
     assert "感知地图 Perceptual Map" in headers
     assert "战略画布" in headers
     assert "ERRC 4 宫格" in headers
+
+
+# ============ [fix3 prove-it] render_analysis_response: report=None 时的文案兜底 ============
+
+def test_render_response_with_valid_report_shows_success(st_spy):
+    """report 非空 → 显示分析完成 + 渲染报告"""
+    from src.frontend.render import render_analysis_response
+    data = {"status": "completed", "trace_id": "abc-123",
+            "report": {"title": "T", "executive_summary": {}}}
+    render_analysis_response(data)
+    # success 被调用且文案含 trace_id
+    success_calls = [c.args[0] for c in st_spy.success.call_args_list]
+    assert any("abc-123" in s for s in success_calls), \
+        f"应显示带 trace_id 的成功文案，实际 {success_calls}"
+    # warning 不应被调用为"未能产出"
+    warning_msgs = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert not any("未能产出" in w for w in warning_msgs)
+
+
+def test_render_response_with_none_report_shows_warning(st_spy):
+    """[fix3] report=None → 不该显示"分析完成"，要 warning + 提示去追溯面板"""
+    from src.frontend.render import render_analysis_response
+    data = {"status": "completed", "trace_id": "abc-123", "report": None}
+    render_analysis_response(data)
+    # 不应误报"分析完成"
+    success_calls = [c.args[0] for c in st_spy.success.call_args_list]
+    assert not any("分析完成" in s for s in success_calls), \
+        f"report=None 时不该 success，实际 {success_calls}"
+    # 应有 warning 提示用户去追溯面板
+    warning_msgs = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert any("未能产出" in w or "追溯" in w for w in warning_msgs), \
+        f"应 warning 提示未产出 + 追溯，实际 {warning_msgs}"
+    # 应展示 trace_id 让用户可手动查
+    assert any("abc-123" in w for w in warning_msgs), \
+        f"warning 应含 trace_id，实际 {warning_msgs}"
+
+
+def test_render_response_with_empty_report_shows_warning(st_spy):
+    """report={}（空 dict）→ 同 None，避免 success 文案误导"""
+    from src.frontend.render import render_analysis_response
+    data = {"status": "completed", "trace_id": "abc-123", "report": {}}
+    render_analysis_response(data)
+    success_calls = [c.args[0] for c in st_spy.success.call_args_list]
+    assert not any("分析完成" in s for s in success_calls)
+
+
+def test_render_response_with_failed_status_shows_error(st_spy):
+    """status != completed → error，不调 render_base_report"""
+    from src.frontend.render import render_analysis_response
+    data = {"status": "failed", "error": "graph crashed"}
+    render_analysis_response(data)
+    error_msgs = [c.args[0] for c in st_spy.error.call_args_list]
+    assert any("graph crashed" in m or "失败" in m for m in error_msgs)
+
+
+# ============ [fix16 prove-it] render_trace_report_tab 渲染历史 trace 的 report ============
+
+def test_render_trace_report_tab_with_valid_report_calls_base_render(st_spy):
+    """[fix16] 拿到非空 report dict 时应调 render_base_report 渲染美化版"""
+    from src.frontend.render import render_trace_report_tab
+    report = {"title": "历史报告", "executive_summary": {}}
+    render_trace_report_tab(report)
+    # 应有 title 渲染（间接验证 render_base_report 被走过）
+    title_calls = [c.args[0] for c in st_spy.title.call_args_list]
+    assert any("历史报告" in t for t in title_calls), \
+        f"应调 render_base_report 渲染 title，实际 title 调用 {title_calls}"
+
+
+def test_render_trace_report_tab_with_none_shows_warning(st_spy):
+    """[fix16] report=None 时显示 warning，不崩"""
+    from src.frontend.render import render_trace_report_tab
+    render_trace_report_tab(None)
+    warnings = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert any("无报告" in w or "未产出" in w or "为空" in w for w in warnings), \
+        f"None 应触发 warning 文案，实际 {warnings}"
+
+
+def test_render_trace_report_tab_with_empty_dict_shows_warning(st_spy):
+    """[fix16] report={} 同样要 warning，不能裸跑 render_base_report 触发 KeyError"""
+    from src.frontend.render import render_trace_report_tab
+    render_trace_report_tab({})
+    warnings = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert len(warnings) >= 1
+
+
+# ============ [fix21 prove-it] PositioningStatement 6 位模板分行渲染 ============
+
+def test_render_s5_positioning_breaks_six_position_template_into_lines(st_spy):
+    """[fix21] 6 位定位陈述按 For/who/is a/that/Unlike/our product 分 6 行渲染，
+    而不是 st.info 一坨英文连接词混中文。
+    """
+    from src.frontend.render import _render_s5_payload
+    payload = {
+        "scenario_type": "S5",
+        "positioning_statement": {
+            "target_customer": "中小互联网产品团队",
+            "need_or_opportunity": "提升跨角色协作效率",
+            "product_name": "Figma",
+            "product_category": "实时协作平台",
+            "key_benefit": "支持产品/设计/开发实时协同",
+            "primary_alternative": "传统设计工具+办公文档组合",
+            "primary_differentiation": "原生云端实时协作架构",
+            "confidence": "llm_inferred",
+            "full_statement_text": "[AI 推断版本，请人工校对] For ... unlike ...",
+        },
+    }
+    _render_s5_payload(payload)
+    # st.info 不应被调用为一坨英文长串（fix21 改用分行 markdown）
+    info_calls = [c.args[0] for c in st_spy.info.call_args_list]
+    assert not any(s.startswith("[AI 推断版本") and "For" in s and "Unlike" in s for s in info_calls), \
+        f"PositioningStatement 不应再用 st.info 一坨字符串：{info_calls}"
+    # 应有 markdown 调用包含 6 位结构关键词
+    md_calls = [c.args[0] for c in st_spy.markdown.call_args_list]
+    md_combined = "\n".join(md_calls)
+    # 6 位模板的关键标识（中英文连接词）
+    for label in ["For", "who", "Unlike"]:
+        assert label in md_combined, \
+            f"6 位模板缺连接词 {label}，markdown 调用：{md_calls[:5]}"
+
+
+def test_render_s5_positioning_inferred_shows_warning_separately(st_spy):
+    """[fix21] confidence != from_user_brief 时，水印「AI 推断 请人工校对」用独立 warning 醒目展示，
+    而不是混进 statement 文本里。
+    """
+    from src.frontend.render import _render_s5_payload
+    payload = {
+        "scenario_type": "S5",
+        "positioning_statement": {
+            "target_customer": "X 用户群体",
+            "need_or_opportunity": "Y 需求",
+            "product_name": "Z 产品",
+            "product_category": "Z 品类",
+            "key_benefit": "提供 K 价值",
+            "primary_alternative": "现有替代方案",
+            "primary_differentiation": "差异化点",
+            "confidence": "llm_inferred",
+        },
+    }
+    _render_s5_payload(payload)
+    warnings = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert any("人工校对" in w or "AI 推断" in w for w in warnings), \
+        f"llm_inferred 时应用独立 warning 标注 AI 推断：{warnings}"
+
+
+def test_render_s5_positioning_from_user_brief_no_warning(st_spy):
+    """[fix21] confidence == from_user_brief 时不应显示 AI 推断 warning"""
+    from src.frontend.render import _render_s5_payload
+    payload = {
+        "scenario_type": "S5",
+        "positioning_statement": {
+            "target_customer": "X 用户群体",
+            "need_or_opportunity": "Y 需求",
+            "product_name": "Z 产品",
+            "product_category": "Z 品类",
+            "key_benefit": "提供 K 价值",
+            "primary_alternative": "现有替代方案",
+            "primary_differentiation": "差异化点",
+            "confidence": "from_user_brief",
+        },
+    }
+    _render_s5_payload(payload)
+    warnings = [c.args[0] for c in st_spy.warning.call_args_list]
+    assert not any("人工校对" in w or "AI 推断" in w for w in warnings), \
+        "from_user_brief 不应显示 AI 推断 warning"
+
+
+# ============ [fix6 prove-it] session_state 持久化报告，避免按钮重跑导致 report 消失 ============
+
+def test_render_response_persists_data_to_session_state(st_spy):
+    """[fix6] render_analysis_response 必须把 data 存到 session_state['last_response']
+
+    现象：Streamlit 每次按钮点击全脚本重跑；点击"加载追溯"会让"开始分析"if 块跳过，
+    报告区消失。修法是让 render_analysis_response 持久化 data，主入口外层无条件
+    检查并重渲染。
+    """
+    # session_state 用真 dict 模拟，便于断言赋值
+    st_spy.session_state = {}
+    from src.frontend.render import render_analysis_response
+    data = {"status": "completed", "trace_id": "abc-123",
+            "report": {"title": "T", "executive_summary": {}}}
+    render_analysis_response(data)
+    assert st_spy.session_state.get("last_response") == data, (
+        "render_analysis_response 应把 data 存到 session_state['last_response']"
+    )
+
+
+def test_render_response_persists_even_when_report_none(st_spy):
+    """[fix6] 即使 report=None 也要存 last_response，让用户能看到 warning + trace_id"""
+    st_spy.session_state = {}
+    from src.frontend.render import render_analysis_response
+    data = {"status": "completed", "trace_id": "abc-123", "report": None}
+    render_analysis_response(data)
+    assert st_spy.session_state.get("last_response") == data

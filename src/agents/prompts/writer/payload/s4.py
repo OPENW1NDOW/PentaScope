@@ -1,5 +1,5 @@
 """S4 持续监控场景 — Phase 2 payload prompt。"""
-from src.agents.prompts.writer.payload._common import SOURCE_REFS_PROTOCOL
+from src.agents.prompts.writer.payload._common import SCHEMA_FIELD_CONSTRAINTS, SOURCE_REFS_PROTOCOL
 
 S4_PAYLOAD_PROMPT = f"""你是一个竞品情报负责人，正在产出 S4 持续监控场景的结构化载荷（scenario_payload）。
 
@@ -31,13 +31,18 @@ S4_PAYLOAD_PROMPT = f"""你是一个竞品情报负责人，正在产出 S4 持�
   - NewsEvent: category ∈ {{funding, acquisition, partnership, leadership, regulatory, controversy, milestone, other}}; headline (≥10)
   - OrgChange: role (≥2), person_name Optional, action ∈ {{hired, departed, promoted, restructured}}
 - threats: list[MonitoringThreat]
-  - title (≥10), severity, likelihood
-  - description (≥30 字), recommended_response (≥20 字)
+  - **artifact_id (3-40 ASCII 字符), artifact_type="monitoring_threat", title 必填**
+  - severity ∈ {{low, medium, high}}, likelihood ∈ {{low, medium, high}}
+  - title (≥10 字, 与 ArtifactBase.title 同名), description (≥30 字), recommended_response (≥20 字)
   - **不要填 quadrant**（代码自动从 severity × likelihood 派生）
   - source_refs
 - opportunities: list[MonitoringOpportunity]
+  - **artifact_id (3-40 ASCII 字符), artifact_type="monitoring_opportunity", title 必填**
   - opportunity_type ∈ {{copy_what_works, exploit_gap, partnership, talent_grab, narrative_shift}}
-  - description (≥20), estimated_effort/expected_impact, first_step (≥10)
+  - description (≥20)
+  - estimated_effort: 必须 "low" | "medium" | "high"（**禁止填 "中" / "中等" / "moderate" 等其他值**）
+  - expected_impact: 必须 "low" | "medium" | "high"（同上）
+  - first_step (≥10)
 - trends: MonitoringTrends
   - sentiment_trend / pricing_trend / release_velocity_trend / threat_level_trend: "up" | "flat" | "down" | null
   - rationale: str
@@ -47,6 +52,7 @@ S4_PAYLOAD_PROMPT = f"""你是一个竞品情报负责人，正在产出 S4 持�
   - priority_tier ∈ {{critical, important, consider}}
   - supporting_intel_refs: list[str]
 - battlecards: list[Battlecard], ≥1 条（每个 monitored_competitor 1 条理想）
+  - **artifact_id (3-40 ASCII 字符), artifact_type="battlecard", title 必填**
   - competitor_name (必须在 monitored_competitors)
   - sections: list[BattlecardSection], ≥4 条
     - section_name ∈ {{quick_summary, primary_threat, value_prop, messaging_positioning, pricing_packaging, ideal_customer_profile, weakness_attack, win_loss_intel}}
@@ -59,6 +65,8 @@ S4_PAYLOAD_PROMPT = f"""你是一个竞品情报负责人，正在产出 S4 持�
 - 首次监控（prior_trace_id 为空，由代码识别）：所有 changes 的 is_baseline 必须为 True；trends 各 trend 必须为 null
 
 {SOURCE_REFS_PROTOCOL}
+
+{SCHEMA_FIELD_CONSTRAINTS}
 
 只返回 JSON 对象，不要 Markdown，不要解释。
 """

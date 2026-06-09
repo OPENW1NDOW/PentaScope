@@ -14,28 +14,25 @@ from src.tools.quality_gate import is_low_quality
 logger = logging.getLogger(__name__)
 
 
-# scenario → query 模板列表（每个 scenario 2-3 条主 query）
+# scenario → query 模板列表（每个 scenario 1 条聚合 query）
 # 每条 query 用 {name} 占位，运行时替换为竞品名
+# 06-09 收敛：单 query × Tavily SEARCH_TOP_N=5 已能覆盖核心信息；
+# 多 query × 5 会让 raw_content 总量翻倍超 Doubao 224K token 输入上限（飞书 trace 实测）
 _SCENARIO_QUERIES = {
     "S1": [  # 功能迭代：关注功能矩阵 + 用户体验
-        "{name} 功能列表 产品介绍",
-        "{name} 用户评价 测评",
+        "{name} 产品功能 用户体验 评价",
     ],
     "S2": [  # 市场进入：关注市场地位 + 商业模式
-        "{name} 公司介绍 商业模式",
-        "{name} 行业地位 市场份额",
+        "{name} 商业模式 市场地位 行业分析",
     ],
     "S3": [  # 定价策略：关注定价 + 套餐
-        "{name} 定价 套餐 价格",
-        "{name} 计费方式 收费模式",
+        "{name} 定价 套餐 收费模式 价格",
     ],
     "S4": [  # 持续监控：关注最新动态 + 公开变更
-        "{name} 最新动态 产品更新",
-        "{name} 新闻 公告",
+        "{name} 最新动态 产品更新 新闻",
     ],
     "S5": [  # 战略定位：关注品牌定位 + 战略表达
-        "{name} 品牌定位 市场战略",
-        "{name} 产品差异化 核心竞争力",
+        "{name} 品牌定位 战略差异化 核心竞争力",
     ],
 }
 

@@ -61,6 +61,23 @@ class TraceWriter:
         except Exception as e:  # noqa: BLE001 — 落盘是辅助能力，绝不阻塞主流程
             logger.warning("[trace] 落盘失败 stage=%s trace=%s: %s", stage, self.trace_id, e)
 
+    def save_raw(self, stage: str, data: dict) -> None:
+        """落盘任意 dict 到 {stage}.json（用于 ValidationError 详情等非 Pydantic 数据）。
+
+        与 save_stage 行为一致：同 stage 重复写时旧版本备份为 _vN，
+        失败仅 warning 不阻塞主流程。
+        """
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            target = self.dir / f"{stage}.json"
+            if target.exists():
+                n = self._next_version(stage)
+                os.replace(target, self.dir / f"{stage}_v{n}.json")
+            self._atomic_write_json(target, data)
+            self._written.add(stage)
+        except Exception as e:  # noqa: BLE001 — 落盘是辅助能力，绝不阻塞主流程
+            logger.warning("[trace] save_raw 失败 stage=%s trace=%s: %s", stage, self.trace_id, e)
+
     def save_meta(self, meta: dict) -> None:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)

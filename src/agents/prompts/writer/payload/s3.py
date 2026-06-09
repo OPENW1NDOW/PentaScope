@@ -1,5 +1,5 @@
 """S3 定价策略场景 — Phase 2 payload prompt。"""
-from src.agents.prompts.writer.payload._common import SOURCE_REFS_PROTOCOL
+from src.agents.prompts.writer.payload._common import SCHEMA_FIELD_CONSTRAINTS, SOURCE_REFS_PROTOCOL
 
 S3_PAYLOAD_PROMPT = f"""你是一个资深定价策略顾问，正在产出 S3 定价策略场景的结构化载荷（scenario_payload）。
 
@@ -56,14 +56,20 @@ S3_PAYLOAD_PROMPT = f"""你是一个资深定价策略顾问，正在产出 S3 �
     - source_refs: list[SourceRef], ≥1 条（无来源则**不要生成该条目**）
   - source_refs: list[SourceRef], ≥1 条
 - pricing_page_audit: list[PricingPageAudit]（可空数组）
-  - 每条最多 8 个 audit_scores（rule_name + passed bool）
+  - artifact_id, artifact_type="pricing_page_audit", title
+  - competitor_name (≥1 字)
+  - pricing_page_url: Optional str (≥8 字符的合法 URL，无则 null 但不可空字符串)
+  - audit_scores: list[PricingPageAuditScore]（最多 8 条，**rule_name 必须从下列 8 个枚举中选**，不可自创）
+    - rule_name 枚举：tier_naming_buyer_centric | anchor_pricing_middle_tier | annual_billing_default | feature_gating_clear | cta_copy_aligned | social_proof_at_decision | transparent_feature_comparison | psychological_pricing
+    - passed: bool
+    - note: str (可空)
 - recommendations_summary: PricingRecommendationsSummary
   - recommended_packaging_summary: str (≥50 字)
   - expected_arr_uplift_pct: float Optional (-50 to 200)
-  - expected_arr_uplift_basis: "elasticity_model" | "competitor_benchmark" | "internal_estimate" | "unknown"
-  - expected_arr_uplift_methodology: str（basis=elasticity_model/internal_estimate 时必填）
+  - expected_arr_uplift_basis: 必须从枚举中选 → "measured_pilot" | "competitor_benchmark" | "industry_estimate" | "llm_inferred"（**禁止 elasticity_model / internal_estimate / unknown 等其他值**）
+  - expected_arr_uplift_methodology: str（**当 basis ≠ "llm_inferred" 时必填且 ≥20 字**，否则 schema 会拒绝）
   - expected_uplift_rationale: str (≥20 字)
-  - main_risks: list[Risk], ≥1 条
+  - main_risks: list[Risk], ≥1 条 {{description (≥10), likelihood (low|medium|high), impact (low|medium|high), mitigation (≥10)}}
 - rollout_plan: list[RolloutStep], ≥3 条
   - artifact_id, artifact_type="rollout_step", title
   - step_name (≥4 字), description (≥20 字), duration (str)
@@ -73,6 +79,30 @@ S3_PAYLOAD_PROMPT = f"""你是一个资深定价策略顾问，正在产出 S3 �
 packaging.tiers + competitive_pricing_matrix 引用的 competitor 必须出现在 ScenarioInput.competitors 列表中。
 
 {SOURCE_REFS_PROTOCOL}
+
+{SCHEMA_FIELD_CONSTRAINTS}
+
+【S3 枚举值速查（再次强调，违反必被 schema 拦截）】
+- pricing_baseline.current_pricing_model: freemium | free_trial | subscription | usage_based | perpetual | hybrid | no_pricing_yet
+- value_drivers[*].importance: low | medium | high
+- wtp_research.method: willingness_to_pay_survey | van_westendorp | conjoint | proxy_from_competitor_pricing | expert_estimate
+- wtp_research.confidence: low | medium | high
+- packaging.tiers[*].position: good | better | best | enterprise | free（**且同一 position 不能在多个 tier 重复**）
+- packaging.tiers[*].currency / competitive_pricing_matrix.tiers[*].currency: CNY | USD | EUR | JPY | unknown
+- packaging.tiers[*].billing_unit: per_seat | flat_rate | usage_based | tier_subscription
+- packaging.default_billing_cycle: monthly | annual
+- competitive_pricing_matrix[*].pricing_model: 同 pricing_baseline.current_pricing_model
+- competitive_pricing_matrix[*].free_plan_strategy: freemium | free_trial | no_free_plan（可 null）
+- pricing_page_audit[*].audit_scores[*].rule_name: tier_naming_buyer_centric | anchor_pricing_middle_tier | annual_billing_default | feature_gating_clear | cta_copy_aligned | social_proof_at_decision | transparent_feature_comparison | psychological_pricing
+- recommendations_summary.expected_arr_uplift_basis: measured_pilot | competitor_benchmark | industry_estimate | llm_inferred
+- recommendations_summary.main_risks[*].likelihood / impact: low | medium | high
+
+【高频踩坑】
+- packaging.tiers 只能**有且仅有 1 个 is_recommended=True**
+- packaging.tiers 数量 2-5 条，position 不可重复
+- annual_price ≤ monthly_price × 12（schema 强制）
+- competitive_pricing_matrix.tiers 每条 source_refs 必填 ≥1 条（无来源宁可不生成该条目）
+- expected_arr_uplift_basis 非 llm_inferred 时 methodology 必填且 ≥20 字
 
 只返回 JSON 对象，不要 Markdown，不要解释。
 """

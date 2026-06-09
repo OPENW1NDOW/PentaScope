@@ -102,12 +102,14 @@ def test_executive_summary_subheaders_chinese_only():
 # ============ 4. 附录加参考资料小节 ============
 
 def test_appendix_renders_references_section_from_full_report():
-    """_render_appendix 新增「参考资料」小节，扫全报告 source_refs 收集去重链接。"""
-    # 构造一个含多处 source_refs 的最小 report
+    """_render_appendix 新增「参考资料」小节，扫全报告 source_refs 收集去重链接。
+
+    覆盖范围：BaseReport 通用 5 处 + 5 场景 payload 任意嵌套深度的 source_refs。
+    """
+    # 构造一个含多处 source_refs（含 S4 深嵌套）的最小 report
     report = {
         "appendix": {
             "glossary": {"JTBD": "Jobs to be done"},
-            # data_sources_full 仍可有，参考资料是新加的另一节
         },
         "metadata": {
             "data_sources": [
@@ -132,6 +134,22 @@ def test_appendix_renders_references_section_from_full_report():
         "recommendations": [
             {"source_refs": [{"url": "https://e.com", "title": "E 行业"}]},
         ],
+        # S4 scenario_payload 深嵌套 source_refs（不应漏扫）
+        "scenario_payload": {
+            "scenario_type": "S4",
+            "feature_changes": [
+                {"source_refs": [{"url": "https://f.com", "title": "F 公告"}]},
+            ],
+            "threats": [
+                {"source_refs": [{"url": "https://g.com", "title": "G 监测"}]},
+            ],
+            "battlecards": [
+                {"sections": [
+                    # 再深一层（虚构）source_refs，验证递归
+                    {"source_refs": [{"url": "https://h.com", "title": "H 战卡"}]},
+                ]},
+            ],
+        },
     }
 
     captured_md = []
@@ -162,7 +180,8 @@ def test_appendix_renders_references_section_from_full_report():
     full_text = "\n".join(captured_md)
     # 1. 「参考资料」小节标题出现
     assert "参考资料" in full_text, "附录必须含「参考资料」subheader"
-    # 2. 5 个不重复的链接全部出现（A/B/C/D/E）
+    # 2. BaseReport 通用 5 处链接（A/B/C/D/E）+ S4 scenario_payload 深嵌套（F/G/H）全部出现
     for url in ("https://a.com", "https://b.com", "https://c.com",
-                "https://d.com", "https://e.com"):
-        assert url in full_text, f"参考资料应含 {url}"
+                "https://d.com", "https://e.com",
+                "https://f.com", "https://g.com", "https://h.com"):
+        assert url in full_text, f"参考资料应含 {url}（含 5 场景 payload 深嵌套）"

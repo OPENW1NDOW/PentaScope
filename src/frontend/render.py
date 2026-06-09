@@ -392,10 +392,14 @@ def _render_recommendations(recs: list[dict]) -> None:
 
 
 def _collect_all_references(report: dict) -> list[dict]:
-    """扫全报告所有 source_refs + metadata.data_sources，按 url 去重，保留首次 title。
+    """递归扫全报告（含 5 场景 payload 深嵌套），收集所有 source_refs + metadata.data_sources。
 
-    覆盖：metadata.data_sources / key_findings / analysis_sections /
-    swot.{strengths,weaknesses,opportunities,threats} / recommendations。
+    实现：
+    - 通用递归：遇 dict 含 'source_refs' / 'data_sources' 列表就提取所有 {url,title}
+      然后继续递归 dict/list 子节点
+    - 按 url 去重，保留首次出现的 title
+    - schema 全部统一用 source_refs 命名（10 个 schema 文件验证），所以递归方式
+      无论 5 场景 payload 怎么嵌套都能 cover
     """
     seen_urls: set[str] = set()
     refs: list[dict] = []
@@ -406,24 +410,25 @@ def _collect_all_references(report: dict) -> list[dict]:
         seen_urls.add(url)
         refs.append({"url": url, "title": title or url})
 
-    def _scan_refs(items: list) -> None:
-        for it in items or []:
-            for ref in (it or {}).get("source_refs") or []:
+    def _walk(node) -> None:
+        if isinstance(node, dict):
+            # 提取 source_refs（5 场景 + BaseReport 4 处通用都用这个名）
+            for ref in node.get("source_refs") or []:
                 if isinstance(ref, dict):
                     _add(ref.get("url", ""), ref.get("title", ""))
+            # metadata.data_sources（顶层数据源也是链接来源之一）
+            for ds in node.get("data_sources") or []:
+                if isinstance(ds, dict):
+                    _add(ds.get("url", ""), ds.get("title", ""))
+            # 继续向下递归 dict 子值
+            for v in node.values():
+                if isinstance(v, (dict, list)):
+                    _walk(v)
+        elif isinstance(node, list):
+            for it in node:
+                _walk(it)
 
-    # metadata.data_sources
-    for ds in (report.get("metadata") or {}).get("data_sources") or []:
-        if isinstance(ds, dict):
-            _add(ds.get("url", ""), ds.get("title", ""))
-    # key_findings / analysis_sections / recommendations
-    _scan_refs(report.get("key_findings") or [])
-    _scan_refs(report.get("analysis_sections") or [])
-    _scan_refs(report.get("recommendations") or [])
-    # swot 四象限
-    swot = report.get("swot") or {}
-    for key in ("strengths", "weaknesses", "opportunities", "threats"):
-        _scan_refs(swot.get(key) or [])
+    _walk(report)
     return refs
 
 

@@ -281,9 +281,19 @@ def _render_analysis_sections(sections: list[dict]) -> None:
         return
     st.header("详细章节")
     for sec in sections:
-        st.subheader(sec.get("heading", ""))
-        st.caption(f"section_type: `{sec.get('section_type', '')}`")
-        st.markdown(sec.get("narrative", ""))
+        # 用 markdown HTML 包成 .section-card 应用主色剩头 + 浅色背景
+        heading = sec.get("heading", "")
+        section_type = sec.get("section_type", "")
+        narrative = sec.get("narrative", "") or ""
+        st.markdown(
+            f"""<div class="section-card">
+  <h3 style="margin-top:0;color:var(--color-primary)">{heading}</h3>
+  <small style="color:var(--color-text-secondary)">section_type: <code>{section_type}</code></small>
+</div>""",
+            unsafe_allow_html=True,
+        )
+        # narrative 走 st.markdown 保留 markdown 渲染（不进 .section-card 内层避免 HTML 嵌套问题）
+        st.markdown(narrative)
         _render_source_refs(sec.get("source_refs"))
 
 

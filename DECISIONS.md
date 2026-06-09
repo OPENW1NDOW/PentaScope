@@ -15,6 +15,92 @@
 
 ---
 
+## 2026-06-10（前端美化 + 报告导出 session）: 6 个产品决策 + 7 个技术决策
+
+### 6 个产品决策（PD-1 ~ PD-6）
+
+#### PD-1: Loading 阶段化放弃，仅 spinner + 静态文案
+- 选择：保留默认 `st.spinner("正在分析中...")`，不做 4 阶段进度条
+- 理由：CONTRACT 3「演示期间用户能看到运行进度」与现有 trace_writer 时序不兼容——文件 mtime 是阶段**完成**时间不是开始/进行中时间，且 graph 运行期间 meta.json::node_trace / retry_count 都不写入；要做实时进度需改后端 routes.py 拆 /analyze/start + 加心跳，与「不动 graph 拓扑」目标矛盾。中文评委 demo 不会发现差异
+- 备选 a（保留 + 后端拆 /analyze/start + node 心跳）：实时进度最佳，但工时 +0.5 天 + 改后端契约
+- 备选 c（仅轮询 status 不拆 4 阶段）：折中方案，仍有"伪进度"嫌疑
+- doubt-driven 跨模型 Codex 锁定 C2-C4 三个 critical 都源于此根因，是范围决策的关键
+
+#### PD-2: markdown 导出宽松字段覆盖（关键字段，非全字段）
+- 选择：每场景渲染常用字段 + 单测断言关键字段；放弃 CONTRACT 4「no field omission」
+- 理由：5 场景 schema 嵌套深（如 S3 pricing_page_audit 8 法则、S2 competitor_recommendations 含 PESTEL）；全字段覆盖 +0.5-1 天，但 1 万字 markdown 评委不会盯每个嵌套字段
+- 备选 a（严格全字段）：未来扩展不漏，但工时翻倍
+
+#### PD-3: confidence_level 上独立 KPI 卡（5 张布局）
+- 选择：KPI 由 4 张改 5 张，含 confidence_level 独立卡 + raw_quality_score 字段保留 cap 前真实分
+- 理由：confidence_level 是评分项「输出可信度」(35%) 核心展示位；查近 5 trace 实测 high=80% 但仍是答辩硬指标必须独立位
+- 备选 b（合入场景标签卡作副信息）：节省一卡位，但失去强可见性
+- raw_quality_score 配套：ReportMetadata 加新字段（5 行），inspector cap 前回填（1 行）；KPI 卡先显 raw 再附「cap 后 X.XX」副信息，让用户看到 cap 前 vs cap 后真实差
+
+#### PD-4: HTML 全内嵌（字体 + Plotly + CSS）
+- 选择：字体 woff2 base64 + Plotly include_plotlyjs=True + CSS inline 全部内嵌单 HTML，单文件 3-5MB
+- 理由：答辩会议室断网风险（CDN 加载失败 → 字体回退 + Plotly 图表全空白）对核心卖点冲击大；3-5MB 文件大小可接受
+- 备选 a（CDN，spec v1）：100KB 文件但断网失效
+- 备选 b（仅 Plotly 内嵌）：折中，字体仍 CDN 失效但图表可用
+- 字体子集选 latin（不含中文）：Plus Jakarta Sans + Fira Code 是英文标题/数字字体，中文走 system stack fallback；woff2 latin 子集 25KB 远小于全字符 200KB+
+
+#### PD-5: emoji 选择性纯化（标题/导航换 Material Symbols；KPI/badge/状态点保留 emoji）
+- 选择：标题 / 导航 / 剩头 emoji 全换 Material Symbols；KPI/badge/状态点 emoji 保留
+- 理由：UI/UX Pro Max skill 标"no-emoji-icons"是西文 ASCII 设计语境的最佳实践，但中文评委 demo 场景下 🟢🟡🔴 状态点比扁平 Material circle 语义识别更快；视觉一致性的代价超过收益
+- doubt-driven 后期 Cooper 反转：看了 git history 后发现 7 处 emoji 是 06-08 既有设计 + 1 处本 session 新增，全保留更省事
+- 备选 a（全量纯化）：Material circle 颜色严格匹配主题色 #16A34A 等，但工时高 + 实测 st.button 不支持嵌套 HTML
+- 备选 c（emoji 全保留）：跟现状一致
+
+#### PD-6: inspector 改动「~5-6 行」软目标（不强压 4 行）
+- 选择：CONTRACT 1 「inspector 4 行」改为「~5-6 行」软目标
+- 理由：raw_quality_score 加字段需 5 行真实代码（赋值 + cap 前赋 raw + 注释），强压到 4 行（合并赋值）牺牲可读性
+- 备选 a（硬约束 4 行）：可读性下降；备选 c（不限）：CONTRACT 1 「小改动」表述失效
+
+### 7 个关键技术决策
+
+#### C5 修复（跨模型独占发现）：HTML 导出 narrative 必须 sanitize + autoescape
+- 选择：`_safe_markdown()` 走 `markdown.markdown()` → `nh3.clean()` 三步；Jinja2 模板 `autoescape=select_autoescape(["html","j2"])`；filter `safe_md` 返回值用 `markupsafe.Markup` 标记可信
+- 理由：narrative 是 LLM 生成 + 含网页爬来文本，可能含 `<script>alert(1)</script>` 之类攻击向量；nh3 strip script/iframe/javascript: URI / inline event handler；autoescape 对其他字段（title 等）防 XSS。这条单模型完全漏掉，跨模型 Codex 抓到的 critical
+- nh3 vs bleach：nh3 是 Rust ammonia 的 Python wrapper，预编译 wheel for win/mac/linux，零原生编译依赖
+- 备选（不 sanitize 直接 raw_html）：stored XSS 漏洞，CONTRACT 2 不引入风险依赖红线
+
+#### C6: requirements.txt 显式加 markdown / jinja2 / nh3
+- 选择：requirements.txt 显式加 3 个依赖；不依赖 fastapi 传递依赖
+- 理由：spec v1 假设「jinja2 已是 fastapi 传递依赖、markdown 已在 requirements」**完全错** —— 实测 markdown / nh3 都不在；jinja2 是 fastapi 间接依赖但稳健做法是显式
+- 备选（不加，靠传递依赖）：将来 fastapi 升级断依赖链就崩
+
+#### theme.py 用 st.html() 不用 st.markdown(unsafe_allow_html=True) 注入 `<style>`（验收阶段发现）
+- 选择：`inject_theme()` 走 `st.html(_THEME_CSS)`
+- 理由：`st.markdown(unsafe_allow_html=True)` 经 CommonMark/GFM markdown 引擎处理，type 6 HTML block (`<style>`) 遇连续空行被判定为 block 结束，剩余 CSS 文本回到 markdown 解析模式被当可见文本输出（Cooper 截图实证）
+- st.html 直接走 sanitized HTML 注入路径，是 Streamlit 1.33+ 注入 `<style>` 的官方方式
+
+#### 导出按钮 inline `<a download>` 而非 st.download_button（M1 修入）
+- 选择：`st.markdown('<a href="..." download class="btn-export">导出 Markdown</a>')` 直链
+- 理由：`st.download_button` 要求 data 已 materialized（不接受 lazy callable）；HTML `<a download>` 让浏览器直接调后端 GET /export 路由，零前端预拉，单点击即下载
+- CSS 必须 `text-decoration: none !important`（Streamlit 默认 a 选择器优先级高过 .btn-export，普通 `text-decoration: none` 不生效，下划线仍显示）
+
+#### 参考资料扫描通用递归（不显式枚举字段）
+- 选择：`_collect_all_references` 用 `_walk(dict_or_list)` 通用递归，遇任何节点含 `source_refs` 或 `data_sources` 就提取
+- 理由：原 5 处显式枚举（metadata/key_findings/analysis_sections/swot/recommendations）漏 5 场景 payload 内嵌 source_refs（~20+ 嵌套位置）；schema 全部统一 `source_refs` 命名（10 个 schema 验证），递归方式无论嵌套深度都 cover；未来 schema 加新嵌套字段自动 cover
+- 备选（显式枚举）：每加一个 scenario / 嵌套字段都要改代码，遗漏风险高
+
+#### markupsafe.Markup 包裹 _safe_markdown 返回值（Cooper 验收发现）
+- 选择：`_safe_markdown` 返回 `markupsafe.Markup(cleaned_html)` 而非 `str`
+- 理由：Jinja2 autoescape=True 会把 `str` 类型当不可信文本二次转义，`<h3>` → `&lt;h3&gt;`；`Markup` 标记可信，autoescape 不再二次转义；nh3 已做完整 sanitize，单层防护够用
+- 备选（关 autoescape）：失去对 title / scenario 等字段的 XSS 防护，C5 防线削弱
+
+#### KPI 卡 CSS flex 等高（Cooper 验收发现）
+- 选择：`.kpi-card { display: flex; flex-direction: column; justify-content: space-between; min-height: 120px }` + `.kpi-card-sub { min-height: 1.4em }`
+- 理由：sub 字段长短不一（"高 18 中 6 低 0" vs ""）导致 5 卡 div 自然高度差；flex + min-height 强制 5 卡严格等高、内部 label/main/sub 垂直均布
+
+### 已停用的 skill：systematic-debugging（实战后判定）
+
+- 选择：本 session 验收阶段调用了 `superpowers:systematic-debugging` skill 一次（修 CSS 文本可见 bug）后，Cooper 判定「太重」→ 后续 7 个 bug 全部仅用 `agent-skills:test` 的 Prove-It Pattern，systematic-debugging 不再调用
+- 理由：流程 4 阶段（根因 → 模式 → 假设 → 实施）对单 1 行 bug 是过度工程；3 个结构性测试是「常量字符串属性测了等于没测」；流程鼓励形式主义。Prove-It 写测试是动作纪律不是流程纪律，5-10 分钟成本高收益
+- 项目记忆 `feedback_bugfix_skills.md` 已记录该决策
+
+---
+
 ## 2026-06-08（深夜 / E-G 实施）: 5 个关键技术决策
 
 ### D3 修复 3 Critical（异常路由 + S2 推荐去重 + 路径穿越校验）

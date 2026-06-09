@@ -16,6 +16,45 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ---
 
+## 2026-06-10（前端美化 + 报告导出，brainstorming → doubt → plan → execute 全流程 + 7 轮验收修复）
+- 完成（单 session、严格 brainstorming → doubt-driven 双轮 → writing-plans → executing-plans 全流程 + 验收阶段 7 个 bug Prove-It 修复，**26 个 commit + S2 真跑 quality_score=0.650 happy path**）：
+  - **brainstorming**：Cooper 7 条澄清问题 + 3 trade-off 决策（Loading 路径 / emoji 策略 / HTML 字体策略）→ spec v1 落盘
+  - **doubt-driven 双轮**：单模型 code-reviewer agent 20 条 + 跨模型 codex (azure_openai/gpt-5.5) 15 条 → 合并去重 6 critical / 12 major / 7 minor
+  - **跨模型独占发现 critical（C5）**：HTML 导出 narrative→html 必须 sanitize / autoescape，否则 stored XSS。这条单模型完全漏掉，再次验证「双轮 doubt-driven 不冗余」（继 06-08 v3 spec 的 source_urls 字段独占发现后又一次跨模型独占 critical）
+  - **Cooper 6 条产品决策（PD-1~6）**：Loading 阶段化放弃 / markdown 字段宽松覆盖 / KPI 5 卡含 confidence_level / HTML 全内嵌 / emoji 选择性纯化 / inspector ~5-6 行软目标。**额外范围决策选 b**：仅做主题色 + 导出，舍弃场景卡重做 + Loading 阶段化（避开 C2/M3 风险）
+  - **spec v2 重写**：v1 670 行减为 v2 ~500 行（范围收敛）；6 critical / 12 major 全部覆盖或显式标 v2 范围外
+  - **plan 18 task**：file/function 级别拆细
+  - **execute 18 task**：18 commits 干净到位（schema → inspector → 依赖 → theme.py → app.py → render.py KPI/section/action/导出按钮 → exporters 包 → markdown.py → routes export → html.py + 模板 → 各类测试）
+  - **验收阶段 7 轮 Prove-It 修复**：
+    1. **fix22**：theme.py `st.markdown(unsafe_allow_html=True)` 改 `st.html()`（CommonMark type 6 HTML block 遇空行截断 `<style>` 块，CSS 文本作为可见内容显示）
+    2. **fix23**：导出按钮删 Material Symbols `<span>download</span>`（Streamlit iframe 字体 ligature 失效字面 download 字母透出）+ KPI 5 卡 flex 等高（`min-height:120px` + `flex-direction:column` + `justify-content:space-between` + sub `min-height:1.4em` 保 5 卡严格对齐）
+    3. **fix24**：导出按钮加 `text-decoration: none !important`（Streamlit 默认 `a` 选择器优先级高过 `.btn-export`）+ 「一图看懂」改「核心要点」+ 执行摘要子标题去英文（`背景定位 Context` → `背景定位`）+ 附录加「参考资料」小节（扫全报告 source_refs 收集去重链接）
+    4. **fix25**：`_collect_all_references` 改通用递归（原 5 处枚举漏 5 场景 payload 内嵌 source_refs，~20+ 个嵌套位置）—— `_walk(dict_or_list)` 遇任何节点含 `source_refs` 或 `data_sources` 就提取，无论嵌套多深都 cover
+    5. **fix26**：HTML 导出 narrative markdown 标签被 Jinja2 autoescape 二次转义（`<h3>` 显示为字面 `&lt;h3&gt;`）—— `_safe_markdown` 返回值改 `markupsafe.Markup` 标记可信 HTML（nh3 已 sanitize 单层防护够用）
+    6. **fix27**：KPI 第 4 张卡「数据源数」→「参考资料」（跟附录小节名对齐）
+    7. **fix28**：rebase 远程 11d65cc 后顺手修 ruff F541
+  - **关键技术修复（v1 doubt-driven 暴露的 6 critical）**：C1 前端 import 路径 / C5 stored XSS sanitize / C6 markdown/jinja2/nh3 加 requirements / M1-M2 导出走直链 a download / M9 markdown 5 场景常用字段覆盖（PD-2 宽松）
+  - **Latent issue 识别但 v2 范围外**：03_report.json 落盘的 quality_score 永远 None（writer 节点先于 inspector 落盘）—— v2 KPI 卡通过 /analyze 实时返回的内存对象拿到分数，绕过此问题
+  - **新增文件**：3 个新代码文件（theme.py / exporters/markdown.py / exporters/html.py）+ 2 个字体 woff2（PlusJakartaSans + FiraCode latin 子集）+ 1 个 Jinja2 模板（report.html.j2）+ 8 个测试文件（exporters_markdown / exporters_html / exporters_html_xss / export_path_traversal / inspector_raw_quality_score / emoji_lint / integration/export_e2e / kpi_strip_visual + render_visual_polish + frontend_theme）
+  - **改动文件**：6 个（schemas/report.py 加 raw_quality_score / agents/inspector.py cap 前回填 / api/routes.py 加 export 路由 / frontend/app.py 调 inject_theme / frontend/render.py 加 KPI/卡片/导出按钮 + 4 处视觉打磨 / requirements.txt）
+  - **测试增长**：387 → **445 passed**（+58 测试 / 5 skipped / 2 xfailed 不变 / ruff clean）
+  - **真实跑通**：S2 trace `20260610-070926-2c23fb`，跑 4 个 AI 代码生成工具竞品（Cursor/Devin/通义灵码/GitHub Copilot），collector 平均 completeness=0.79，writer phase 3 第 2 轮 6/6 全成功（无 placeholder 降级）→ **quality_score=0.650 raw 真实分（无 cap 触发）**，coverage=1.00 满分
+  - **测试**：445 passed / 5 skipped / 2 xfailed / ruff clean
+- 进行中：本 session 收尾 + push
+- 下一步：
+  1. push origin master 同步 26 个 commit + 文档
+  2. 答辩准备（PRD / DECISIONS / 评分项映射，本次 + 06-09~10 总计 28 个 fix 是「反馈闭环 + 容错降级」实证素材）
+  3. 后续迭代：profile.sources=0 旧 bug（collector 抓回来的 URL 没持久化到 profile.sources，writer 阶段 LLM 自己从语料摘 5 条入 metadata.data_sources）—— 不影响主流程，留作下个 session 修
+- 阻塞：无
+- 协作模型实证：
+  - **doubt-driven 双轮再次验证不冗余**：跨模型 Codex 抓到单模型完全漏掉的 stored XSS critical (C5)
+  - **systematic-debugging skill 实战后判定停用**（feedback_bugfix_skills.md 已记入项目记忆）：4 阶段流程对单 1 行 bug 太重，Cooper 反思后选只用 Prove-It Pattern；根因分析自己脑子里做即可，不实例化为流程
+  - **Prove-It Pattern 强度**：本 session 验收阶段 7 个 bug 全部走「先红测试 → 修 → 测试绿 → 全套零回归」，58 个新测试全过、ruff clean
+  - **PD 抽象**：6 条产品决策清单 + 1 条范围决策让 Cooper 1 次拍板进 spec 重写；Cooper 看实测数据（confidence_level high=80%）后修订 PD-3 选择 a 而非 b
+- 安全提醒：本 session 全程纯代码 + 字体 woff2 资源 + nh3 sanitizer 依赖，无新增 key
+
+---
+
 ## 2026-06-09 ~ 06-10（端到端测试 + 21 个 fix 大规模 bug 修复 session）
 - 完成（单 session、systematic-debugging + agent-skills:test Prove-It pattern 严格模式）：
   - **5 场景端到端跑通**：S1/S2/S3/S4/S5 各跑出 03_report.json，**3 个 happy path（S2 真跑 0.800 / S3 0.836 / S5 fix20 兜底后跑通）+ 2 个 max_retries 反馈闭环正常路径（S1 / S4）**

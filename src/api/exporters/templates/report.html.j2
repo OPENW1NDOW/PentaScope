@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ report.title or "竞品分析报告" }}</title>
+  <style>
+    @font-face {
+      font-family: 'Plus Jakarta Sans';
+      src: url(data:font/woff2;base64,{{ font_jakarta_regular }}) format('woff2');
+      font-weight: 400 700;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Fira Code';
+      src: url(data:font/woff2;base64,{{ font_fira }}) format('woff2');
+      font-display: swap;
+    }
+    :root {
+      --color-primary: #1E40AF;
+      --color-secondary: #3B82F6;
+      --color-accent: #D97706;
+      --color-bg: #F8FAFC;
+      --color-surface: #FFFFFF;
+      --color-text: #0F172A;
+      --color-text-secondary: #475569;
+      --color-border: #DBEAFE;
+      --color-danger: #DC2626;
+      --color-success: #16A34A;
+      --color-warning: #D97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, "Segoe UI", system-ui, sans-serif;
+      background: var(--color-bg);
+      padding: 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+      color: var(--color-text);
+      line-height: 1.6;
+    }
+    h1, h2, h3 { color: var(--color-primary); }
+    h1 { margin: 0 0 8px; }
+    h2 { margin-top: 32px; padding-bottom: 8px; border-bottom: 2px solid var(--color-border); }
+    .num { font-family: 'Fira Code', monospace; }
+    .hero {
+      background: var(--color-surface);
+      padding: 24px;
+      border-left: 4px solid var(--color-primary);
+      border-radius: 8px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+    }
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .kpi-card {
+      background: var(--color-surface);
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+      border-left: 3px solid var(--color-primary);
+    }
+    .kpi-card-label { font-size: 12px; color: var(--color-text-secondary); }
+    .kpi-card-main { font-size: 28px; font-weight: 600; color: var(--color-primary); margin: 4px 0; }
+    .kpi-card-sub { font-size: 12px; color: var(--color-text-secondary); }
+    .section-card {
+      background: var(--color-surface);
+      margin: 16px 0;
+      padding: 20px;
+      border-left: 4px solid var(--color-primary);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+    }
+    .section-card h3 { margin-top: 0; }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+      margin: 12px 0;
+    }
+    .action-card {
+      background: var(--color-surface);
+      padding: 16px;
+      border-radius: 8px;
+      border-left: 4px solid var(--color-accent);
+      box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+    }
+    .action-card.priority-critical { border-left-color: var(--color-danger); }
+    .action-card.priority-important { border-left-color: var(--color-warning); }
+    .action-card.priority-consider { border-left-color: var(--color-primary); }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+    th, td { border: 1px solid var(--color-border); padding: 8px 12px; text-align: left; }
+    th { background: #E9EEF6; }
+    code { background: #E9EEF6; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 13px; }
+    a { color: var(--color-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .source-refs { font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; }
+    @media print { body { padding: 8px; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>{{ report.title or "竞品分析报告" }}</h1>
+    {% if report.subtitle %}<p>{{ report.subtitle }}</p>{% endif %}
+    <small class="num">Trace: {{ trace_id }} · 生成于 {{ generated_at }}</small>
+  </header>
+
+  {# KPI 5 卡 #}
+  {% set meta = report.metadata or {} %}
+  <div class="kpi-strip">
+    <div class="kpi-card">
+      <div class="kpi-card-label">质检评分</div>
+      <div class="kpi-card-main num">
+        {%- set raw = meta.raw_quality_score -%}
+        {%- set final = meta.quality_score -%}
+        {%- if raw is not none -%}{{ "%.3f"|format(raw) }}
+        {%- elif final is not none -%}{{ "%.3f"|format(final) }}
+        {%- else -%}—{%- endif -%}
+      </div>
+      <div class="kpi-card-sub">
+        {%- if "capped" in (meta.quality_score_calculation_note or "") and final is not none and raw is not none and final < raw -%}
+          cap 后 {{ "%.2f"|format(final) }}
+        {%- elif raw is none and final is none -%}
+          未质检
+        {%- endif -%}
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">场景标签</div>
+      <div class="kpi-card-main">{{ meta.scenario or "—" }}</div>
+      <div class="kpi-card-sub">{{ scenario_label }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">竞品数量</div>
+      <div class="kpi-card-main num">{{ ((report.scope or {}).competitors or [])|length }}</div>
+      <div class="kpi-card-sub">{{ competitors_sub }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">数据源数</div>
+      <div class="kpi-card-main num">{{ (meta.data_sources or [])|length }}</div>
+      <div class="kpi-card-sub">{{ sources_sub }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">可信度</div>
+      <div class="kpi-card-main" style="color:{{ confidence_color }}">{{ meta.confidence_level or "—" }}</div>
+      <div class="kpi-card-sub"></div>
+    </div>
+  </div>
+
+  {# at_a_glance #}
+  {% if report.at_a_glance %}
+    <h2>一图看懂</h2>
+    <ul>
+    {% for it in report.at_a_glance %}<li>{{ it }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {# executive_summary #}
+  {% if report.executive_summary %}
+    {% set es = report.executive_summary %}
+    <h2>执行摘要</h2>
+    {% if es.context %}<h3>背景定位</h3><div>{{ es.context | safe_md }}</div>{% endif %}
+    {% if es.core_thesis %}<h3>核心论断</h3><div>{{ es.core_thesis | safe_md }}</div>{% endif %}
+    {% if es.implications %}<h3>现实启示</h3><div>{{ es.implications | safe_md }}</div>{% endif %}
+    {% if es.key_findings_brief %}
+      <h3>关键发现速览</h3>
+      <ul>{% for f in es.key_findings_brief %}<li>{{ f }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if es.path_forward %}
+      <h3>行动路径</h3>
+      <ul>{% for p in es.path_forward %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endif %}
+
+  {# scope + methodology #}
+  {% if report.scope %}
+    <h2>分析范围</h2>
+    <ul>
+      <li><strong>竞品</strong>：{{ (report.scope.competitors or [])|join(", ") }}</li>
+      {% if report.scope.time_window %}<li><strong>时间窗</strong>：{{ report.scope.time_window }}</li>{% endif %}
+    </ul>
+  {% endif %}
+  {% if report.methodology and report.methodology.data_collection_approach %}
+    <h2>方法论</h2>
+    <div>{{ report.methodology.data_collection_approach | safe_md }}</div>
+  {% endif %}
+
+  {# 关键发现 #}
+  {% if report.key_findings %}
+    <h2>关键发现</h2>
+    {% for f in report.key_findings %}
+      <div class="section-card">
+        <h3>Finding {{ loop.index }}</h3>
+        <div>{{ f.statement | safe_md }}</div>
+        {% if f.evidence %}<small><strong>依据</strong>：{{ f.evidence }}</small><br>{% endif %}
+        {% if f.implication %}<small><strong>启示</strong>：{{ f.implication }}</small>{% endif %}
+        {% if f.source_refs %}
+          <div class="source-refs">来源：
+            {% for ref in f.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {# 详细章节 #}
+  {% if report.analysis_sections %}
+    <h2>详细章节</h2>
+    {% for section in report.analysis_sections %}
+      <div class="section-card">
+        <h3>{{ section.heading }}</h3>
+        <small>section_type: <code>{{ section.section_type }}</code></small>
+        <div>{{ section.narrative | safe_md }}</div>
+        {% if section.source_refs %}
+          <div class="source-refs">来源：
+            {% for ref in section.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {# SWOT #}
+  {% if report.swot %}
+    <h2>SWOT 分析</h2>
+    {% for key, label in [("strengths","优势 S"), ("weaknesses","劣势 W"), ("opportunities","机会 O"), ("threats","威胁 T")] %}
+      {% if report.swot[key] %}
+        <h3>{{ label }}</h3>
+        <ul>
+          {% for e in report.swot[key] %}
+            <li><strong>{{ e.point }}</strong>{% if e.evidence %} — {{ e.evidence }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {# 行动建议 #}
+  {% if report.recommendations %}
+    <h2>行动建议</h2>
+    {% set tl_groups = {"immediate":[], "short_term":[], "long_term":[]} %}
+    {% for r in report.recommendations %}{% set _ = tl_groups[r.timeline or "long_term"].append(r) %}{% endfor %}
+    {% for tl_key, tl_label in [("immediate","即时（1 个月内）"), ("short_term","短期（3 个月内）"), ("long_term","长期（6-12 个月）")] %}
+      {% if tl_groups[tl_key] %}
+        <h3>{{ tl_label }}</h3>
+        <div class="action-grid">
+          {% for r in tl_groups[tl_key] %}
+            <div class="action-card priority-{{ r.priority }}">
+              <strong>[{{ r.priority }}]</strong> {{ r.action }}
+              {% if r.target_role %}<br><small>对象：{{ r.target_role }}</small>{% endif %}
+              {% if r.rationale %}<br><small>依据：{{ r.rationale }}</small>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {# 5 场景图表 #}
+  {% if scenario_charts %}
+    <h2>场景专属可视化（{{ scenario_type }}）</h2>
+    {% for chart in scenario_charts %}
+      <div>{{ chart | safe }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <hr style="margin-top:48px">
+  <small>由 AI 驱动竞品分析 Agent 协作系统生成 · trace <code>{{ trace_id }}</code></small>
+</body>
+</html>

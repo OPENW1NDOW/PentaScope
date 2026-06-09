@@ -164,11 +164,36 @@ def build_graph(llm, http, parser, trace_writer=None):
         return {"profiles": profiles, "analysis_goal": goal, "current_node": "collector"}
 
     async def analyzer_node(state: AnalysisState) -> dict:
+        """[06-09 修复] analyzer 抛 ValueError 时兜底注入 feedback，不让 graph 崩溃。
+
+        analyzer.analyze 内部 LLM 重试 1 次后仍 ValidationError 会 raise ValueError——
+        修前没 try/except 直接冒到 LangGraph 崩溃。修后注入 feedback 让 should_continue 路由。
+        """
         logger.info("[graph] → analyzer")
         node_trace.append("analyzer")
         feedback = state.get("feedback")
         issues = feedback.issues if feedback is not None else None
-        analysis = await analyzer.analyze(state["profiles"], feedback_issues=issues)
+        try:
+            analysis = await analyzer.analyze(state["profiles"], feedback_issues=issues)
+        except Exception as e:
+            logger.warning("[graph] analyzer 抛 %s: %s", type(e).__name__, str(e)[:200])
+            failed_feedback = RejectionFeedback(
+                passed=False,
+                issues=[FeedbackIssue(
+                    severity="critical",
+                    agent="analyzer",
+                    field="analyzer_validation",
+                    reason=str(e)[:200],
+                    suggestion="LLM 输出不符合 CompetitiveAnalysis schema，graph 重试",
+                )],
+                retry_count=state.get("retry_count", 0),
+                max_retries=state.get("max_retries", 2),
+            )
+            return {
+                "feedback": failed_feedback,
+                "current_node": "analyzer",
+                "retry_count": state.get("retry_count", 0) + 1,
+            }
         _save("02_analysis", analysis)
         return {"analysis": analysis, "current_node": "analyzer"}
 
@@ -302,7 +327,11 @@ def build_graph(llm, http, parser, trace_writer=None):
             }
 
     async def inspector_node(state: AnalysisState) -> dict:
-        """质检节点。[v3] report 为 None 时（writer 抛错走 feedback）skip 质检。"""
+        """质检节点。[v3] report 为 None 时（writer 抛错走 feedback）skip 质检。
+
+        [06-09 修复] inspector 打回（passed=False）时 retry_count +1，
+        否则 inspector 反复打回 analyzer/writer 永远不会触发 max_retries 强制结束。
+        """
         logger.info("[graph] → inspector")
         node_trace.append("inspector")
         report = state.get("report")
@@ -319,7 +348,15 @@ def build_graph(llm, http, parser, trace_writer=None):
             max_retries=state.get("max_retries", 2),
         )
         _save("04_feedback", feedback)
-        return {"feedback": feedback, "current_node": "inspector"}
+        # 打回时 +1 retry_count；passed=True 不增（直接 end）
+        next_retry = state.get("retry_count", 0)
+        if not feedback.passed:
+            next_retry += 1
+        return {
+            "feedback": feedback,
+            "current_node": "inspector",
+            "retry_count": next_retry,
+        }
 
     def should_continue(state: AnalysisState) -> str:
         """v3 should_continue：按 feedback.issues[*].agent 路由回 collector/analyzer/writer，

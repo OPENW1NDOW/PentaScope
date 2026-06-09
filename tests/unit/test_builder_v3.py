@@ -329,3 +329,65 @@ async def test_inspector_node_skips_when_report_none(monkeypatch):
     inspect_mock.assert_not_called()
     assert result["current_node"] == "inspector"
     assert "feedback" not in result
+
+
+@pytest.mark.asyncio
+async def test_inspector_node_increments_retry_when_rejected(monkeypatch):
+    """[06-09 修复] inspector 打回（passed=False）时 retry_count +1，否则死循环。"""
+    from src.schemas.feedback import FeedbackIssue, RejectionFeedback
+
+    fb = RejectionFeedback(
+        passed=False,
+        issues=[FeedbackIssue(agent="writer", field="x", severity="major", reason="r")],
+        retry_count=1, max_retries=2,
+    )
+    monkeypatch.setattr(
+        "src.agents.inspector.InspectorAgent.inspect",
+        AsyncMock(return_value=fb),
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    state["report"] = MagicMock()
+    state["retry_count"] = 1
+    result = await graph.nodes["inspector"].ainvoke(state)
+
+    assert result["retry_count"] == 2  # 从 1 → 2
+
+
+@pytest.mark.asyncio
+async def test_inspector_node_keeps_retry_when_passed(monkeypatch):
+    """inspector 通过（passed=True）时 retry_count 不增。"""
+    from src.schemas.feedback import RejectionFeedback
+
+    fb = RejectionFeedback(passed=True, issues=[], retry_count=1, max_retries=2)
+    monkeypatch.setattr(
+        "src.agents.inspector.InspectorAgent.inspect",
+        AsyncMock(return_value=fb),
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    state["report"] = MagicMock()
+    state["retry_count"] = 1
+    result = await graph.nodes["inspector"].ainvoke(state)
+
+    assert result["retry_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_analyzer_node_catches_exception_and_injects_feedback(monkeypatch):
+    """[06-09 修复] analyzer 抛 ValueError 时 graph 不应崩溃，注入 feedback 走异常路由。"""
+    monkeypatch.setattr(
+        "src.agents.analyzer.AnalyzerAgent.analyze",
+        AsyncMock(side_effect=ValueError("LLM output validation failed")),
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    result = await graph.nodes["analyzer"].ainvoke(state)
+
+    assert "feedback" in result
+    assert result["feedback"].passed is False
+    assert result["feedback"].issues[0].agent == "analyzer"
+    assert result["retry_count"] == 1  # 0 → 1

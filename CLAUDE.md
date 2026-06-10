@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-字节跳动 CIS 部门 AI 全栈项目挑战赛课题。目标是构建一个多 Agent 协作的竞品分析系统，由信息采集、分析师、报告撰写、质检四个专职 Agent 组成（S2 场景前置一个推荐 Agent），完成从公开信息采集到结构化竞品报告的全链路产出。
+面向产品经理 / 市场分析师的多 Agent 竞品分析系统。由信息采集、分析师、报告撰写、质检四个专职 Agent 组成（S2 场景前置一个推荐 Agent），完成从公开信息采集到结构化竞品报告的全链路产出。
 
 ## 上下文恢复
 
@@ -24,13 +24,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **前端**: Streamlit + Plotly（调用后端 API，前后端分离）
 - **数据校验**: Pydantic v2；HTTP 用 httpx；HTML 解析用 BeautifulSoup4
 
-## 核心考察点（来自课题评分标准）
+## 设计取向
 
-1. 多 Agent 协作与输出可信度（35%）— 角色划分、结构化消息、反馈闭环、信息溯源
-2. 技术深度与工程完整度（25%）— 端到端链路、可观测性、错误恢复
-3. 业务价值与产品体验（20%）— 效率提升、交互设计、业务闭环
-4. 代码质量与文档（10%）— 模块化、文档齐全、Git 规范
-5. 合规与答辩（10%）— 数据采集合规、隐私安全
+1. 多 Agent 协作与输出可信度 — 角色划分、结构化消息、反馈闭环、信息溯源
+2. 技术深度与工程完整度 — 端到端链路、可观测性、错误恢复
+3. 业务价值与产品体验 — 效率提升、交互设计、业务闭环
+4. 代码质量与文档 — 模块化、文档齐全、Git 规范
+5. 合规与安全 — 数据采集合规、隐私安全
 
 ## Schema 设计
 
@@ -111,7 +111,7 @@ ruff check --fix src tests               # 自动修复
 
 - **场景路由**（v3）：`set_conditional_entry_point` 按 `ScenarioInput.scenario` 分流——S2「市场进入」先走 `recommender` 推荐 Top 3-5 玩家，再 union 到 `collector`；其余 4 个场景直接进 `collector`。
 - **共享状态** `src/graph/state.py::AnalysisState`：TypedDict，节点间通过返回 dict 增量更新（`profiles`/`analysis`/`report`/`feedback`/`competitor_recommendations`/`retry_count` 等）。所有跨 Agent 数据都是 Pydantic 模型，而非裸 dict。
-- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`；inspector 打回时 `retry_count +1`（06-09 修复，否则永远不触发上限），`retry_count >= max_retries`（默认 2）则强制结束。这是课题要求的「质检→上游反馈闭环」实现点。
+- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`；inspector 打回时 `retry_count +1`（06-09 修复，否则永远不触发上限），`retry_count >= max_retries`（默认 2）则强制结束。这是产品要求的「质检→上游反馈闭环」实现点。
 - **Agent**（`src/agents/`）：
   - `RecommenderAgent.recommend`（S2 入口）— 搜索行业头部玩家 + LLM 推理产出 ≥3 条 `CompetitorRecommendations`
   - `CollectorAgent.collect` — 持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），编排「Tavily 搜索 → 质量闸门 → 全空兜底」主线；Tavily 一次调用直返带正文 SourceResult，跳过传统三步走
@@ -143,5 +143,5 @@ ruff check --fix src tests               # 自动修复
 
   前端 `src/frontend/app.py` + `src/frontend/render.py`（5 场景 BaseReport 渲染 + Plotly 图表：S1 5 维雷达、S2 五力蜘蛛网、S5 Perceptual Map / Magic Quadrant / Strategy Canvas）。
 
-- **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（评分项之一，勿移除）。
+- **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（核心设计取向之一，勿移除）。
 - **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。

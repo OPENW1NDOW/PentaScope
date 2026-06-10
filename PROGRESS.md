@@ -43,7 +43,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 - 进行中：本 session 收尾 + push
 - 下一步：
   1. push origin master 同步 26 个 commit + 文档
-  2. 答辩准备（PRD / DECISIONS / 评分项映射，本次 + 06-09~10 总计 28 个 fix 是「反馈闭环 + 容错降级」实证素材）
+  2. 项目介绍材料（PRD / DECISIONS / README，本次 + 06-09~10 总计 28 个 fix 是「反馈闭环 + 容错降级」实证素材）
   3. 后续迭代：profile.sources=0 旧 bug（collector 抓回来的 URL 没持久化到 profile.sources，writer 阶段 LLM 自己从语料摘 5 条入 metadata.data_sources）—— 不影响主流程，留作下个 session 修
 - 阻塞：无
 - 协作模型实证：
@@ -98,7 +98,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 - 进行中：本 session 收尾，commit + push
 - 下一步：
-  1. 答辩准备（PRD / DECISIONS / 评分项映射，本次新增的 21 个 fix 可作为「反馈闭环 + 容错降级」实证素材）
+  1. 项目介绍材料（PRD / DECISIONS / README，本次新增的 21 个 fix 可作为「反馈闭环 + 容错降级」实证素材）
   2. 后续迭代：换更强 LLM（Doubao-Seed-2.0-pro / GPT-4o）后**优先撤回 fix20**（见 DECISIONS.md），避免水印污染报告
   3. 可选优化：narrative section 占位率仍较高（S5 perceptual_map_analysis / errc_analysis 两次都占位）—— LLM 能力问题，prompt 改进边际收益已趋零，等换模型再观察
 - 阻塞：无
@@ -124,7 +124,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 - 下一步：
   1. Cooper 手动验收清单（见下）
   2. 提交完整改动 + push origin master
-  3. 准备答辩材料（PRD / DECISIONS / 评分项实现映射）
+  3. 准备项目介绍材料（PRD / DECISIONS / README）
 - 阻塞：无
 - 协作模型实证：subagent-driven-development 流程在阶段 3 抓到多个隐藏 bug（C1 异常路由脆弱 / C3 phase 2 缺重试 / C-new 路径穿越）；后期 D4-G1 改用直接动手（中等任务无需 subagent 开销），D3 修复 implementer 单次 49 分钟教训记下，复杂任务拆小后再派
 - 安全提醒：本次纯代码实现，无 key 引入
@@ -422,7 +422,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
     - writer 枚举校验失败：action_items.priority 被填 "中等" → writer 加 _normalize（priority 规整 + metadata 补充）
   - 最终验证成功：6 品牌（小米/VIVO/OPPO/三星/华为/苹果）完整跑通，产出高质量报告，data_sources 13 条真实 URL，quality_score 0.55，无校验错误
 - 下一步（新 session 优先处理）：
-  1. 【可观测性，评分项】修日志落盘：setup_logger 写了但从未被调用，logs/app.log 不生成；agent/graph 的 INFO/WARNING 日志（[graph] → collector、采集源成败、completeness）全部丢失。需在 api 启动时初始化 logger 并配置 root level，让全链路日志可见。
+  1. 【可观测性】修日志落盘：setup_logger 写了但从未被调用，logs/app.log 不生成；agent/graph 的 INFO/WARNING 日志（[graph] → collector、采集源成败、completeness）全部丢失。需在 api 启动时初始化 logger 并配置 root level，让全链路日志可见。
   2. 【数据源场景适配】手机品牌用 iTunes(App 搜索) 不契合——搜到的是同名 App 非手机硬件，导致溯源 URL 真但内容弱。Demo 建议用 Notion 类 SaaS 软件（数据源契合），手机仅作架构通用性展示；或为硬件场景换专业评测/电商源。
   3. quality_score 0.55 偏低反映数据完整度一般（质检诚实反映），与 #2 相关联。
 - 已知非阻塞瑕疵：无（本轮 LLM 鲁棒性问题已全部修复）
@@ -451,7 +451,7 @@ AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 ## 2026-05-30
 - 完成：
-  - 开题材料研读与分析（CIS AI 全栈挑战赛开题材料）
+  - 项目立项研究（产品定位 / 业界标杆调研）
   - lark-cli 安装验证、飞书认证、lark-cli skill 清理
   - PRD 撰写（产品定位、Schema 设计、4 Agent 角色定义、数据源、信息溯源、可观测性）
   - 项目文档结构整理（docs/ 分离项目内容与开发过程文档）

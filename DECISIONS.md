@@ -21,32 +21,32 @@
 
 #### PD-1: Loading 阶段化放弃，仅 spinner + 静态文案
 - 选择：保留默认 `st.spinner("正在分析中...")`，不做 4 阶段进度条
-- 理由：CONTRACT 3「演示期间用户能看到运行进度」与现有 trace_writer 时序不兼容——文件 mtime 是阶段**完成**时间不是开始/进行中时间，且 graph 运行期间 meta.json::node_trace / retry_count 都不写入；要做实时进度需改后端 routes.py 拆 /analyze/start + 加心跳，与「不动 graph 拓扑」目标矛盾。中文评委 demo 不会发现差异
+- 理由：CONTRACT 3「演示期间用户能看到运行进度」与现有 trace_writer 时序不兼容——文件 mtime 是阶段**完成**时间不是开始/进行中时间，且 graph 运行期间 meta.json::node_trace / retry_count 都不写入；要做实时进度需改后端 routes.py 拆 /analyze/start + 加心跳，与「不动 graph 拓扑」目标矛盾。中文用户 demo 场景下不会发现差异
 - 备选 a（保留 + 后端拆 /analyze/start + node 心跳）：实时进度最佳，但工时 +0.5 天 + 改后端契约
 - 备选 c（仅轮询 status 不拆 4 阶段）：折中方案，仍有"伪进度"嫌疑
 - doubt-driven 跨模型 Codex 锁定 C2-C4 三个 critical 都源于此根因，是范围决策的关键
 
 #### PD-2: markdown 导出宽松字段覆盖（关键字段，非全字段）
 - 选择：每场景渲染常用字段 + 单测断言关键字段；放弃 CONTRACT 4「no field omission」
-- 理由：5 场景 schema 嵌套深（如 S3 pricing_page_audit 8 法则、S2 competitor_recommendations 含 PESTEL）；全字段覆盖 +0.5-1 天，但 1 万字 markdown 评委不会盯每个嵌套字段
+- 理由：5 场景 schema 嵌套深（如 S3 pricing_page_audit 8 法则、S2 competitor_recommendations 含 PESTEL）；全字段覆盖 +0.5-1 天，但 1 万字 markdown 用户不会盯每个嵌套字段
 - 备选 a（严格全字段）：未来扩展不漏，但工时翻倍
 
 #### PD-3: confidence_level 上独立 KPI 卡（5 张布局）
 - 选择：KPI 由 4 张改 5 张，含 confidence_level 独立卡 + raw_quality_score 字段保留 cap 前真实分
-- 理由：confidence_level 是评分项「输出可信度」(35%) 核心展示位；查近 5 trace 实测 high=80% 但仍是答辩硬指标必须独立位
+- 理由：confidence_level 是「输出可信度」核心展示位；查近 5 trace 实测 high=80% 但仍是产品硬指标必须独立位
 - 备选 b（合入场景标签卡作副信息）：节省一卡位，但失去强可见性
 - raw_quality_score 配套：ReportMetadata 加新字段（5 行），inspector cap 前回填（1 行）；KPI 卡先显 raw 再附「cap 后 X.XX」副信息，让用户看到 cap 前 vs cap 后真实差
 
 #### PD-4: HTML 全内嵌（字体 + Plotly + CSS）
 - 选择：字体 woff2 base64 + Plotly include_plotlyjs=True + CSS inline 全部内嵌单 HTML，单文件 3-5MB
-- 理由：答辩会议室断网风险（CDN 加载失败 → 字体回退 + Plotly 图表全空白）对核心卖点冲击大；3-5MB 文件大小可接受
+- 理由：演示环境断网风险（CDN 加载失败 → 字体回退 + Plotly 图表全空白）对核心卖点冲击大；3-5MB 文件大小可接受
 - 备选 a（CDN，spec v1）：100KB 文件但断网失效
 - 备选 b（仅 Plotly 内嵌）：折中，字体仍 CDN 失效但图表可用
 - 字体子集选 latin（不含中文）：Plus Jakarta Sans + Fira Code 是英文标题/数字字体，中文走 system stack fallback；woff2 latin 子集 25KB 远小于全字符 200KB+
 
 #### PD-5: emoji 选择性纯化（标题/导航换 Material Symbols；KPI/badge/状态点保留 emoji）
 - 选择：标题 / 导航 / 剩头 emoji 全换 Material Symbols；KPI/badge/状态点 emoji 保留
-- 理由：UI/UX Pro Max skill 标"no-emoji-icons"是西文 ASCII 设计语境的最佳实践，但中文评委 demo 场景下 🟢🟡🔴 状态点比扁平 Material circle 语义识别更快；视觉一致性的代价超过收益
+- 理由：UI/UX Pro Max skill 标"no-emoji-icons"是西文 ASCII 设计语境的最佳实践，但中文用户 demo 场景下 🟢🟡🔴 状态点比扁平 Material circle 语义识别更快；视觉一致性的代价超过收益
 - doubt-driven 后期 Cooper 反转：看了 git history 后发现 7 处 emoji 是 06-08 既有设计 + 1 处本 session 新增，全保留更省事
 - 备选 a（全量纯化）：Material circle 颜色严格匹配主题色 #16A34A 等，但工时高 + 实测 st.button 不支持嵌套 HTML
 - 备选 c（emoji 全保留）：跟现状一致
@@ -144,7 +144,7 @@
 ## 2026-06-08（晚 / v3 spec）: writer 4 阶段编排 v2 → v3 修订（双轮 doubt-driven 复审后 28 条）
 - 选择：保持 v2 已锁定的 18 条决策（C1-C9 + Q2 + P2-P3 + M1-M10），叠加 v3 新增的 28 条 reconciled 修订（11 critical + 12 major + 5 minor）。v3 spec 长度从 v2 的 433 行扩到 1014 行，新增「Pre-flight: master 适配」章节、18 处 `[v3-RXX]` 标记的修订段、完整 v3 修订日志表
 - 理由（产品决策部分，6 条）：
-  - **R-02 writer raise 路径选 c**：复用既有反馈闭环语义（writer raise → builder 外层 try/except → RejectionFeedback 注入 → inspector should_continue）。备选 a (内部 try/except 返回 placeholder) 让幽灵报告过校验、备选 b (fail-fast) 与课题"反馈闭环"评分项冲突
+  - **R-02 writer raise 路径选 c**：复用既有反馈闭环语义（writer raise → builder 外层 try/except → RejectionFeedback 注入 → inspector should_continue）。备选 a (内部 try/except 返回 placeholder) 让幽灵报告过校验、备选 b (fail-fast) 与产品"反馈闭环"核心要点冲突
   - **R-05 熔断 18**：6-section × 2 重试 + phase1/2 = 16 次最坏路径，加 2 个安全荧丝防 LLMClient 内部 JSON retry。备选 b (20) 太宽容遮蔽 bug，备选 c (分 phase budget) 代码复杂度上升不值得
   - **R-14 S3/S4 source_refs min=1**：无来源则不生成该条目（prompt + normalizer 双防护）。备选 b (改 schema 降为 min=0) 破坏 A+B+C 已锁定的"防幻觉"硬约束、备选 c (允许 placeholder URL) 06-04 已被判为背信溯源设计
   - **R-19 scope.competitors S2 union**：union 全部去重 by name 用户在前。备选 b (只用 recommender) 用户填写的"重要对手"会丢、备选 c (只用用户填) 与 vendor_profiles 不对称
@@ -181,17 +181,17 @@
 
 ## 2026-06-07: 弃用 SerpAPI，仅保留 Tavily 作为唯一搜索源
 - 选择：删除 SerpApiSource 类、SEARCH_API_KEY/SEARCH_PROVIDER 配置开关、collection_pipeline 的"搜索→选页→抓取"两步走机制（_llm_pick/_rule_pick/_fetch_clean/_fetch_with_backfill 四方法 + 构造器塌缩）。Tavily 一次调用直返带正文，跳过中间所有步骤
-- 理由：06-06 实测证实 Tavily 在中文场景质量明显优于 SerpAPI（语雀 1.0 / 飞书 0.85 completeness）；双 provider 架构带来开关复杂度（SEARCH_PROVIDER）、conftest 防污染 fixture、builder if/else、115 行 SerpAPI 专项代码——与 Cooper 选择的"代码简化、答辩故事单一 AI 搜索"目标矛盾。git 历史保留，未来若需恢复可 revert
+- 理由：06-06 实测证实 Tavily 在中文场景质量明显优于 SerpAPI（语雀 1.0 / 飞书 0.85 completeness）；双 provider 架构带来开关复杂度（SEARCH_PROVIDER）、conftest 防污染 fixture、builder if/else、115 行 SerpAPI 专项代码——与 Cooper 选择的"代码简化、产品故事单一 AI 搜索"目标矛盾。git 历史保留，未来若需恢复可 revert
 - 反转的旧决策：06-06「双 provider 切换、保留 SerpAPI 作为可选 fallback」（一日决策反转，作为历史保留）
-- 备选 1：保留 SerpAPI 但删 SEARCH_PROVIDER 开关、Tavily 作为默认（排除：仍需双 provider 代码维护、答辩故事不干净）
+- 备选 1：保留 SerpAPI 但删 SEARCH_PROVIDER 开关、Tavily 作为默认（排除：仍需双 provider 代码维护、产品故事不干净）
 - 备选 2：仅删 SerpAPI 类、保留 SEARCH_PROVIDER 字段（排除：废留架构假承诺）
 - 实现路径：方案 B'（doubt-driven 双模型审查后修订），分 7 个细粒度 commit；commit 顺序：测试先改不依赖 → 删生产代码 → 删 SerpAPI 专项测试 → 文档同步
 
 ## 2026-06-07: 报告 schema 按使用场景拆分（5 场景全做，R2 架构）
 - 选择：废除原通用单一 FinalReport schema，改为按竞品分析使用目的拆 5 个场景（S1 功能迭代 / S2 市场进入 / S3 定价策略 / S4 持续监控 / S5 战略定位），共享 BaseReport 通用骨架（discriminated union），完整 5 场景设计 + 7000-8000 字咨询级深度
-- 理由：原通用 schema 的 4 段执行摘要 + 顶层 SWOT/雷达/功能矩阵字段集只对 S1 成立，对 S2（无产品调研）/S3（定价细致活）/S4（变更追踪）/S5（定位象限）都失效。调研显示业界（McKinsey/BCG/Bain/Gartner/Forrester）做竞品分析报告会按使用目的分形态——5 场景拆分既贴业界惯例又能讲"按场景分流的多 Agent 工作模板"答辩故事
+- 理由：原通用 schema 的 4 段执行摘要 + 顶层 SWOT/雷达/功能矩阵字段集只对 S1 成立，对 S2（无产品调研）/S3（定价细致活）/S4（变更追踪）/S5（定位象限）都失效。调研显示业界（McKinsey/BCG/Bain/Gartner/Forrester）做竞品分析报告会按使用目的分形态——5 场景拆分既贴业界惯例又能讲"按场景分流的多 Agent 工作模板"产品故事
 - R2（BaseReport 通用骨架 + payload）vs R1（5 套独立 schema）：调研显示 13 通用元素是 5/5 咨询机构共识，R2 让通用部分一处定义改一处生效，writer 编排和前端渲染都能共用大半逻辑。R1 干净分离但代码 5 倍重复
-- 备选 R1（排除：5 套独立 schema 通用部分重复度高、维护成本翻倍、答辩故事弱于 R2 的"共性抽象 + 场景定制"）；备选只做 S1（排除：Cooper 选 5 场景全做做出完整答辩故事）
+- 备选 R1（排除：5 套独立 schema 通用部分重复度高、维护成本翻倍、产品故事弱于 R2 的"共性抽象 + 场景定制"）；备选只做 S1（排除：Cooper 选 5 场景全做做出完整产品故事）
 
 ## 2026-06-07: BaseReport.scenario 改 computed_field 派生（修原 discriminator 三处不一致）
 - 选择：移除独立 `scenario` 字段，改为 `@computed_field` 从 `scenario_payload.scenario_type` 派生；加 `model_validator` 强制 `metadata.scenario == scenario_payload.scenario_type`
@@ -205,7 +205,7 @@
 
 ## 2026-06-07: SWOT 进 BaseReport 通用骨架，5 场景全保留（决策 1）
 - 选择：Swot 升到 BaseReport 通用层，5 场景每份报告都含 SWOT
-- 理由：SWOT 是非技术评委一眼能懂的视觉抓手 + 业界经典框架；前端已有 4 象限渲染逻辑沉淀；5 场景产 SWOT 时各自维度不同（S1 功能维度 / S2 市场维度），用 SwotEntry.dimension 自由 str 承接
+- 理由：SWOT 是非技术用户一眼能懂的视觉抓手 + 业界经典框架；前端已有 4 象限渲染逻辑沉淀；5 场景产 SWOT 时各自维度不同（S1 功能维度 / S2 市场维度），用 SwotEntry.dimension 自由 str 承接
 - 备选：删 SWOT（排除：失去 demo 视觉抓手）；只在 S5 保留（排除：放弃了 4 场景的 SWOT 可视化）
 
 ## 2026-06-07: 雷达图 S1 多边形 / S5 二维散点（同字段不同含义，决策 2）
@@ -215,7 +215,7 @@
 
 ## 2026-06-07: BattleCard 整块从 S1 移除（决策 4）
 - 选择：S1 schema 不含 BattleCard 整块（含 LandmineQuestion / Objection / proof_points / typical_deal_size 等 10 子模型）
-- 理由：双模型 doubt-driven 一致认定为 YAGNI——4 个核心字段（typical_deal_size 真实成交价 / objections 客户异议库 / landmine_questions 销售引导 / proof_points 真实背书）公开网页根本拿不到（这些是 CRM/录音/销售实战数据），强制必填会让 LLM 编造，违反信息溯源（35% 评分硬指标）。另 S1 P0+P1（vendor_profiles/feature_matrix/radar/JTBD/roadmap）已能撑起 Forrester Wave 风格完整报告
+- 理由：双模型 doubt-driven 一致认定为 YAGNI——4 个核心字段（typical_deal_size 真实成交价 / objections 客户异议库 / landmine_questions 销售引导 / proof_points 真实背书）公开网页根本拿不到（这些是 CRM/录音/销售实战数据），强制必填会让 LLM 编造，违反信息溯源（产品硬指标）。另 S1 P0+P1（vendor_profiles/feature_matrix/radar/JTBD/roadmap）已能撑起 Forrester Wave 风格完整报告
 - 备选：收窄保留 4 个有源字段（排除：双模型都说性价比不划算，工作量超出收益）；全保留 + Optional 兜底（排除：LLM 仍会编 + inspector 难辨真假）
 
 ## 2026-06-07: writer 重构为 4 阶段编排（突破单次 LLM 4-5K 字上限）
@@ -225,14 +225,14 @@
 - 备选：单次 LLM 产整份报告（排除：稳定不到 7000 字 + JSON 损坏率高）；分章节 5+5+5 等量调用（排除：浪费 token 预算）
 
 ## 2026-06-07: 协作模型固化（Cooper 产品 / Claude 研发）
-- 选择：明确两人角色——Cooper（产品 PM）决定做什么/优先级/答辩故事；Claude（研发）评估技术可行性/字段命名/Pydantic 模式。冲突时分 4 类处理：完全放弃 / 部分放弃 / 换思路 / 推迟
+- 选择：明确两人角色——Cooper（产品 PM）决定做什么/优先级/产品故事；Claude（研发）评估技术可行性/字段命名/Pydantic 模式。冲突时分 4 类处理：完全放弃 / 部分放弃 / 换思路 / 推迟
 - 理由：之前我多次擅自替 Cooper 做产品决策（如默认丢 SWOT/雷达图/选 BattleCard P2），doubt-driven 抓不到这类问题（technical 而非 product）。固化角色避免我再混淆
 - 落地：未来设计阶段我必须主动列产品决策清单（abc 选项 + 标注技术约束），让 Cooper 拍板；技术问题（命名/约束/validator）我自己处理但 RECONCILE 时透明化记录在评审章节
 
 ## 2026-06-06: 移除 iTunes 专源（修正 06-01「数据源含 iTunes」）
 - 选择：删除 ItunesSource 及其 category 路由机制（build_pro_sources/normalize_category）；采集只保留 SerpAPI/Tavily 搜索主线
 - 理由：iTunes Search API 按关键词搜索会带回同名/相近无关 App（实测搜「飞书」带出豆包、千问，搜「语雀」带出 flomo、石墨），且代码无差别将三条结果全并入分析语料，污染结论（analyzer 可能拿豆包数据当飞书分析）。其当初引入的三类价值中，定价/描述已被 Tavily 抓官网取代（飞书抓到 7 个真实套餐 tier，远超 iTunes 的「免费」一条），仅剩 App 评分是独家——但评分一项不值得背同名污染风险。且 iTunes 仅对软件类竞品有效，硬件竞品用不上。将来确需 App 评分可从 git 历史恢复
-- 备选：加同名过滤只取第 1 条（排除原因：评分边际价值低，不值得维护匹配逻辑）、保留骨架返回空（排除原因：留死分支，不如删干净靠 git 历史找回）
+- 备选：加同名过滤只取第 1 条（排除原因：边际价值低，不值得维护匹配逻辑）、保留骨架返回空（排除原因：留死分支，不如删干净靠 git 历史找回）
 
 ## 2026-06-06: TavilySource 鉴权用 POST + Bearer header
 - 选择：Tavily 调用走 POST + JSON body，api_key 放 Authorization: Bearer header（新增 HttpClient.post_json，header 局部传参不污染共享客户端）
@@ -241,7 +241,7 @@
 
 ## 2026-06-04: 报告质量提升走「溯源为脉」而非「只改 writer」（方案 C）
 - 选择：报告质量提升以「事实-URL 绑定链」为主线贯穿全链路——pipeline 输出带【来源】标记文本 → collector 抽取时绑定每条 fact 的 source_url → analyzer 透传维度 source_urls（代码兜底）→ writer 机械透传 SWOT/雷达/功能矩阵 + 按 dimension 下沉 source_refs → inspector 程序化硬查 + severity 分级 pass/fail
-- 理由：最初设想「只改 writer 做机械下沉」，两轮 doubt-driven（单模型 + Codex gpt-5.5 跨模型，20 条命中）核对源码后证伪——溯源断链的真正根因在**采集层**：collector 抽取 prompt 只给 sample_reviews 留 source_url、正文被 merge 成无【来源】锚点的 blob，导致 analysis 各维度 source_urls 恒空。不碰采集层就修不了「每条结论可溯源」（课题 35% 评分核心 + 引用强制反幻觉）
+- 理由：最初设想「只改 writer 做机械下沉」，两轮 doubt-driven（单模型 + Codex gpt-5.5 跨模型，20 条命中）核对源码后证伪——溯源断链的真正根因在**采集层**：collector 抽取 prompt 只给 sample_reviews 留 source_url、正文被 merge 成无【来源】锚点的 blob，导致 analysis 各维度 source_urls 恒空。不碰采集层就修不了「每条结论可溯源」（产品核心要点 + 引用强制反幻觉）
 - 关键设计原则：**能用代码保证的结构与溯源不赌 LLM**——SWOT/雷达/功能矩阵由 writer 代码透传（100% 不丢），溯源由代码机械下沉，LLM 只负责写散文深度
 - 溯源粒度：维度+竞品级（不追 per-entry，per-entry 需改 analysis schema 结构，留作增强）
 - severity 分级 pass/fail：从「有任何 issue 就 fail」改为「只 critical/major 阻断，minor 放行」——因 action_item 溯源等只能软查，硬查会逼成假闭环（无限重试耗尽）
@@ -251,7 +251,7 @@
 - 选择：删掉 analyzer(12000)/writer(8000)/inspector(15000) 的序列化文本截断，全量入参
 - 理由：Doubao-Seed-2.0-lite 至少 256K context，analysis/profile 序列化通常几万字符远小于上限；截断会逐级丢信息（writer 8000 最致命，常导致没看到 SWOT/雷达就开写）。删截断是最简方案，无需结构化瘦身/分片模块（YAGNI）
 - 已知 trade-off：llm_client 无 max_tokens，超长输入「迷失在中间」可能损害引用准确率——验证阶段实测观察，必要时回调
-- 备选：上下文分片管理器（排除：256K 下根本触发不了，为答辩话术造无用模块）
+- 备选：上下文分片管理器（排除：256K 下根本触发不了，为产品话术造无用模块）
 
 ## 2026-06-04: analyzer 反馈回边为「保险」，当前效用有限
 - 选择：should_continue 认 analyzer 类 issue 并加 graph 回边（inspector→analyzer），但不作为主路径
@@ -297,23 +297,23 @@
 
 ## 2026-06-03: 可观测性不阻塞 + 安全脱敏（沿用既有取向）
 - 选择：pipeline_trace 随 profile.metadata 落盘（不碰 graph 闭包 node_trace）；HttpClient 对 URL 和异常消息双重脱敏 key；per-domain 锁串行化限速读-睡-写
-- 理由：trace 进 metadata 避免反向依赖图层、也保证可追溯随产物走；密钥可能经 run.log / /trace 接口 / report.data_sources 泄漏，必须脱敏；并发 fetch 同域名下 check-then-act 会击穿 COLLECT_INTERVAL（合规评分点）
+- 理由：trace 进 metadata 避免反向依赖图层、也保证可追溯随产物走；密钥可能经 run.log / /trace 接口 / report.data_sources 泄漏，必须脱敏；并发 fetch 同域名下 check-then-act 会击穿 COLLECT_INTERVAL（合规要求）
 - 备选：trace 注入闭包（排除：反向依赖 + 污染 node_trace 断言）、仅 URL 脱敏（排除：异常消息也可能含 key）
 
 ## 2026-05-30: 编排框架选型
 - 选择：LangGraph
-- 理由：课题要求质检→采集的反馈闭环（DAG 循环），LangGraph 原生支持条件分支和环路
+- 理由：产品要求质检→采集的反馈闭环（DAG 循环），LangGraph 原生支持条件分支和环路
 - 备选：CrewAI（排除原因：声明式编排，复杂闭环控制力弱，需要额外 hack）
 
 ## 2026-05-30: Agent 构建框架选型
 - 选择：待定（LangChain 或纯手写）
 - 理由：取决于 Doubao 模型的 SDK 适配情况
-- 备选：Claude Agent SDK / OpenAI Agents SDK（排除原因：课题提供 Doubao 模型，需优先适配）
+- 备选：Claude Agent SDK / OpenAI Agents SDK（排除原因：项目当前选用 Doubao 模型，需优先适配）
 
 ## 2026-05-30: LLM 选型
 - 选择：Doubao-Seed-2.0-lite（EP: ep-20260514111325-xjmj7）
-- 理由：课题官方提供的模型资源，所有成员共用
-- 备选：无（课题要求使用指定资源）
+- 理由：项目当前可访问的模型资源
+- 备选：无（项目当前使用指定资源）
 
 ## 2026-05-30: Agent 数量
 - 选择：4 个（采集、分析、撰写、质检）
@@ -327,13 +327,13 @@
 
 ## 2026-05-30: 竞品数量
 - 选择：支持 N 个竞品（架构通用）
-- 理由：架构上做通用，Demo 聚焦 1-2 个金融 case；答辩时展示通用性
+- 理由：架构上做通用，Demo 聚焦 1-2 个金融 case；演示时展示通用性
 - 备选：固定 2 个竞品（排除原因：限制灵活性）
 
 ## 2026-05-30: 前端方案
 - 选择：Streamlit（最简方案）
-- 理由：11 天极限计划，前端不是得分重点，Streamlit 最快出活
-- 备选：React/Vue（排除原因：时间不够，UI 美化不是核心得分点）
+- 理由：11 天极限计划，前端不是核心重点，Streamlit 最快出活
+- 备选：React/Vue（排除原因：时间不够，UI 美化不是核心要点）
 
 ## 2026-05-30: 产品定位
 - 选择：面向企业产品经理的自动化竞品分析工具（内部使用）
@@ -342,7 +342,7 @@
 
 ## 2026-05-31: Agent 构建方式
 - 选择：手写 Agent（纯 Python 函数 + LangGraph StateGraph）
-- 理由：Agent 间是固定流水线，不需要 LangChain 的动态工具选择能力；Doubao 兼容性不确定；评分标准强调可观测性，手写逻辑更透明
+- 理由：Agent 间是固定流水线，不需要 LangChain 的动态工具选择能力；Doubao 兼容性不确定；产品强调可观测性，手写逻辑更透明
 - 备选：LangChain Agent 封装（排除原因：抽象层增加调试难度，Doubao function calling 兼容性未知）
 
 ## 2026-05-31: 前后端架构
@@ -373,7 +373,7 @@
 ## 2026-06-01: LLM 超时从 30s 调到 120s
 - 选择：`LLM_TIMEOUT = 120`
 - 理由：实测单次中等规模调用要 30.4s，30s 超时反复触发导致全链路失败；Doubao-Seed-2.0-lite 推理较慢
-- 备选：换更快模型（排除原因：课题指定该模型资源）
+- 备选：换更快模型（排除原因：项目当前使用该模型资源）
 
 ## 2026-06-01: 数据源改为 iTunes API + Bing + 搜狗（推翻 05-30 数据源）
 - 选择：iTunes Search API（结构化 JSON，含价格/评分/描述）+ Bing 搜索 + 搜狗搜索
@@ -432,13 +432,13 @@
 
 ## 2026-06-10: S5 normalizer 兜底是 LLM 服从性局限的临时补丁（迭代时优先撤回）
 - 选择：在 `src/agents/normalizers/s5.py` 加 `[fix20]` 标记的代码层兜底——vendor_profiles.strengths < 2 时复制最后一条凑齐 / perceptual_map 单字轴标签自动补字（"低"→"低端"）/ category_strategy 空 dict 时填占位子字段
-- 理由：实测 Doubao-Seed-2.0-lite 在 S5 密集约束（4 vendor × strengths 2-5 × cautions 1-4 + 多结构嵌套）下反复失误，2 次完整 S5 trace（20260609-234227 / 20260610-000505）走完反馈闭环 max_retries 仍无法产出合规报告。代码兜底让 happy path 跑通保答辩 demo
+- 理由：实测 Doubao-Seed-2.0-lite 在 S5 密集约束（4 vendor × strengths 2-5 × cautions 1-4 + 多结构嵌套）下反复失误，2 次完整 S5 trace（20260609-234227 / 20260610-000505）走完反馈闭环 max_retries 仍无法产出合规报告。代码兜底让 happy path 跑通保 demo 演示
 - **后续迭代提示**：本兜底是 **LLM 服从性局限**导致，不是项目正确性需求。换更强的 LLM（Doubao-Seed-2.0-pro / GPT-4o / Claude Sonnet）后这部分代码应**优先撤回**，避免水印文本（"补充条目"、"normalizer 占位 LLM 未提供"）污染报告。撤回前用新模型在 S5 端到端跑若干次确认稳定后再删
-- 备选：换更强的 LLM（排除：今天答辩前没时间换 endpoint）；让 LLM 重试更多次（排除：fix5 已 max_retries=2，再加耗时不可控）；放弃 S5 happy path 当作已知局限（排除：5 场景验证完整度对答辩重要）
+- 备选：换更强的 LLM（排除：当前 demo 时间窗内没时间换 endpoint）；让 LLM 重试更多次（排除：fix5 已 max_retries=2，再加耗时不可控）；放弃 S5 happy path 当作已知局限（排除：5 场景验证完整度对产品演示重要）
 
 ## 2026-06-02: 中间产物按 trace_id 落盘（独立 TraceWriter）
 - 选择：新建 src/tools/trace_writer.py，graph 各节点产出后调 save_stage 落盘到 runs/<trace_id>/，落盘逻辑单一出口
-- 理由：开题要求「每个 Agent 的决策过程与中间产物均可追溯」，是评分硬要求；独立模块容错/快照命名集中、builder.py 保持清爽、可独立单测
+- 理由：产品要求「每个 Agent 的决策过程与中间产物均可追溯」，是核心硬要求；独立模块容错/快照命名集中、builder.py 保持清爽、可独立单测
 - 备选：节点内分散落盘（排除：重复代码、污染编排逻辑）、LangGraph 回调钩子（排除：与「手写 graph 求透明」取向冲突，见 05-31）
 
 ## 2026-06-02: trace_id 改用北京时间格式
@@ -448,12 +448,12 @@
 
 ## 2026-06-02: 落盘容错与并发权衡
 - 选择：落盘失败仅 warning 不抛、原子写（临时文件+os.replace）、重试快照 _vN 按磁盘最大版本+1；不做跨进程文件锁
-- 理由：可观测性是辅助能力，绝不能阻塞核心分析；原子写防写撕裂；_vN 取磁盘版本避免进程重启后内存计数归零覆盖历史。面向答辩演示的轻度并发，「不同 trace 目录+原子写+碰撞规避」已足够，完整锁是过度设计
+- 理由：可观测性是辅助能力，绝不能阻塞核心分析；原子写防写撕裂；_vN 取磁盘版本避免进程重启后内存计数归零覆盖历史。面向 demo 演示的轻度并发，「不同 trace 目录+原子写+碰撞规避」已足够，完整锁是过度设计
 - 备选：落盘失败即请求失败（排除：鲁棒性差）、内存计数器定版本号（排除：进程重启丢历史）、跨进程锁（排除：过度设计）
 
 ## 2026-06-02: 决策过程追溯用 node_trace 轻量覆盖
 - 选择：meta.json 记录 node_trace（节点执行序列 + 每次打回的 issues 摘要和目标 agent），不存 prompt/LLM 原始响应
-- 理由：评分要求「决策过程可追溯」，但全存 prompt/原始响应范围爆炸；node_trace + feedback.json（质检决策）已轻量覆盖决策主体，prompt 留作未来扩展
+- 理由：产品要求「决策过程可追溯」，但全存 prompt/原始响应范围爆炸；node_trace + feedback.json（质检决策）已轻量覆盖决策主体，prompt 留作未来扩展
 - 备选：全量存 prompt 和 LLM 原始响应（排除：范围爆炸，收益边际递减）
 
 ## 2026-06-02: 追溯方法论 — doubt-driven 前置评审

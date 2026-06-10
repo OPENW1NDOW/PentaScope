@@ -53,14 +53,13 @@ ruff format src/                                # format
 ## Project Structure
 
 ```
-ByteDance-AI-Full-Stack-Challenge/
+AI-driven-competitor-analysis-and-agency-collaboration-system/
 ├── PROGRESS.md                 # 进度日志
 ├── DECISIONS.md                # 技术决策记录
 ├── CLAUDE.md                   # AI 协作指令
 ├── docs/
 │   ├── SPEC.md                 # 本文件：技术规格
-│   ├── PRD.md                  # 产品需求文档
-│   └── competition-materials/  # 赛题材料
+│   └── PRD.md                  # 产品需求文档
 ├── src/
 │   ├── __init__.py
 │   ├── api/                    # FastAPI 后端

@@ -1,7 +1,7 @@
 """验证 src/frontend/*.py 中 emoji 仅出现在 PD-5 白名单内位置。
 
 PD-5「选择性纯化」：标题/导航/剩头 emoji 全换 Material Symbols；
-KPI/badge/状态点 emoji 保留（视觉一致 + 评委友好）。
+KPI/badge/状态点 emoji 保留（视觉一致 + 用户友好）。
 
 白名单（保留位置）：
 - src/frontend/app.py 的 pick_confidence emoji（行 49 周边）

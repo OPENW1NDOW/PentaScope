@@ -402,6 +402,8 @@ def build_graph(llm, http, parser, trace_writer=None):
             max_retries=state.get("max_retries", 2),
         )
         _save("04_feedback", feedback)
+        # inspector 回填 quality_score 后重新落盘 report（writer 先于 inspector 落盘，初始 score=None）
+        _save("03_report", report)
         # 打回时 +1 retry_count；passed=True 不增（直接 end）
         next_retry = state.get("retry_count", 0)
         if not feedback.passed:

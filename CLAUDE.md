@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# AI 驱动的竞品分析 Agent 协作系统
+# PentaScope — AI 驱动的竞品分析 Agent 协作系统
 
 ## 项目概述
 

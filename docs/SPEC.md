@@ -1,4 +1,4 @@
-# Spec: AI 驱动的竞品分析 Agent 协作系统
+# Spec: PentaScope — AI 驱动的竞品分析 Agent 协作系统
 
 ## Objective
 
@@ -53,7 +53,7 @@ ruff format src/                                # format
 ## Project Structure
 
 ```
-AI-driven-competitor-analysis-and-agency-collaboration-system/
+PentaScope/
 ├── PROGRESS.md                 # 进度日志
 ├── DECISIONS.md                # 技术决策记录
 ├── CLAUDE.md                   # AI 协作指令

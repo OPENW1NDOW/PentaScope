@@ -1,6 +1,6 @@
 # Project Progress
 
-AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
+PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日志。
 
 > 每次结束工作前更新，下次在另一台电脑开 Claude 时先读此文件。
 

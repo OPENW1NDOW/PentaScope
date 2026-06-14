@@ -12,6 +12,7 @@ NARRATIVE_TEMPLATE = """你是一个资深竞品分析师。基于已经产出�
 {context_payload}
 
 【撰写要求】
+- **只讨论用户指定的竞品**（见上下文中的 competitor_names / scope.competitors），不得引入额外竞品。即使采集数据或分析中提到了其他竞品（如 FlowUs、Notion 等），也不得在 narrative 中将其作为独立分析对象
 - narrative 长度严格控制在 1500-3000 字之间（中文）
 - 必须做横向对比（竞品之间、竞品与我方之间），用 payload 的具体数据/评分/字段值举证，不要泛泛而谈
 - 引用具体数字时，列出完整数据点（如 "竞品 A 加权得分 78 vs 竞品 B 62"），不要给个数字而不说明含义

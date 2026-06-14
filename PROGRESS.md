@@ -16,6 +16,23 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-14（模型切换 + bug 修复 + S5 复杂度问题识别）
+- 完成：
+  - **模型切换**：Doubao-Seed-2.0-lite → MiMo-v2.5-pro（1T 参数、42B 激活、1M 上下文），`.env` 更新 API key / base_url / model，`LLM_TIMEOUT` 硬编码 240s
+  - **profile.sources bug 修复**：`_collect_single` 内部 try-except `_extract_profile`，LLM 抽取失败时保留 pipeline sources 构建占位 profile（不再丢失已采集 URL）。新增测试 `test_extract_failure_preserves_pipeline_sources`，443 passed
+  - **config.py 小改**：`LLM_TIMEOUT` 改为硬编码 240s（MiMo analyzer 实测 ~148s，原 120s 不够）
+- 进行中：无
+- 下一步（TODO）：
+  1. **S5 场景结构优化**：S5 payload schema 复杂度过高（vendor_profiles ×4 + perceptual_map + errc_grid + blue_ocean_move + strategy_canvas + category_strategy + positioning_statement），单次 LLM 输出几千字 JSON 无法稳定合规。Doubao 靠 fix20 代码兜底通过，MiMo 连 fix20 都用不上（前两步就挂）。需要对 S5 的 writer 编排做结构性改造（拆分多次小 JSON 输出 / ValidationError 反馈修正 / 降低单次复杂度）
+  2. **collector 信息收集优化**：当前单 query × Tavily 5 条结果，可探索多次搜索 + 不同关键词组合来扩充数据。但需先验证：数据量增加是否能显著提升报告质量（completeness / quality_score），避免无效优化
+- 阻塞：无
+- 关键发现：
+  - **S5 是唯一反复失败的场景**：Doubao 1/1 PASS 靠 fix20 兜底，MiMo 0/3 PASS。S1~S4 两种模型都能过
+  - **completeness 评分机制问题**：硬编码 4 项扣分（feature_tree -0.30 / pricing -0.15 / rating -0.15 / updates -0.10），占位 profile 硬编码 0.0 而非走公式（最低应为 0.30）；S5 的 query 策略与 completeness 维度不匹配（战略类搜索抽不出功能/定价数据）
+  - **MiMo JSON 输出稳定性比 Doubao 更差**：频繁出现未转义引号、未终止字符串，但 analyzer / S1~S4 writer 不受影响
+
+---
+
 ## 2026-06-10（前端美化 + 报告导出，brainstorming → doubt → plan → execute 全流程 + 7 轮验收修复）
 - 完成（单 session、严格 brainstorming → doubt-driven 双轮 → writing-plans → executing-plans 全流程 + 验收阶段 7 个 bug Prove-It 修复，**26 个 commit + S2 真跑 quality_score=0.650 happy path**）：
   - **brainstorming**：Cooper 7 条澄清问题 + 3 trade-off 决策（Loading 路径 / emoji 策略 / HTML 字体策略）→ spec v1 落盘

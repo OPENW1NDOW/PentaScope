@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # 喂给 LLM 的 labeled_text 字符上限：100K 字符 ≈ 70K-100K Doubao token，
 # Doubao-Seed-2.0-lite 输入上限 224K token，留 50%+ 安全垫防中文 BPE 计数偏差。
 # 飞书 trace 实测 raw_content 拼起来 >150K 字符会触发 400 错误。
-_EXTRACT_TEXT_MAX_CHARS = 100_000
+_EXTRACT_TEXT_MAX_CHARS = 300_000
 
 
 class CollectorAgent:
@@ -21,14 +21,20 @@ class CollectorAgent:
         self.llm = llm
         self.pipeline = pipeline
 
-    def _build_placeholder_profile(self, comp: CompetitorBasic, classification: dict, trace: list[dict]) -> CompetitorProfile:
-        """全空时构造占位 profile：不调 LLM，completeness 显式 0.0。"""
+    def _build_placeholder_profile(
+        self, comp: CompetitorBasic, classification: dict, trace: list[dict],
+        sources: list[str] | None = None,
+    ) -> CompetitorProfile:
+        """构造占位 profile：不调 LLM，completeness 显式 0.0。
+
+        sources: pipeline 已采集的 URL 列表。LLM 抽取失败时传入，避免丢失已采集的 sources。
+        """
         return CompetitorProfile(
             classification=Classification(**classification),
             basic_info=BasicInfo(name=comp.name, company=comp.company or ""),
             metadata=ProfileMetadata(
                 collected_at=datetime.now(timezone.utc).isoformat(),
-                data_sources=[],
+                data_sources=sources or [],
                 completeness_score=0.0,
                 pipeline_trace=trace,
             ),
@@ -134,7 +140,11 @@ class CollectorAgent:
         if not labeled_text.strip():
             logger.info("[collector] %s 全空, 产占位 profile", comp.name)
             return self._build_placeholder_profile(comp, classification, trace)
-        profile = await self._extract_profile(comp.name, labeled_text, classification, sources, trace)
+        try:
+            profile = await self._extract_profile(comp.name, labeled_text, classification, sources, trace)
+        except Exception as e:
+            logger.warning("[collector] %s LLM 抽取失败, 保留 pipeline sources 产占位: %s", comp.name, e)
+            return self._build_placeholder_profile(comp, classification, trace, sources=sources)
         logger.info("[collector] %s 采集完成, completeness=%.2f", comp.name, profile.metadata.completeness_score)
         return profile
 

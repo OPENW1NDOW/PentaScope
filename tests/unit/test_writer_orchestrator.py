@@ -1635,3 +1635,67 @@ async def test_s5_phase2a_produces_data_layer(monkeypatch):
     assert "perceptual_map" in result
     assert "strategy_canvas" in result
     assert len(result["vendor_profiles"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_s5_phase2b_produces_strategy_layer(monkeypatch):
+    """S5 phase 2b 产出 errc_grid + positioning_statement + category_strategy，blue_ocean_move 可省略。"""
+    mock_raw = {
+        "errc_grid": {
+            "artifact_id": "errc1",
+            "artifact_type": "errc_grid",
+            "title": "ERRC",
+            "eliminate": [{"factor": "低效冗余功能", "rationale": "这是消除理由要至少有二十个字符的详细描述说明"}],
+            "reduce": [{"factor": "冗余审批流程", "rationale": "这是减少理由要至少有二十个字符的详细描述说明"}],
+            "raise_level": [{"factor": "易用性体验", "rationale": "这是提升理由要至少有二十个字符的详细描述说明"}],
+            "create": [{"factor": "智能辅助助手", "rationale": "这是创造理由要至少有二十个字符的详细描述说明"}],
+        },
+        "positioning_statement": {
+            "target_customer": "目标客户群体的描述要足够长",
+            "need_or_opportunity": "需求场景的描述要足够长",
+            "product_name": "产品",
+            "product_category": "智能协作平台",
+            "key_benefit": "关键利益点的描述要足够长",
+            "primary_alternative": "替代竞品",
+            "primary_differentiation": "差异化点的描述要足够长",
+            "confidence": "llm_inferred",
+        },
+        "category_strategy": {
+            "chosen_category": "智能协作工具",
+            "why_this_category": "选择此品类的理由要至少有三十个字符的详细描述说明这个品类的合理性",
+            "competitors_implied": ["竞品A"],
+        },
+    }
+
+    orchestrator = WriterOrchestrator(llm=MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_llm_call_with_quota", AsyncMock(return_value=mock_raw)
+    )
+
+    scenario_input = MagicMock()
+    scenario_input.our_product_name = "MyProd"
+    scenario_input.our_product_brief = "brief"
+    scenario_input.industry = "test"
+    scenario_input.analysis_context = "ctx"
+    scenario_input.prior_trace_id = None
+
+    phase2a_output = {
+        "strategy_canvas": {
+            "competitive_factors": [
+                {"name": "易用性能力"},
+                {"name": "功能深度"},
+            ],
+        },
+        "vendor_profiles": [{"competitor_name": "TestComp"}],
+    }
+
+    result = await orchestrator._call_s5_phase2b(
+        phase2a_output=phase2a_output,
+        scenario_input=scenario_input,
+        analysis={"summary": "test"},
+        discovered_urls=["https://a.com"],
+    )
+
+    assert "errc_grid" in result
+    assert "positioning_statement" in result
+    assert "category_strategy" in result

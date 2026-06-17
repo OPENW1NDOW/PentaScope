@@ -784,6 +784,91 @@ class WriterOrchestrator:
                     last_error_summary[:400].replace("\n", " | "),
                 )
 
+    async def _call_s5_phase2b(
+        self,
+        *,
+        phase2a_output: dict,
+        scenario_input: ScenarioInput,
+        analysis: Any,
+        discovered_urls: list[str],
+        max_retries: int = 2,
+        max_tokens: int = 8192,
+    ) -> dict:
+        """S5 Phase 2b：战略层 LLM 调用，产出 errc_grid + blue_ocean_move + positioning_statement + category_strategy。
+
+        phase2a_output 提供 competitive_factors 名称 + vendor_names 作为只读上下文。
+        blue_ocean_move 是 Optional——LLM 省略或返回空 dict 都接受。
+        """
+        from src.agents.prompts.writer.payload import S5_SPLIT_PROMPTS
+        from src.schemas.scenarios.s5 import (
+            BlueOceanMove,
+            CategoryStrategy,
+            ERRCGrid,
+            PositioningStatement,
+        )
+
+        system_prompt = S5_SPLIT_PROMPTS["phase2b"]
+
+        # 构建 phase2a 上下文摘要
+        factors = [
+            f.get("name", "")
+            for f in phase2a_output.get("strategy_canvas", {}).get("competitive_factors", [])
+        ]
+        vendor_names = [
+            vp.get("competitor_name", "")
+            for vp in phase2a_output.get("vendor_profiles", [])
+        ]
+        phase2a_context = (
+            f"competitive_factors: {factors}\nvendor_names: {vendor_names}"
+        )
+
+        base_user_prompt = (
+            f"=== 前序阶段产出 ===\n{phase2a_context}\n\n"
+            + self._build_phase2_user_prompt(
+                "S5",
+                scenario_input,
+                analysis,
+                [],  # profiles：phase 2b 不需要重复传 profiles 摘要
+                None,  # competitor_recommendations
+                vendor_names,
+                [{"name": n} for n in vendor_names],
+                discovered_urls,
+            )
+        )
+        last_error_summary: str | None = None
+
+        for attempt in range(max_retries + 1):
+            current_user_prompt = base_user_prompt
+            if last_error_summary:
+                current_user_prompt = (
+                    f"{base_user_prompt}\n\n【上次校验失败，请逐条修复】\n{last_error_summary}"
+                )
+
+            raw = await self._llm_call_with_quota(
+                system_prompt, current_user_prompt, max_tokens=max_tokens
+            )
+
+            try:
+                # 逐模块校验（blue_ocean_move Optional：空 dict / 缺失都跳过校验）
+                if raw.get("errc_grid"):
+                    ERRCGrid(**raw["errc_grid"])
+                if raw.get("blue_ocean_move"):
+                    BlueOceanMove(**raw["blue_ocean_move"])
+                PositioningStatement(**raw.get("positioning_statement", {}))
+                CategoryStrategy(**raw.get("category_strategy", {}))
+                logger.info("[writer] S5 phase 2b 战略层校验通过")
+                return raw
+            except ValidationError as e:
+                if attempt >= max_retries:
+                    raise
+                last_error_summary = self._serialize_validation_error_enhanced(
+                    e, max_chars=2000
+                )
+                logger.warning(
+                    "[writer] S5 phase 2b ValidationError 重试: %s",
+                    last_error_summary[:400].replace("\n", " | "),
+                )
+
     async def _call_phase2_with_validation(
         self,
         *,

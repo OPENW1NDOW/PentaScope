@@ -125,14 +125,6 @@ normalizer `_normalize_s5_raw` **仅在 merge 后运行一次**，不在各 phas
 
 注意：normalizer 的 category_strategy 占位逻辑（fix20）可能掩盖 phase 2b 的 LLM 失败。这是可接受的——fix20 是兜底安全网，正常情况下 phase 2b 应产出合规的 category_strategy，normalizer 只处理极端边缘情况。
 
-### 合并与最终校验
-
-Phase 2b 产出后，代码将 2a + 2b 的结果合并为完整的 `S5PositioningPayload` dict，然后：
-1. 补充 `scenario_type: "S5"`
-2. 补充 `artifact_id`（如果 LLM 遗漏）
-3. 调用 `S5PositioningPayload(**merged_dict)` 做最终的跨字段一致性校验
-4. 校验失败时，将错误摘要注入重试 prompt（仅重试失败的 phase）
-
 ### 增强错误反馈
 
 当前 `_build_error_summary` 只输出 `loc` + `msg`。增强为：

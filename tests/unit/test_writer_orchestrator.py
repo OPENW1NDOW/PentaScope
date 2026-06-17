@@ -1699,3 +1699,160 @@ async def test_s5_phase2b_produces_strategy_layer(monkeypatch):
     assert "errc_grid" in result
     assert "positioning_statement" in result
     assert "category_strategy" in result
+
+
+def _build_phase2a_payload_for_merge() -> dict:
+    """构造 merge 测试用合法 phase 2a output，含 2 个 vendor_profiles 满足 cross-check。"""
+    return {
+        "vendor_profiles": [
+            {
+                "competitor_name": "CompA",
+                "is_self": False,
+                "ability_to_execute_score": 3.0,
+                "ability_to_execute_rationale": "这是 CompA 的执行能力评分理由的详细描述要至少有五十个字符的长度才能满足 schema 校验的最低要求",
+                "completeness_of_vision_score": 3.0,
+                "completeness_of_vision_rationale": "这是 CompA 的愿景完整度评分理由的详细描述要至少有五十个字符的长度才能满足 schema 校验的最低要求",
+                "overview": "CompA 概述描述要至少有二十个字符以上的内容",
+                "strengths": [
+                    {"point": "优势一条要写得足够长才行", "evidence": "证据一条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]},
+                    {"point": "优势二条要写得足够长才行", "evidence": "证据二条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]},
+                ],
+                "cautions": [{"point": "风险一条要写得足够长才行", "evidence": "证据一条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]}],
+                "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+            },
+            {
+                "competitor_name": "CompB",
+                "is_self": True,
+                "ability_to_execute_score": 4.0,
+                "ability_to_execute_rationale": "这是 CompB 的执行能力评分理由的详细描述要至少有五十个字符的长度才能满足 schema 校验的最低要求",
+                "completeness_of_vision_score": 4.0,
+                "completeness_of_vision_rationale": "这是 CompB 的愿景完整度评分理由的详细描述要至少有五十个字符的长度才能满足 schema 校验的最低要求",
+                "overview": "CompB 概述描述要至少有二十个字符以上的内容",
+                "strengths": [
+                    {"point": "优势一条要写得足够长才行", "evidence": "证据一条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]},
+                    {"point": "优势二条要写得足够长才行", "evidence": "证据二条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]},
+                ],
+                "cautions": [{"point": "风险一条要写得足够长才行", "evidence": "证据一条要写得足够长才行", "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}]}],
+                "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+            },
+        ],
+        "perceptual_map": {
+            "artifact_id": "pm1",
+            "artifact_type": "perceptual_map",
+            "title": "感知地图",
+            "x_axis": {"attribute": "易用性等级", "low_label": "低端", "high_label": "高端", "rationale": "x 轴 rationale 要至少二十个字符的描述"},
+            "y_axis": {"attribute": "功能深度等级", "low_label": "基础", "high_label": "全面", "rationale": "y 轴 rationale 要至少二十个字符的描述"},
+            "plotted_brands": [
+                {"competitor_name": "CompA", "is_self": False, "x_score": 3.0, "y_score": 3.0, "confidence": "medium", "score_rationale": "CompA 评分理由要至少二十个字符的描述"},
+                {"competitor_name": "CompB", "is_self": True, "x_score": 4.0, "y_score": 4.0, "confidence": "high", "score_rationale": "CompB 评分理由要至少二十个字符的描述"},
+                {"competitor_name": "CompC", "is_self": False, "x_score": 2.0, "y_score": 2.0, "confidence": "low", "score_rationale": "CompC 评分理由要至少二十个字符的描述"},
+            ],
+        },
+        "strategy_canvas": {
+            "artifact_id": "sc1",
+            "artifact_type": "strategy_canvas",
+            "title": "战略画布",
+            "competitive_factors": [
+                {"name": "易用性能力", "industry_avg_level": 5.0},
+                {"name": "功能深度模块", "industry_avg_level": 5.0},
+                {"name": "价格竞争力", "industry_avg_level": 5.0},
+                {"name": "生态整合度", "industry_avg_level": 5.0},
+                {"name": "品牌影响力", "industry_avg_level": 5.0},
+            ],
+            "value_curves": [
+                {"competitor_name": "CompA", "is_self": False, "factor_levels": {"易用性能力": 3.0, "功能深度模块": 3.0, "价格竞争力": 3.0, "生态整合度": 3.0, "品牌影响力": 3.0}},
+                {"competitor_name": "CompB", "is_self": True, "factor_levels": {"易用性能力": 4.0, "功能深度模块": 4.0, "价格竞争力": 4.0, "生态整合度": 4.0, "品牌影响力": 4.0}},
+            ],
+        },
+    }
+
+
+def _build_phase2b_payload_for_merge() -> dict:
+    """构造 merge 测试用合法 phase 2b output。"""
+    return {
+        "errc_grid": {
+            "artifact_id": "errc1",
+            "artifact_type": "errc_grid",
+            "title": "ERRC",
+            "eliminate": [{"factor": "低效冗余功能", "rationale": "消除理由要至少有二十个字符的详细描述说明"}],
+            "reduce": [{"factor": "冗余审批流程", "rationale": "减少理由要至少有二十个字符的详细描述说明"}],
+            "raise_level": [{"factor": "易用性体验", "rationale": "提升理由要至少有二十个字符的详细描述说明"}],
+            "create": [{"factor": "智能辅助助手", "rationale": "创造理由要至少有二十个字符的详细描述说明"}],
+        },
+        "positioning_statement": {
+            "target_customer": "目标客户群体的描述要足够长",
+            "need_or_opportunity": "需求场景的描述要足够长",
+            "product_name": "产品",
+            "product_category": "智能协作平台",
+            "key_benefit": "关键利益点的描述要足够长",
+            "primary_alternative": "替代竞品",
+            "primary_differentiation": "差异化点的描述要足够长",
+            "confidence": "llm_inferred",
+        },
+        "category_strategy": {
+            "chosen_category": "智能协作工具",
+            "why_this_category": "选择此品类的理由要至少有三十个字符的详细描述说明这个品类的合理性",
+            "competitors_implied": ["CompA"],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_s5_split_merge_produces_valid_payload():
+    """S5 拆分 merge 后产出合法 S5PositioningPayload，cross-validator 通过。"""
+    from src.schemas.scenarios.s5 import S5PositioningPayload
+
+    phase2a = _build_phase2a_payload_for_merge()
+    phase2b = _build_phase2b_payload_for_merge()
+
+    orchestrator = WriterOrchestrator(llm=MagicMock())
+    merged = orchestrator._merge_s5_payload(phase2a, phase2b)
+
+    # 应能成功实例化（含 cross-validator 通过）
+    model = S5PositioningPayload(**merged)
+    assert model.scenario_type == "S5"
+    assert len(model.vendor_profiles) == 2
+    assert {vp.competitor_name for vp in model.vendor_profiles} == {"CompA", "CompB"}
+
+
+@pytest.mark.asyncio
+async def test_s5_phase2_split_routes_through_phase2_with_validation(monkeypatch):
+    """_call_phase2_with_validation 在 scenario=S5 时应走拆分路径，返回 S5PositioningPayload。"""
+    from src.schemas.scenarios.s5 import S5PositioningPayload
+
+    phase2a = _build_phase2a_payload_for_merge()
+    phase2b = _build_phase2b_payload_for_merge()
+
+    orchestrator = WriterOrchestrator(llm=MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_call_s5_phase2a", AsyncMock(return_value=phase2a)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_call_s5_phase2b", AsyncMock(return_value=phase2b)
+    )
+
+    scenario_input = MagicMock()
+    scenario_input.our_product_name = "MyProd"
+    scenario_input.our_product_brief = "brief"
+    scenario_input.industry = "test"
+    scenario_input.analysis_context = "ctx"
+    scenario_input.prior_trace_id = None
+
+    result = await orchestrator._call_phase2_with_validation(
+        scenario="S5",
+        scenario_input=scenario_input,
+        analysis={"summary": "test"},
+        profiles=[],
+        competitor_recommendations=None,
+        prior_report_data=None,
+        competitor_names=["CompA", "CompB"],
+        competitor_basics=[{"name": "CompA"}, {"name": "CompB"}],
+        discovered_urls=["https://a.com"],
+        warnings=[],
+    )
+
+    assert isinstance(result, S5PositioningPayload)
+    assert len(result.vendor_profiles) == 2
+    # 拆分路径应该被调用
+    orchestrator._call_s5_phase2a.assert_awaited_once()
+    orchestrator._call_s5_phase2b.assert_awaited_once()

@@ -869,6 +869,76 @@ class WriterOrchestrator:
                     last_error_summary[:400].replace("\n", " | "),
                 )
 
+    def _merge_s5_payload(self, phase2a: dict, phase2b: dict) -> dict:
+        """合并 S5 phase 2a + 2b 为完整的 S5PositioningPayload dict。
+
+        - 补充 scenario_type="S5"
+        - blue_ocean_move Optional：phase2b 有则带上，无则不加
+        - artifact_id 缺失自动补占位（避免 ArtifactBase 校验失败）
+        """
+        merged = {
+            "scenario_type": "S5",
+            "vendor_profiles": phase2a.get("vendor_profiles", []),
+            "perceptual_map": phase2a.get("perceptual_map", {}),
+            "strategy_canvas": phase2a.get("strategy_canvas", {}),
+            "errc_grid": phase2b.get("errc_grid", {}),
+            "positioning_statement": phase2b.get("positioning_statement", {}),
+            "category_strategy": phase2b.get("category_strategy", {}),
+        }
+        if phase2b.get("blue_ocean_move"):
+            merged["blue_ocean_move"] = phase2b["blue_ocean_move"]
+
+        for key in ("perceptual_map", "strategy_canvas", "errc_grid"):
+            if isinstance(merged.get(key), dict) and not merged[key].get("artifact_id"):
+                merged[key]["artifact_id"] = f"{key}_auto"
+
+        return merged
+
+    async def _call_s5_phase2_split(
+        self,
+        *,
+        scenario_input: ScenarioInput,
+        analysis: Any,
+        profiles: list[CompetitorProfile],
+        competitor_names: list[str],
+        competitor_basics: list[dict],
+        discovered_urls: list[str],
+        warnings: list[str],
+    ):
+        """S5 专用：phase 2a + 2b 拆分调用 → merge → normalize → 实例化。"""
+        phase2a_raw = await self._call_s5_phase2a(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+            competitor_names=competitor_names,
+            competitor_basics=competitor_basics,
+            discovered_urls=discovered_urls,
+        )
+
+        phase2b_raw = await self._call_s5_phase2b(
+            phase2a_output=phase2a_raw,
+            scenario_input=scenario_input,
+            analysis=analysis,
+            discovered_urls=discovered_urls,
+        )
+
+        merged = self._merge_s5_payload(phase2a_raw, phase2b_raw)
+
+        # Normalize（仅 merge 后运行一次，与现有行为一致）
+        discovered_set: set[str] = set(discovered_urls)
+        cleaned = normalize_for_scenario(
+            "S5", merged, discovered_urls=discovered_set, warnings=warnings
+        )
+
+        payload_model = S5PositioningPayload(**cleaned)
+        logger.info(
+            "[writer] S5 phase 2 拆分完成: vendor=%d, factors=%d, dropped_warnings=%d",
+            len(payload_model.vendor_profiles),
+            len(payload_model.strategy_canvas.competitive_factors),
+            len(warnings),
+        )
+        return payload_model
+
     async def _call_phase2_with_validation(
         self,
         *,
@@ -889,7 +959,21 @@ class WriterOrchestrator:
 
         [I1 修复] ValidationError 时回灌错误摘要重试 1 次（spec v3 行 254-256）。
         重试也走 _llm_call_with_quota，受熔断保护。
+
+        [2026-06-16 优化] S5 单次输出复杂度过高，走拆分路径（phase 2a + 2b 串行）。
+        其他场景保持原有单次调用路径。
         """
+        if scenario == "S5":
+            return await self._call_s5_phase2_split(
+                scenario_input=scenario_input,
+                analysis=analysis,
+                profiles=profiles,
+                competitor_names=competitor_names,
+                competitor_basics=competitor_basics,
+                discovered_urls=discovered_urls,
+                warnings=warnings,
+            )
+
         base_user_prompt = self._build_phase2_user_prompt(
             scenario,
             scenario_input,

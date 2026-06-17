@@ -1426,3 +1426,72 @@ def test_phase4_s2_scope_union(monkeypatch):
             competitor_recommendations=None, discovered_urls=discovered,
             competitor_names=[],
         )
+
+
+# ============================================================
+# S5 Payload 拆分优化（2026-06-16）
+# ============================================================
+
+
+def test_serialize_validation_error_enhanced_s5():
+    """S5 增强错误反馈：human-readable 字段路径 + 期望值描述。"""
+    from src.schemas.scenarios.s5 import S5PositioningPayload
+
+    # 构造一个会触发多个 errors 的 raw dict（多种错误类型组合）
+    raw = {
+        "scenario_type": "S5",
+        "vendor_profiles": [{
+            "competitor_name": "A",
+            "is_self": False,
+            "ability_to_execute_score": 3.0,
+            "ability_to_execute_rationale": "短",  # < 50 字
+            "completeness_of_vision_score": 3.0,
+            "completeness_of_vision_rationale": "短",  # < 50 字
+            "overview": "短",  # < 20 字
+            "strengths": [],  # < 2 条
+            "cautions": [],  # < 1 条
+            "source_refs": [],
+        }],
+        "perceptual_map": {
+            "artifact_id": "pm1",
+            "artifact_type": "perceptual_map",
+            "title": "t",
+            "x_axis": {"attribute": "ab", "low_label": "低", "high_label": "高", "rationale": "test rationale long enough"},
+            "y_axis": {"attribute": "cd", "low_label": "低", "high_label": "高", "rationale": "test rationale long enough"},
+            "plotted_brands": [],
+        },
+        "strategy_canvas": {
+            "artifact_id": "sc1",
+            "artifact_type": "strategy_canvas",
+            "title": "t",
+            "competitive_factors": [],
+            "value_curves": [],
+        },
+        "errc_grid": {"artifact_id": "e1", "artifact_type": "errc_grid", "title": "t"},
+        "positioning_statement": {
+            "target_customer": "短",
+            "need_or_opportunity": "短",
+            "product_name": "P",
+            "product_category": "cat",
+            "key_benefit": "短",
+            "primary_alternative": "alt",
+            "primary_differentiation": "短",
+            "confidence": "llm_inferred",
+        },
+        "category_strategy": {
+            "chosen_category": "cat",
+            "why_this_category": "短",
+            "competitors_implied": ["X"],
+        },
+    }
+
+    try:
+        S5PositioningPayload(**raw)
+    except ValidationError as e:
+        result = WriterOrchestrator._serialize_validation_error_enhanced(e)
+        # 应包含人类可读的字段路径（点号分隔）
+        assert "vendor_profiles" in result or "strengths" in result
+        # 应包含期望值描述（中文长度提示或具体数字）
+        assert "≥" in result or "至少" in result or "条" in result or "字符" in result
+        # 应有序号
+        assert "1." in result

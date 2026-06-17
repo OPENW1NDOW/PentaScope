@@ -506,6 +506,60 @@ class WriterOrchestrator:
         text = json.dumps(simplified, ensure_ascii=False)
         return text[:max_chars]
 
+    @staticmethod
+    def _serialize_validation_error_enhanced(
+        e: ValidationError, max_chars: int = 2000
+    ) -> str:
+        """S5 专用增强错误反馈：人类可读字段路径 + 期望值描述。
+
+        相比 _serialize_validation_error 的 JSON dump：
+        1. 字段路径用点号串联（vendor_profiles.0.strengths），LLM 易读
+        2. type 翻译为具体期望值（string_too_short → 要求 ≥N 字符）
+        3. 每条独立成行带序号，便于 LLM 逐条修正
+        """
+        _TYPE_HINTS = {
+            "string_too_short": lambda err: (
+                f"长度不足（要求 ≥{err.get('ctx', {}).get('min_length', '?')} 字符）"
+            ),
+            "string_too_long": lambda err: (
+                f"长度超限（要求 ≤{err.get('ctx', {}).get('max_length', '?')} 字符）"
+            ),
+            "too_short": lambda err: (
+                f"条目数不足（要求 ≥{err.get('ctx', {}).get('min_length', '?')} 条）"
+            ),
+            "too_long": lambda err: (
+                f"条目数超限（要求 ≤{err.get('ctx', {}).get('max_length', '?')} 条）"
+            ),
+            "missing": lambda err: "必填字段缺失",
+            "value_error": lambda err: err.get("msg", "校验失败"),
+            "int_parsing": lambda err: "应为整数",
+            "float_parsing": lambda err: "应为浮点数",
+            "enum": lambda err: (
+                f"应为 {err.get('ctx', {}).get('expected', '指定值')} 之一"
+            ),
+            "literal_error": lambda err: (
+                f"应为 {err.get('ctx', {}).get('expected', '指定值')} 之一"
+            ),
+            "less_than_equal": lambda err: (
+                f"应 ≤{err.get('ctx', {}).get('le', '?')}"
+            ),
+            "greater_than_equal": lambda err: (
+                f"应 ≥{err.get('ctx', {}).get('ge', '?')}"
+            ),
+        }
+
+        errs = e.errors()[:8]
+        lines: list[str] = []
+        for i, err in enumerate(errs, 1):
+            loc = ".".join(str(p) for p in err["loc"])
+            err_type = err.get("type", "")
+            hint_fn = _TYPE_HINTS.get(err_type)
+            hint = hint_fn(err) if hint_fn else err.get("msg", err_type)
+            lines.append(f"{i}. {loc}: {hint}")
+
+        text = "\n".join(lines)
+        return text[:max_chars]
+
     async def _phase1_outline(
         self,
         scenario: str,

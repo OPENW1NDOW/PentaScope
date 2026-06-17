@@ -1495,3 +1495,143 @@ def test_serialize_validation_error_enhanced_s5():
         assert "≥" in result or "至少" in result or "条" in result or "字符" in result
         # 应有序号
         assert "1." in result
+
+
+@pytest.mark.asyncio
+async def test_s5_phase2a_produces_data_layer(monkeypatch):
+    """S5 phase 2a 产出 vendor_profiles + perceptual_map + strategy_canvas，且通过逐模块校验。"""
+    mock_raw = {
+        "vendor_profiles": [{
+            "competitor_name": "TestComp",
+            "is_self": False,
+            "ability_to_execute_score": 3.5,
+            "ability_to_execute_rationale": "这是足够长的执行能力评分理由，至少五十个字符的描述。" * 2,
+            "completeness_of_vision_score": 4.0,
+            "completeness_of_vision_rationale": "这是足够长的愿景完整度评分理由，至少五十个字符的描述。" * 2,
+            "overview": "这是一个竞品概述，至少二十个字符的描述内容。",
+            "strengths": [
+                {
+                    "point": "优势一条要写得足够长才行",
+                    "evidence": "证据一条要写得足够长才行",
+                    "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+                },
+                {
+                    "point": "优势二条要写得足够长才行",
+                    "evidence": "证据二条要写得足够长才行",
+                    "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+                },
+            ],
+            "cautions": [{
+                "point": "风险一条要写得足够长才行",
+                "evidence": "证据一条要写得足够长才行",
+                "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+            }],
+            "source_refs": [{"url": "https://a.com", "title": "t", "source_type": "other"}],
+        }],
+        "perceptual_map": {
+            "artifact_id": "pm1",
+            "artifact_type": "perceptual_map",
+            "title": "感知地图",
+            "x_axis": {
+                "attribute": "易用性等级",
+                "low_label": "低端",
+                "high_label": "高端",
+                "rationale": "这是 x 轴 rationale 要至少二十个字符的描述",
+            },
+            "y_axis": {
+                "attribute": "功能深度",
+                "low_label": "基础",
+                "high_label": "全面",
+                "rationale": "这是 y 轴 rationale 要至少二十个字符的描述",
+            },
+            "plotted_brands": [
+                {
+                    "competitor_name": "TestComp",
+                    "is_self": False,
+                    "x_score": 3.5,
+                    "y_score": 4.0,
+                    "confidence": "medium",
+                    "score_rationale": "这是评分理由的详细描述至少要二十个字符以上",
+                },
+                {
+                    "competitor_name": "BrandB",
+                    "is_self": False,
+                    "x_score": 2.0,
+                    "y_score": 3.0,
+                    "confidence": "low",
+                    "score_rationale": "这是 BrandB 的评分理由至少要二十个字符以上",
+                },
+                {
+                    "competitor_name": "BrandC",
+                    "is_self": True,
+                    "x_score": 4.0,
+                    "y_score": 4.5,
+                    "confidence": "high",
+                    "score_rationale": "这是 BrandC 的评分理由至少要二十个字符以上",
+                },
+            ],
+        },
+        "strategy_canvas": {
+            "artifact_id": "sc1",
+            "artifact_type": "strategy_canvas",
+            "title": "战略画布",
+            "competitive_factors": [
+                {"name": "易用性能力", "industry_avg_level": 5.0},
+                {"name": "功能深度模块", "industry_avg_level": 6.0},
+                {"name": "价格竞争力", "industry_avg_level": 4.0},
+                {"name": "生态整合度", "industry_avg_level": 3.0},
+                {"name": "品牌影响力", "industry_avg_level": 7.0},
+            ],
+            "value_curves": [
+                {
+                    "competitor_name": "TestComp",
+                    "is_self": False,
+                    "factor_levels": {
+                        "易用性能力": 3.5,
+                        "功能深度模块": 4.0,
+                        "价格竞争力": 5.0,
+                        "生态整合度": 2.0,
+                        "品牌影响力": 6.0,
+                    },
+                },
+                {
+                    "competitor_name": "BrandB",
+                    "is_self": False,
+                    "factor_levels": {
+                        "易用性能力": 2.0,
+                        "功能深度模块": 3.0,
+                        "价格竞争力": 4.0,
+                        "生态整合度": 1.0,
+                        "品牌影响力": 5.0,
+                    },
+                },
+            ],
+        },
+    }
+
+    orchestrator = WriterOrchestrator(llm=MagicMock())
+    monkeypatch.setattr(
+        orchestrator, "_llm_call_with_quota", AsyncMock(return_value=mock_raw)
+    )
+
+    scenario_input = MagicMock()
+    scenario_input.our_product_name = "MyProd"
+    scenario_input.our_product_brief = "brief"
+    scenario_input.industry = "test"
+    scenario_input.analysis_context = "ctx"
+    scenario_input.prior_trace_id = None
+
+    # analysis 用 dict 即可（_build_phase2_user_prompt 走 json.dumps 分支）
+    result = await orchestrator._call_s5_phase2a(
+        scenario_input=scenario_input,
+        analysis={"summary": "test analysis"},
+        profiles=[],
+        competitor_names=["TestComp"],
+        competitor_basics=[{"name": "TestComp"}],
+        discovered_urls=["https://a.com"],
+    )
+
+    assert "vendor_profiles" in result
+    assert "perceptual_map" in result
+    assert "strategy_canvas" in result
+    assert len(result["vendor_profiles"]) == 1

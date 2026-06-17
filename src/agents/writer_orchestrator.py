@@ -715,6 +715,75 @@ class WriterOrchestrator:
                 parts.append(f"{label}\n{json.dumps(value, ensure_ascii=False, indent=2)}")
         return "\n\n".join(parts)
 
+    # ========== S5 Phase 2 拆分（2026-06-16 优化） ==========
+
+    async def _call_s5_phase2a(
+        self,
+        *,
+        scenario_input: ScenarioInput,
+        analysis: Any,
+        profiles: list[CompetitorProfile],
+        competitor_names: list[str],
+        competitor_basics: list[dict],
+        discovered_urls: list[str],
+        max_retries: int = 2,
+        max_tokens: int = 8192,
+    ) -> dict:
+        """S5 Phase 2a：数据层 LLM 调用，产出 vendor_profiles + perceptual_map + strategy_canvas。
+
+        失败时回灌增强错误反馈重试，最多 max_retries 次。
+        失败超限直接 raise ValidationError，由调用方决定是否走 WriterRouteToWriter。
+        """
+        from src.agents.prompts.writer.payload import S5_SPLIT_PROMPTS
+        from src.schemas.scenarios.s5 import (
+            PerceptualMap,
+            S5VendorProfile,
+            StrategyCanvas,
+        )
+
+        system_prompt = S5_SPLIT_PROMPTS["phase2a"]
+        base_user_prompt = self._build_phase2_user_prompt(
+            "S5",
+            scenario_input,
+            analysis,
+            profiles,
+            None,  # competitor_recommendations: S5 无推荐路径
+            competitor_names,
+            competitor_basics,
+            discovered_urls,
+        )
+        last_error_summary: str | None = None
+
+        for attempt in range(max_retries + 1):
+            current_user_prompt = base_user_prompt
+            if last_error_summary:
+                current_user_prompt = (
+                    f"{base_user_prompt}\n\n【上次校验失败，请逐条修复】\n{last_error_summary}"
+                )
+
+            raw = await self._llm_call_with_quota(
+                system_prompt, current_user_prompt, max_tokens=max_tokens
+            )
+
+            try:
+                # 逐模块校验
+                for vp in raw.get("vendor_profiles", []):
+                    S5VendorProfile(**vp)
+                PerceptualMap(**raw.get("perceptual_map", {}))
+                StrategyCanvas(**raw.get("strategy_canvas", {}))
+                logger.info("[writer] S5 phase 2a 数据层校验通过")
+                return raw
+            except ValidationError as e:
+                if attempt >= max_retries:
+                    raise
+                last_error_summary = self._serialize_validation_error_enhanced(
+                    e, max_chars=2000
+                )
+                logger.warning(
+                    "[writer] S5 phase 2a ValidationError 重试: %s",
+                    last_error_summary[:400].replace("\n", " | "),
+                )
+
     async def _call_phase2_with_validation(
         self,
         *,

@@ -11,6 +11,8 @@ from src.agents.prompts.writer.payload.s2 import S2_PAYLOAD_PROMPT
 from src.agents.prompts.writer.payload.s3 import S3_PAYLOAD_PROMPT
 from src.agents.prompts.writer.payload.s4 import S4_PAYLOAD_PROMPT
 from src.agents.prompts.writer.payload.s5 import S5_PAYLOAD_PROMPT
+from src.agents.prompts.writer.payload.s5_phase2a import S5_PHASE2A_PROMPT
+from src.agents.prompts.writer.payload.s5_phase2b import S5_PHASE2B_PROMPT
 
 WRITER_PAYLOAD_PROMPTS: dict[str, str] = {
     "S1": S1_PAYLOAD_PROMPT,
@@ -20,4 +22,10 @@ WRITER_PAYLOAD_PROMPTS: dict[str, str] = {
     "S5": S5_PAYLOAD_PROMPT,
 }
 
-__all__ = ["WRITER_PAYLOAD_PROMPTS"]
+# S5 拆分路径专用：phase 2a 数据层 + phase 2b 战略层
+S5_SPLIT_PROMPTS: dict[str, str] = {
+    "phase2a": S5_PHASE2A_PROMPT,
+    "phase2b": S5_PHASE2B_PROMPT,
+}
+
+__all__ = ["WRITER_PAYLOAD_PROMPTS", "S5_SPLIT_PROMPTS"]

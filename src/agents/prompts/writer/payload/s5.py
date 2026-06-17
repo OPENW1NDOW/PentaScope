@@ -97,3 +97,7 @@ S5_PAYLOAD_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
 
 只返回 JSON 对象，不要 Markdown，不要解释。
 """
+
+# Phase 2 拆分路径使用：S5 单次 LLM 输出复杂度过高，拆为数据层 + 战略层串行调用
+from src.agents.prompts.writer.payload.s5_phase2a import S5_PHASE2A_PROMPT  # noqa: E402,F401
+from src.agents.prompts.writer.payload.s5_phase2b import S5_PHASE2B_PROMPT  # noqa: E402,F401

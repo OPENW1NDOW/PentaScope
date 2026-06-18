@@ -58,6 +58,31 @@ def _make_profile(
     )
 
 
+def _make_valid_outline_dict(title: str = "测试 outline") -> dict:
+    """构造能通过 phase 1 即时校验的 outline dict（含合规 executive_summary）。
+
+    [2026-06-18] phase 1 现在对 ExecutiveSummary 做即时 Pydantic 校验，
+    mock LLM 返回的 outline 必须含合规 executive_summary 子结构。
+    所有字符串重复多次确保超过 schema 最低字符数约束（context ≥80 / core_thesis ≥50 /
+    implications ≥100），不要凭语感估字数。
+    """
+    return {
+        "title": title,
+        "subtitle": "",
+        "at_a_glance": ["关键发现一条", "关键发现二条", "关键发现三条"],
+        "executive_summary": {
+            "context": "测试场景的行业竞争背景描述，必须达到至少八十字符的长度才能通过 schema 校验。" * 2,
+            "core_thesis": "核心判断：测试场景的总论一句话表述要满足五十至一百二十字符约束。" * 2,
+            "key_findings_brief": [
+                "测试关键发现摘要第一条达到三十字符长度的描述内容。",
+                "测试关键发现摘要第二条达到三十字符长度的描述内容。",
+            ],
+            "implications": "对我方的影响与意义描述要至少有一百个字符的长度才能通过 ExecutiveSummary.implications 字段的最低长度约束，这段文字仅为单元测试用途的占位文本，不代表真实业务洞察。" * 2,
+            "path_forward": ["测试下一步行动方向描述"],
+        },
+    }
+
+
 # ---------- 测试 1：collect_profile_urls ----------
 
 def test_collect_profile_urls_three_sources():
@@ -498,7 +523,7 @@ async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
 
     async def _capture_llm(system_prompt, user_prompt, *, max_tokens=None):
         captured_prompts.append(user_prompt)
-        return {"title": "测试标题", "subtitle": "", "at_a_glance": ["a"]}
+        return _make_valid_outline_dict()
 
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.call_json = AsyncMock(side_effect=_capture_llm)
@@ -543,7 +568,7 @@ async def test_phase1_s4_no_prior_trace_id_injects_baseline_mode_hint():
 
     async def _capture_llm(system_prompt, user_prompt, *, max_tokens=None):
         captured_prompts.append(user_prompt)
-        return {"title": "测试标题", "subtitle": "", "at_a_glance": ["a"]}
+        return _make_valid_outline_dict()
 
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.call_json = AsyncMock(side_effect=_capture_llm)
@@ -590,7 +615,7 @@ async def test_phase2_validation_error_propagates_after_retry():
     # 序列：phase 1 outline 一次（任意 dict）+ phase 2 三次（都非法）
     # [fix5] phase 2 max_retries 从 1 提到 2：首次 + 2 次重试 = 3 次
     mock_llm.call_json = AsyncMock(side_effect=[
-        {"title": "ok"},  # phase 1 outline（不实例化 schema，任意 dict 即可）
+        _make_valid_outline_dict(),  # phase 1 outline（含合规 executive_summary 通过即时校验）
         {"scenario_type": "S1"},  # phase 2 第 1 次
         {"scenario_type": "S1"},  # phase 2 第 2 次（重试 1）
         {"scenario_type": "S1"},  # phase 2 第 3 次（重试 2）
@@ -674,7 +699,7 @@ async def test_phase3_single_failure_uses_placeholder():
     scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
 
     # phase 1 outline + phase 2 payload + phase 3 5 个 section（第 3 个失败）
-    phase1_outline = {"title": "测试 outline"}
+    phase1_outline = _make_valid_outline_dict("测试 outline")
     phase2_payload = _s1_payload_dict_with_weighted_scores()
     # S1 默认 5 个 section: overview / vendor_profile_analysis / feature_matrix_analysis / jtbd_analysis / roadmap_analysis
     s1_section_types = [
@@ -719,7 +744,7 @@ async def test_phase3_half_failure_raises():
     """5 个 section 中 3 个失败 → 触发半数闸门 raise RuntimeError 含 '触发半数闸门'。"""
     scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
 
-    phase1_outline = {"title": "测试 outline"}
+    phase1_outline = _make_valid_outline_dict("测试 outline")
     phase2_payload = _s1_payload_dict_with_weighted_scores()
     s1_section_types = [
         "overview",
@@ -781,7 +806,7 @@ async def test_phase3_parallel_not_serial():
 
     scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
 
-    phase1_outline = {"title": "测试 outline"}
+    phase1_outline = _make_valid_outline_dict("测试 outline")
     phase2_payload = _s1_payload_dict_with_weighted_scores()
     s1_section_types = [
         "overview",

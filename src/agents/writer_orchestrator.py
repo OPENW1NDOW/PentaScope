@@ -573,8 +573,12 @@ class WriterOrchestrator:
     ) -> dict:
         """Phase 1：一次 LLM 调用产出 BaseReport 全部非 payload/sections/swot 字段。
 
-        不在此处实例化 Pydantic 校验（留给 phase 4 BaseReport 实例化时统一报错）。
-        不做 retry（重试由 phase 4 BaseReport 失败 + graph writer 重试承接）。
+        [2026-06-18 修复] 对 executive_summary 子结构做即时 Pydantic 校验，
+        失败时回灌错误反馈重试（max_retries=2），避免漏字段拖到 phase 4 才炸
+        浪费 phase 2/3 的 ~10 分钟计算预算。
+
+        其他顶层字段（title / scope / methodology 等）仍在 phase 4 BaseReport
+        实例化时统一校验——它们结构简单，LLM 漏填罕见。
         """
         # Profiles 摘要（控制 token；不灌完整 model_dump）
         profile_summaries: list[dict] = []
@@ -631,12 +635,41 @@ class WriterOrchestrator:
         user_prompt = "\n\n".join(parts)
 
         system_prompt = WRITER_OUTLINE_PROMPTS[scenario]
-        outline = await self._llm_call_with_quota(
-            system_prompt, user_prompt, max_tokens=4096
-        )
-        title_preview = (outline.get("title") or "(no title)")[:30] if isinstance(outline, dict) else "(no title)"
-        logger.info("[writer] phase 1 outline 完成: %s", title_preview)
-        return outline
+
+        # [2026-06-18 修复] outline 即时校验 executive_summary 子结构，
+        # 失败时回灌增强错误反馈重试，最多 max_retries=2 次。
+        max_retries = 2
+        last_error_summary: str | None = None
+        for attempt in range(max_retries + 1):
+            current_user_prompt = user_prompt
+            if last_error_summary:
+                current_user_prompt = (
+                    f"{user_prompt}\n\n【上次 outline 校验失败，请逐条修复】\n{last_error_summary}"
+                )
+            outline = await self._llm_call_with_quota(
+                system_prompt, current_user_prompt, max_tokens=4096
+            )
+            try:
+                # 仅对最易漏字段的 executive_summary 子结构做即时校验。
+                # 其他顶层字段在 phase 4 统一校验。
+                es_dict = outline.get("executive_summary", {}) if isinstance(outline, dict) else {}
+                ExecutiveSummary(**es_dict)
+                title_preview = (
+                    (outline.get("title") or "(no title)")[:30]
+                    if isinstance(outline, dict) else "(no title)"
+                )
+                logger.info("[writer] phase 1 outline 完成: %s", title_preview)
+                return outline
+            except ValidationError as e:
+                if attempt >= max_retries:
+                    raise
+                last_error_summary = self._serialize_validation_error_enhanced(
+                    e, max_chars=1500
+                )
+                logger.warning(
+                    "[writer] phase 1 outline executive_summary 校验失败重试: %s",
+                    last_error_summary[:300].replace("\n", " | "),
+                )
 
     # ========== Phase 2: payload ==========
 
@@ -888,9 +921,11 @@ class WriterOrchestrator:
         if phase2b.get("blue_ocean_move"):
             merged["blue_ocean_move"] = phase2b["blue_ocean_move"]
 
-        for key in ("perceptual_map", "strategy_canvas", "errc_grid"):
-            if isinstance(merged.get(key), dict) and not merged[key].get("artifact_id"):
-                merged[key]["artifact_id"] = f"{key}_auto"
+        for key in ("perceptual_map", "strategy_canvas", "errc_grid", "blue_ocean_move"):
+            value = merged.get(key)
+            # blue_ocean_move 是 Optional——不存在就跳过
+            if isinstance(value, dict) and not value.get("artifact_id"):
+                value["artifact_id"] = f"{key}_auto"
 
         return merged
 

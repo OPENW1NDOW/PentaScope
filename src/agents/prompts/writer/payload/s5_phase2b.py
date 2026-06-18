@@ -13,13 +13,14 @@ S5_PHASE2B_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
 返回单个 JSON 对象，含以下字段：
 
 - errc_grid: ERRCGrid
-  - artifact_id, artifact_type="errc_grid", title
+  - **artifact_id (≥3 字符必填，例如 "errc-001")**, artifact_type="errc_grid", title
   - eliminate / reduce / raise_level / create: list[ERRCAction]（每条 factor (≥4) + rationale (≥20)）
   - 注意是 raise_level（不是 raise）
   - **factor 建议基于 strategy_canvas 的 competitive_factors，但允许合理扩展**
 - blue_ocean_move: BlueOceanMove **（Optional，可省略整个字段）**
   - 如果省略，返回空对象 {{}} 或不包含此字段
   - 如果填写：
+    - **artifact_id (≥3 字符必填，例如 "bom-001")**, artifact_type="blue_ocean_move", title
     - new_value_curve_summary (≥50)
     - focus_assessment ∈ {{focused, scattered, uncertain}}, focus_rationale (≥20)
     - divergence_assessment ∈ {{divergent, overlapping, uncertain}}, divergence_rationale (≥20)
@@ -49,7 +50,9 @@ S5_PHASE2B_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
 
 【高频踩坑】
 - errc_grid 的 eliminate / reduce / raise_level / create 每条 factor ≥4 字、rationale ≥20 字
+- **errc_grid.artifact_id 必填**（≥3 字符），常被漏写——示例值："errc-001"
 - blue_ocean_move 是 **Optional**——如果不确定，宁可省略也不要填不完整的内容
+- 如果填 blue_ocean_move，**artifact_id 同样必填**（≥3 字符），示例："bom-001"
 - category_strategy 必填（非 Optional），不可省略也不可传 null
 - positioning_statement 每个字段都有最小字数要求，写完心里数一遍
 

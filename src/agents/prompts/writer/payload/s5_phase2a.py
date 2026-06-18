@@ -33,7 +33,10 @@ S5_PHASE2A_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
     - source_refs: list[SourceRef]
   - white_space: list[WhiteSpaceZone]（可空数组）
     - 每条含 `quadrant`（必须 "top_right" | "top_left" | "bottom_right" | "bottom_left" | "center" 5 选 1）+ `opportunity_description` (≥20 字)
-  - cluster_zones: list[ClusterZone]（可空数组）
+  - cluster_zones: list[ClusterZone]（**可空数组，但若填则每条必须包含两个字段**）
+    - **brands_in_cluster: list[str], ≥2 条**（聚类里的品牌名列表）
+    - **implication: str (≥20 字)**（聚类含义解读）
+    - 不确定就**返回空数组 `[]`**，不要返回 `[{{}}]` 半填
   - **display_watermark**（用默认值即可："基于公开信息 AI 推断，非客户调研真实分数"）
 - strategy_canvas: StrategyCanvas
   - artifact_id, artifact_type="strategy_canvas", title
@@ -62,10 +65,11 @@ S5_PHASE2A_PROMPT = f"""你是一个资深战略咨询顾问，正在产出 S5 �
 
 【高频踩坑】
 - vendor_profiles[*].strengths：list 长度**必须 2-5 条**，每条 point ≥10 字、evidence ≥10 字
-- vendor_profiles[*].cautions：list 长度**必须 1-4 条**
+- vendor_profiles[*].cautions：list 长度**必须 1-4 条**，每条 point ≥10 字、evidence ≥10 字
 - vendor_profiles[*].overview：20-200 字
 - vendor_profiles[*].ability_to_execute_rationale / completeness_of_vision_rationale：≥50 字
 - perceptual_map 的 low_label / high_label：**≥2 字符**（"低""高" 单字会被拒）
+- perceptual_map.cluster_zones：**要么留空数组 `[]`，要么每条同时含 brands_in_cluster 和 implication**，不能半填
 - strategy_canvas.value_curves[*].factor_levels：dict key 必须**严格等于** competitive_factors 所有 name 集合
 
 只返回 JSON 对象，不要 Markdown，不要解释。

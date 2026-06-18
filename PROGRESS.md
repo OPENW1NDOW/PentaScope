@@ -16,6 +16,75 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-18（S5 拆分端到端首次真跑 + 4 bug 修复 + OPEN_QUESTIONS 文档体系建立）
+- 完成：
+  - **OPEN_QUESTIONS.md 文档体系建立**：与 PROGRESS / DECISIONS 三文档边界划清，问题 ID 格式 `Q-YYYY-MM-DD-关键词`，状态 4 档（未决 / 设计中 / 实施中 / 已并入）。CLAUDE.md "上下文恢复"章节同步加入 OPEN_QUESTIONS 必读
+  - **S5 拆分端到端首次真跑（trace `20260618-095358-c5ab5c`，Figma vs Sketch/Adobe XD/Framer）**：
+    - **拆分路径完整跑通**：vendor=4 / factors=10 / dropped_warnings=0，phase 2a + 2b 数据完整
+    - **第二次 writer phase 3 narrative 6/6 全成功**（PentaScope 历史首次，但因 phase 4 ValidationError 报告未落盘）
+    - 总耗时 31 分 33 秒，最终 quality_score=0.486（仍 cap 0.5），passed=False，max_retries=2 强制结束
+  - **4 个 bug Prove-It 修复（commit `6e864e1`，451 passed / 5 skipped / 2 xfailed / ruff clean）**：
+    1. phase 1 outline 漏字段拖到 phase 4 才炸 → `_phase1_outline` 加 `ExecutiveSummary` 即时 Pydantic 校验 + max_retries=2 + 增强错误反馈回灌
+    2. `s5_phase2b.py` prompt 没给 artifact_id 示例值 → 加 `≥3 字符必填，例如 errc-001 / bom-001` + 高频踩坑提醒
+    3. `s5_phase2a.py` cluster_zones 没说条件性必填 → 加子字段 brands_in_cluster ≥2 + implication ≥20 强约束 + "不确定就返回 `[]`"
+    4. `_merge_s5_payload` artifact_id 兜底漏 blue_ocean_move → 循环加 blue_ocean_move 条件兜底
+  - **测试 fixture 公用化**：新增 `_make_valid_outline_dict()` fixture（含合规 executive_summary），5 处简化 mock 改用，避免 Claude 自己估字数错触发 schema 校验失败
+- 关键发现（已落 OPEN_QUESTIONS）：
+  - **Q-2026-06-18-json-extra-data**：JSON 解析失败的第 4 种模式 `Extra data`（LLM 在 JSON 后追加纯文本说明），与已知 `Unterminated string` / `Expecting value` / `Expecting property name` 不同类
+  - **Q-2026-06-18-llm-反馈修一退一**：错误反馈回灌重试机制的天然弱点——LLM 全文重写时无"上次合规字段别动"记忆，常 attempt 0 错 A、attempt 1 修 A 但反退 B、attempt 2 修 B 但反退 C，max_retries=2 预算紧
+  - **Q-2026-06-18-inspector-llm-issue-丢失**：inspector LLM 输出 issue 自身违反 `FeedbackIssue` schema 的部分被丢弃（trace 实证 2/8 条丢失），inspector 反馈信号容量被自身鲁棒性问题压低
+  - **Q-2026-06-18-narrative-偶发抖动**：phase 3 narrative 单 section 失败率 ~17% 是 MiMo 在该任务的底噪，**与输入大小关系不强**（修正昨天的"输入大 → 失败概率高"假设）；同 section 重跑就过 → 强证偶发抖动可通过重试救
+- 进行中：4 个 bug 已修，需重跑 S5 验证修复效果
+- 下一步（TODO）：
+  1. **重跑 S5 验证 4 bug 修复效果**（推荐）：验 phase 1 outline 即时校验是否生效、phase 2 是否减少重试浪费、quality_score 是否突破 cap 0.5
+  2. **LLM-as-critic 评分 brainstorming**（沿用 06-17）：今天 trace 又添 4 类 OPEN_QUESTIONS 全部关联回字数约束代理失效，brainstorming 时把这些当作集中实证素材
+  3. **观察项**：Q-2026-06-18-narrative-偶发抖动 的修法（phase 3 加 1 次轻重试 vs cap 机制改造）需要单独决策
+- 阻塞：无
+
+---
+
+## 2026-06-17（S5 payload 拆分实施 + 报告质量提升方向反思）
+- 完成：
+  - **S5 payload 拆分（spec → plan → execute 全流程，8 task / 8 commit）**：
+    - spec 修复重复段落（da915fb），plan 8 task 按 TDD 推进
+    - Task 1-3：新建 `s5_phase2a.py`（数据层 prompt，4625 字符）+ `s5_phase2b.py`（战略层 prompt，3601 字符）+ `__init__.py` 导出 `S5_SPLIT_PROMPTS` dict
+    - Task 4：新增 `_serialize_validation_error_enhanced` 静态方法（S5 专用人类可读错误反馈，loc 点号串联 + type 翻译为期望值，前 8 条带序号，max 2000 字符）。原 `_serialize_validation_error` S1~S4 路径不变
+    - Task 5：`_call_s5_phase2a` 数据层 LLM 调用，逐模块校验（S5VendorProfile / PerceptualMap / StrategyCanvas），ValidationError 回灌增强反馈，max_retries=2
+    - Task 6：`_call_s5_phase2b` 战略层 LLM 调用，注入 `phase2a_output` 的 competitive_factors + vendor_names 作为只读上下文，blue_ocean_move Optional（缺失/空 dict 都跳过）
+    - Task 7：`_merge_s5_payload`（合并 + scenario_type + artifact_id 兜底 + blue_ocean_move 透传）+ `_call_s5_phase2_split`（phase2a → phase2b → merge → normalize → 实例化）+ `_call_phase2_with_validation` 入口加 scenario==S5 分支路由。S1~S4 完全不变
+  - **测试**：451 passed（+5 新 S5 拆分单测）/ 5 skipped / 2 xfailed / ruff clean
+  - **模型可用性验证**：Cooper 把 `.env` 里 `DOUBAO_MODEL_EP` 从 `mimo-v2.5-pro[1m]` 改为 `mimo-v2.5-pro` 后端点接受，text/json 调用都通
+- 进行中：S5 拆分 Task 8 端到端真实 LLM 验证未跑（需要 Cooper 启动后端 + 前端手动跑 S5 场景验 quality_score ≥0.7）
+- 关键讨论（写测试 fixture 反复触发字数 ValidationError 引出）：
+  - **LLM 字数约束失败是机制问题不是能力问题**：token≠字符（中文尤其错位）、自回归生成无全局规划、训练分布缺"严格字数"任务、知行差距。换更强模型也救不了
+  - **字数约束本质是质量代理而非质量本身**：能拦"懒得写"但拦不住"写很多废话"，废话是 LLM 舒适区
+  - **不能在代理层叠加字符级规则**（Cooper 直接质疑过的方案 A "每段强制至少 1 个数字或专名"已撤回）：真实咨询报告大量纯洞察论断没数字（"建议优先攻防而非主动进攻"/"进入门槛主要在生态而非技术"），强制加会逼出比废话更糟的假数据幻觉
+  - **提质方向应跳出代理思路**：转向 LLM-as-critic 语义评分（G-Eval / Prometheus 范式），独立 critic prompt 按 specificity/actionability/evidence/coherence rubric 打分，writer 据此重写
+  - **两条记忆已落盘**：`feedback_proxy_metric_bias.md`（看到代理失效就想换代理是 Claude 的思维 bias）+ `project_length_constraint_proxy_problem.md`（项目当前字数约束的本质问题 + 提质方向）
+- 下一步（TODO，按优先级）：
+  1. **S5 拆分端到端真跑验证**（紧迫）：Cooper 启动后端 + 前端跑 S5 场景，验证 quality_score ≥0.7 + 总耗时 < 15 分钟 + Phase 2a/2b 各自成功（看日志）
+  2. **报告质量提升 — LLM-as-critic 评分**（新增方向，最高 ROI）：独立 critic agent 按 rubric（specificity / actionability / evidence / coherence）打分，inspector 接 critic 输出做反馈闭环；字数约束渐进退役（critic 跑通后逐字段评估"实际拦住的是什么"，拦"水且违规"才保留，拦"真但不合规"或"水但合规"则删）。需走 brainstorming → doubt-driven → spec → plan 完整流程
+  3. **分层模型调用**（沿用 06-16 待办）：collector/analyzer 用快模型，writer narrative 用强模型，待 Cooper 调研选型
+  4. **analyzer 并行拆分**（沿用）：4 竞品拆 2×2 并发
+  5. **collector 信息收集优化**（沿用）：多次搜索 + 不同关键词，需先验证 ROI
+- 流水线优化方案清单（更新版）：
+
+  | 方案 | 提速 | 提质 | 改动量 | 状态 |
+  |------|------|------|--------|------|
+  | S5 payload 拆分 | - | ★★★ | 中 | **已实施（待真跑验证）** |
+  | LLM-as-critic 评分（新） | - | ★★★★ | 大 | **新增 / 待 brainstorming** |
+  | 分层模型 | ★★★ | ★★★ | 小 | 待模型选型 |
+  | analyzer 并行 | ★★★ | - | 中 | 待实施 |
+  | ValidationError 反馈 | ★★ | ★★ | 小 | **S5 已含增强反馈** |
+  | prompt 精简 | ★ | - | 中 | 待评估 |
+  | 字数约束渐进退役 | - | ★ | 中 | 待 critic 跑通后启动 |
+- 阻塞：无
+- 关键发现：
+  - **写 fixture 都频繁估错字数**：Claude 自己写测试数据时反复触发 ≥50/≥30/≥20 字符违规，反向证明 LLM 字符级约束不可能可靠执行——是工具误用而非 LLM 不努力
+  - **拆分本身的副产品**：S5 phase 2a / 2b 各自约束少 = 合规率高，验证了 PROGRESS 06-14 假设"不是模型能力问题，是单次输出复杂度问题"
+
+---
+
 ## 2026-06-14 ~ 06-16（模型切换 + bug 修复 + S5 复杂度问题识别 + 流水线优化规划）
 - 完成：
   - **模型切换**：Doubao-Seed-2.0-lite → MiMo-v2.5-pro（1T 参数、42B 激活、1M 上下文），`.env` 更新 API key / base_url / model

@@ -11,9 +11,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 上下文恢复
 
 每次对话开始时，先读以下文件了解项目状态：
-- `PROGRESS.md` — 当前进度、进行中的任务、下一步计划
+- `PROGRESS.md` — 当前进度、进行中的任务、下一步 1-2 session 计划
 - `DECISIONS.md` — 已做出的技术决策及其理由
+- `OPEN_QUESTIONS.md` — 已发现但未决定如何应对的深层问题（跨 session 反复回访）
 - `docs/PRD.md` — 产品需求文档
+
+三文档边界：
+- 已经决定怎么修 → DECISIONS（写决策）+ PROGRESS（排期实施）
+- 还没决定怎么修，但讨论过 → OPEN_QUESTIONS
+- 一两天就能消化 → 留在 PROGRESS 不要分
+- 跨 session 反复回访 / 跨场景跨模块 / 修复路径不明 / 可能引发架构级改动 → 移到 OPEN_QUESTIONS
 
 ## 技术栈
 

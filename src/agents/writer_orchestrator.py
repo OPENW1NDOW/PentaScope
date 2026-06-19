@@ -647,7 +647,7 @@ class WriterOrchestrator:
                     f"{user_prompt}\n\n【上次 outline 校验失败，请逐条修复】\n{last_error_summary}"
                 )
             outline = await self._llm_call_with_quota(
-                system_prompt, current_user_prompt, max_tokens=4096
+                system_prompt, current_user_prompt, max_tokens=6144
             )
             try:
                 # 仅对最易漏字段的 executive_summary 子结构做即时校验。
@@ -1221,7 +1221,7 @@ class WriterOrchestrator:
         # 仅 LLM 调用进 semaphore，CPU 序列化在外面
         async with self._narrative_sem:
             raw = await self._llm_call_with_quota(
-                system_prompt, user_prompt, max_tokens=4096
+                system_prompt, user_prompt, max_tokens=8192
             )
         return AnalysisSection(**raw)
 

@@ -16,6 +16,39 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-19（晚 / critic v1.2 修复 + narrative 轻重试 + max_tokens 调参 + JSON 鲁棒性）
+- 完成：
+  - **critic v1.2.1 三问题修复**（commit `0059db5` + `03babf7`）：
+    1. scenario_payload 不再裁剪 → critic 能看到场景特有内容
+    2. coherence 场景 pair 重写 → S2/S5 修字段名（实测全错导致静默跳过），S3 换 packaging vs recommendations_summary，S4 换 threats vs monitoring_actions；直接属性访问防静默失效
+    3. findings/narratives/recommendations 改全量传递，消除抽样偏差
+    - 9 新单测锁定 + 4 eval 反例集（S2/S5 稳定检出矛盾，S3/S4 受 MiMo 非确定性影响）
+  - **phase 3 narrative 轻重试**（commit `eae4e44`）：单 section 首次失败串行重试 1 次，仍失败才占位降级。实战验证 S5 `positioning_statement_analysis` 首次 ValidationError → 重试成功 → 6/6 全通过
+  - **max_tokens 基于 finish_reason 实证调参**（commit `2a06fe1` + `39bf3d2`）：
+    - phase 1 outline: 4096 → 6144（实测 3983~4096 撞满 2 次）
+    - phase 2 payload: 8192 → 12288（实测重试时 8192 撞满）
+    - phase 3 narrative: 4096 → 8192（实测 4051/4096=99.9%）
+  - **JSON 鲁棒性：三次兜底修复未转义双引号**（commit `f1bd582`）：
+    - 历次 36 次 JSON 解析失败分类：Unterminated string 19 次（max_tokens 已修）/ Expecting ',' delimiter 7 次（本次修）/ 其他 10 次
+    - 新增 `_fix_unescaped_quotes_in_values` 状态机：字符串值内 ASCII 双引号替换为中文引号
+  - **S5 端到端验证**（trace `20260619-203923-9f5681`，Figma vs Sketch/Adobe XD/Framer）：
+    - **quality_score=0.900，passed=True**（项目历史最高分 + S5 历史首次通过）
+    - critic 评分 ev=3 sp=4 co=4 ac=4
+    - narrative 6/6 成功（轻重试救回 1 个）
+    - finish_reason=length 截断 0 次（全链路零截断）
+    - 总耗时 9 分 35 秒（历史 S5 平均 25-35 分钟）
+    - 一次通过无反馈闭环（历史 S5 均需 2 轮闭环）
+  - **发现 Q-2026-06-19-scenario-query-低相关**：S5 query 太学术化（"品牌定位 战略差异化"）导致 Tavily 返回无关内容（MBA 百科/社科院论文），12 条搜索结果仅 5 条有效（42%）。已记入 OPEN_QUESTIONS，归入 collector 搜索优化课题
+- 进行中：无
+- 下一步（TODO，按优先级）：
+  1. **collector 搜索策略优化**（Q-2026-06-19-scenario-query-低相关）：每场景多条 query + 产品实操语言替代学术术语
+  2. **字数约束阶段 3-5 退役**（critic 已稳定运行）：逐字段评估"实际拦住的是什么"
+  3. **max_tokens 调参验证**：多场景真跑确认 S1-S4 也零截断
+- 阻塞：无
+- 安全提醒：无新增 key
+
+---
+
 ## 2026-06-19（LLM-as-critic spec 三轮 doubt-driven + plan 落盘 + finish_reason 可观测性）
 - 完成：
   - **Brainstorming 8 个问题逐一拍板**（critic 路线 A / 4 维 evidence+specificity+coherence+actionability / 0.30/0.30/0.20/0.20 加权 / 集成顺序 C 内嵌单次调用 / coherence 限定 pair / 失败 retry 1 次后 fallback / D 阈值映射 / CoT 全维度 / 整报告级评分 / 测试三层 / v3-R17 cap 删除）

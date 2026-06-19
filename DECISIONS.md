@@ -15,6 +15,30 @@
 
 ---
 
+## 2026-06-19: max_tokens 基于 finish_reason 实证调参（不拍脑袋）
+
+- 选择：**每个调用点的 max_tokens 必须基于 finish_reason 日志硬证据调整，不凭直觉猜**
+- 理由：06-19 上午 session 讨论 max_tokens 时反复矛盾（Cooper 三次反问拽回），最终加 finish_reason 日志后用数据说话——实测 phase 1 撞 4096 两次 / phase 2 撞 8192 一次 / phase 3 4051/4096=99.9%。调参依据是"实测消耗 + 50% 余量"而非"觉得够用"
+- 最终值：phase 1=6144 / phase 2=12288 / phase 3=8192 / analyzer+critic=8192 不变 / collector=无限制
+- 备选（一律调到 16384 省事）：浪费 token 预算、增加响应时间、某些端点可能不支持过大值
+
+## 2026-06-19: narrative 轻重试（1 次串行重试再占位）
+
+- 选择：phase 3 gather 后对 Exception 项**逐个串行重试 1 次**，仍失败才占位降级
+- 理由：06-18 实测确认 narrative 失败率 ~17% 是偶发抖动（同 section 重跑就过），占位会触发 placeholder cap 0.5 → 整轮报废。轻重试最坏增加 N_failed×30s
+- 备选 a（并行重试）：可能再次打满并发压力导致更多失败
+- 备选 b（增加首跑重试次数）：增加全链路 LLM 调用数，撞熔断风险
+- 实战验证：S5 跑通 positioning_statement_analysis 首次失败 → 重试成功 → 6/6 全通过 → quality_score 0.900
+
+## 2026-06-19: JSON 解析三次兜底链（反斜杠 → 未转义双引号 → 放弃重试）
+
+- 选择：json.loads(strict=False) → 反斜杠兜底 → **未转义双引号状态机修复** → 抛错走 attempt 重试
+- 理由：历次 36 次 JSON 失败中 7 次（19%）是字符串值内 ASCII 双引号未转义（LLM 用"引用"含义），状态机判断后跟非 JSON 结构字符的 " 替换为中文引号。实现简单、副作用低
+- 备选（prompt 层要求不用双引号）：LLM 不可靠遵守此类格式约束，不如代码层兜底
+- 边界：状态机不是万能的——如果 LLM 输出的结构性破坏更深（如整段 JSON 格式混乱），仍会走 attempt 重试
+
+---
+
 ## 2026-06-19: 架构级 spec 必须走 cross-model doubt-driven，author self-review 不可靠
 
 - 选择：**任何架构级 / 数据流改造级 spec（如 critic / 大重构）落盘前，必须用 codex CLI 做至少 1 轮跨模型 doubt-driven 审查**

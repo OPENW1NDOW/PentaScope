@@ -1261,15 +1261,43 @@ class WriterOrchestrator:
             return_exceptions=True,
         )
 
+        # 首跑失败的 section 收集起来做一轮重试
+        retry_indices: list[int] = []
+        first_pass_results: list[AnalysisSection | Exception] = []
+        for i, (st, r) in enumerate(zip(section_types, results)):
+            if isinstance(r, Exception):
+                retry_indices.append(i)
+                logger.info("[writer] phase 3 section %s 首次失败，排队重试: %s", st, type(r).__name__)
+            first_pass_results.append(r)
+
+        # 逐个重试失败的 section（串行，避免再次并发压力）
+        for i in retry_indices:
+            st = section_types[i]
+            try:
+                retry_result = await self._phase3_one_section(
+                    scenario=scenario,
+                    section_type=st,
+                    outline=outline,
+                    payload_dict=payload_dict,
+                    analysis=analysis,
+                    scenario_input=scenario_input,
+                    discovered_urls=discovered_urls,
+                )
+                first_pass_results[i] = retry_result
+                logger.info("[writer] phase 3 section %s 重试成功", st)
+            except Exception as retry_err:
+                logger.warning("[writer] phase 3 section %s 重试仍失败: %s", st, type(retry_err).__name__)
+
+        # 汇总最终结果
         sections: list[AnalysisSection] = []
         failed_n = 0
-        for st, r in zip(section_types, results):
+        for st, r in zip(section_types, first_pass_results):
             if isinstance(r, Exception):
                 sections.append(_build_placeholder_section(st, payload_dict))
                 warnings.append(f"placeholder_section:{st}:{type(r).__name__}")
                 failed_n += 1
                 logger.warning(
-                    "[writer] phase 3 section %s 失败 → 占位降级: %s",
+                    "[writer] phase 3 section %s 重试后仍失败 → 占位降级: %s",
                     st,
                     type(r).__name__,
                 )

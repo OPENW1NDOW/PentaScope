@@ -695,13 +695,11 @@ def _make_phase3_full_run_inputs():
 
 @pytest.mark.asyncio
 async def test_phase3_single_failure_uses_placeholder():
-    """单 section LLM 调用失败 → 该 section 用 placeholder + warnings 加 'placeholder_section:' 前缀。"""
+    """单 section LLM 调用失败 + 重试仍失败 → 占位降级 + warnings 加 'placeholder_section:' 前缀。"""
     scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
 
-    # phase 1 outline + phase 2 payload + phase 3 5 个 section（第 3 个失败）
     phase1_outline = _make_valid_outline_dict("测试 outline")
     phase2_payload = _s1_payload_dict_with_weighted_scores()
-    # S1 默认 5 个 section: overview / vendor_profile_analysis / feature_matrix_analysis / jtbd_analysis / roadmap_analysis
     s1_section_types = [
         "overview",
         "vendor_profile_analysis",
@@ -715,17 +713,16 @@ async def test_phase3_single_failure_uses_placeholder():
         phase2_payload,         # phase 2
         _make_valid_narrative_json(s1_section_types[0]),   # narrative 1 ok
         _make_valid_narrative_json(s1_section_types[1]),   # narrative 2 ok
-        RuntimeError("LLM 模拟故障"),                       # narrative 3 失败
+        RuntimeError("LLM 模拟故障"),                       # narrative 3 首次失败
         _make_valid_narrative_json(s1_section_types[3]),   # narrative 4 ok
         _make_valid_narrative_json(s1_section_types[4]),   # narrative 5 ok
+        RuntimeError("LLM 重试也失败"),                     # narrative 3 重试失败
     ]
 
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.call_json = AsyncMock(side_effect=side_effects)
     orch = WriterOrchestrator(llm=mock_llm)
 
-    # write 进入 phase 4 后因 outline 仅 {"title": "..."} 缺字段会 raise（Pydantic ValidationError 或 RuntimeError）
-    # 本测试焦点是 phase 3 占位降级行为，phase 4 失败合预期，只断 LLM 调用计数
     with pytest.raises(Exception):
         await orch.write(
             scenario_input=scenario_input,
@@ -733,15 +730,15 @@ async def test_phase3_single_failure_uses_placeholder():
             profiles=profiles,
         )
 
-    # 总 LLM 调用次数 = 1 (outline) + 1 (payload) + 5 (narrative) = 7
-    assert mock_llm.call_json.call_count == 7
+    # 总 LLM 调用次数 = 1 (outline) + 1 (payload) + 5 (首跑) + 1 (重试) = 8
+    assert mock_llm.call_json.call_count == 8
 
 
 # ---------- 测试 13：phase 3 半数失败硬闸门 raise ----------
 
 @pytest.mark.asyncio
 async def test_phase3_half_failure_raises():
-    """5 个 section 中 3 个失败 → 触发半数闸门 raise RuntimeError 含 '触发半数闸门'。"""
+    """5 个 section 中 3 个首次+重试都失败 → 触发半数闸门 raise 含 '触发半数闸门'。"""
     scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
 
     phase1_outline = _make_valid_outline_dict("测试 outline")
@@ -757,18 +754,22 @@ async def test_phase3_half_failure_raises():
     side_effects = [
         phase1_outline,
         phase2_payload,
-        RuntimeError("LLM 故障 1"),                          # narrative 1 失败
-        RuntimeError("LLM 故障 2"),                          # narrative 2 失败
+        RuntimeError("LLM 故障 1"),                          # narrative 1 首次失败
+        RuntimeError("LLM 故障 2"),                          # narrative 2 首次失败
         _make_valid_narrative_json(s1_section_types[2]),    # narrative 3 ok
-        RuntimeError("LLM 故障 3"),                          # narrative 4 失败
+        RuntimeError("LLM 故障 3"),                          # narrative 4 首次失败
         _make_valid_narrative_json(s1_section_types[4]),    # narrative 5 ok
+        # 3 个重试也全失败
+        RuntimeError("LLM 重试故障 1"),
+        RuntimeError("LLM 重试故障 2"),
+        RuntimeError("LLM 重试故障 3"),
     ]
 
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.call_json = AsyncMock(side_effect=side_effects)
     orch = WriterOrchestrator(llm=mock_llm)
 
-    # 5 个 section 中 3 个失败 → 阈值 ⌈5/2⌉=3，failed_n=3 ≥ 3 → raise
+    # 3 个 section 首次+重试都失败 → 阈值 ⌈5/2⌉=3，failed_n=3 ≥ 3 → raise
     with pytest.raises(RuntimeError, match="触发半数闸门"):
         await orch.write(
             scenario_input=scenario_input,
@@ -1881,3 +1882,90 @@ async def test_s5_phase2_split_routes_through_phase2_with_validation(monkeypatch
     # 拆分路径应该被调用
     orchestrator._call_s5_phase2a.assert_awaited_once()
     orchestrator._call_s5_phase2b.assert_awaited_once()
+
+
+# ---------- 测试：phase 3 narrative 轻重试 ----------
+
+@pytest.mark.asyncio
+async def test_phase3_retry_once_then_succeed():
+    """单 section 首次失败 + 重试成功 → 不出现 placeholder，总调用 = 2(p1+p2) + 5(首跑) + 1(重试) = 8。"""
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    phase1_outline = _make_valid_outline_dict("测试 outline")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_section_types = [
+        "overview",
+        "vendor_profile_analysis",
+        "feature_matrix_analysis",
+        "jtbd_analysis",
+        "roadmap_analysis",
+    ]
+
+    # 第 3 个 section 首次失败，重试时成功
+    side_effects = [
+        phase1_outline,                                         # phase 1
+        phase2_payload,                                         # phase 2
+        _make_valid_narrative_json(s1_section_types[0]),        # narrative 1 ok
+        _make_valid_narrative_json(s1_section_types[1]),        # narrative 2 ok
+        RuntimeError("LLM 偶发故障"),                            # narrative 3 首次失败
+        _make_valid_narrative_json(s1_section_types[3]),        # narrative 4 ok
+        _make_valid_narrative_json(s1_section_types[4]),        # narrative 5 ok
+        _make_valid_narrative_json(s1_section_types[2]),        # narrative 3 重试成功
+    ]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    # phase 4 会因 outline fixture 不完整而 raise，但 phase 3 应该 8 次调用
+    with pytest.raises(Exception):
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+        )
+
+    # 1(outline) + 1(payload) + 5(首跑) + 1(重试) = 8
+    assert mock_llm.call_json.call_count == 8
+
+
+@pytest.mark.asyncio
+async def test_phase3_retry_once_then_still_fail_uses_placeholder():
+    """单 section 首次失败 + 重试仍失败 → 占位降级，总调用 = 2 + 5 + 1(重试) = 8。"""
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    phase1_outline = _make_valid_outline_dict("测试 outline")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_section_types = [
+        "overview",
+        "vendor_profile_analysis",
+        "feature_matrix_analysis",
+        "jtbd_analysis",
+        "roadmap_analysis",
+    ]
+
+    # 第 3 个 section 首次失败，重试也失败
+    side_effects = [
+        phase1_outline,
+        phase2_payload,
+        _make_valid_narrative_json(s1_section_types[0]),
+        _make_valid_narrative_json(s1_section_types[1]),
+        RuntimeError("LLM 故障"),                               # narrative 3 首次失败
+        _make_valid_narrative_json(s1_section_types[3]),
+        _make_valid_narrative_json(s1_section_types[4]),
+        RuntimeError("LLM 重试也失败"),                           # narrative 3 重试失败
+    ]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    with pytest.raises(Exception):
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+        )
+
+    # 总调用 = 2 + 5 + 1 = 8
+    assert mock_llm.call_json.call_count == 8

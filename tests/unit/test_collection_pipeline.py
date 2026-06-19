@@ -4,16 +4,14 @@ from src.agents.collection_pipeline import CollectionPipeline, _SCENARIO_QUERIES
 from src.tools.sources import SourceResult
 
 
-def test_each_scenario_has_single_query():
-    """[bug1 prove-it] 每场景只调一次 query，避免输入量翻倍触发 Doubao token 上限。
+def test_each_scenario_has_multiple_queries():
+    """每场景应有 2-3 条 query 覆盖不同角度（产品对比/官网/评价等）。
 
-    现象（trace 20260609-150301-df17ff）：
-    飞书文档 collector 直接 400 'Total tokens exceed max message tokens'，
-    因为 SEARCH_TOP_N=5 × 2 query = 10 条 raw_content 合并后超 224K token 上限。
+    输入量由 _EXTRACT_TEXT_MAX_CHARS=300000 截断兜底，不再担心 token 上限。
     """
     for scenario, queries in _SCENARIO_QUERIES.items():
-        assert len(queries) == 1, (
-            f"{scenario} query 数应为 1，当前 {len(queries)}：{queries}"
+        assert 2 <= len(queries) <= 4, (
+            f"{scenario} query 数应为 2-4，当前 {len(queries)}：{queries}"
         )
 
 

@@ -7,24 +7,24 @@ from src.schemas.common import ArtifactBase, SourceRef
 
 
 class VendorStrength(BaseModel):
-    point: str = Field(min_length=10)
-    evidence: str = Field(min_length=10)
+    point: str
+    evidence: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class VendorCaution(BaseModel):
-    point: str = Field(min_length=10)
-    evidence: str = Field(min_length=10)
+    point: str
+    evidence: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class S1VendorProfile(BaseModel):
     competitor_name: str = Field(min_length=1)
     wave_position: Literal["wave_leader", "wave_strong_performer", "wave_contender"]
-    one_line_pitch: str = Field(min_length=10, max_length=120)
-    strengths: list[VendorStrength] = Field(min_length=2, max_length=5)
+    one_line_pitch: str = Field(max_length=150)
+    strengths: list[VendorStrength] = Field(min_length=1, max_length=5)
     cautions: list[VendorCaution] = Field(min_length=1, max_length=4)
-    best_fit_for: str = Field(min_length=10)
+    best_fit_for: str = ""
     reference_customer_feedback: str = Field(default="")
     source_refs: list[SourceRef] = Field(default_factory=list)
 
@@ -47,13 +47,13 @@ class FeatureScore(BaseModel):
 
 
 class FeatureRow(BaseModel):
-    name: str = Field(min_length=2)
+    name: str
     description: str = ""
     scores: dict[str, FeatureScore]
 
 
 class FeatureCategory(BaseModel):
-    name: str = Field(min_length=2)
+    name: str
     tier: Literal[1, 2, 3]
     features: list[FeatureRow] = Field(min_length=1)
 
@@ -90,7 +90,7 @@ class FeatureMatrix(ArtifactBase):
 class Tier1Disqualifier(BaseModel):
     feature: str
     competitors_failing: list[str] = Field(min_length=1)
-    implication: str = Field(min_length=10)
+    implication: str = ""
 
 
 class WhiteSpaceFeature(BaseModel):
@@ -112,16 +112,16 @@ class S1RadarScore(ArtifactBase):
 
 class JobStatement(BaseModel):
     """When [situation], I want to [motivation], so I can [outcome]"""
-    situation: str = Field(min_length=10)
-    motivation: str = Field(min_length=10)
-    outcome: str = Field(min_length=10)
+    situation: str
+    motivation: str
+    outcome: str
     layer: Literal["functional", "emotional", "social"] = "functional"
 
 
 class FeatureGap(BaseModel):
-    feature_name: str = Field(min_length=2)
+    feature_name: str
     competitors_have_it: list[str] = Field(min_length=1)
-    underserved_outcome: str = Field(min_length=10)
+    underserved_outcome: str = ""
     estimated_effort: Literal["low", "medium", "high"]
     estimated_impact: Literal["low", "medium", "high"]
     recommendation: Literal["build", "skip", "differentiate"]
@@ -132,7 +132,7 @@ class RoadmapRecommendations(BaseModel):
     must_build: list[str] = Field(min_length=1)
     should_skip: list[str] = Field(default_factory=list)
     should_differentiate: list[str] = Field(default_factory=list)
-    rationale_summary: str = Field(min_length=50)
+    rationale_summary: str = ""
 
 
 class S1FeatureIterationPayload(BaseModel):

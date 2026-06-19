@@ -21,7 +21,7 @@ class ForecastScenarios(BaseModel):
     low_growth_pct: float
     base_growth_pct: float
     high_growth_pct: float
-    rationale: str = Field(min_length=20)
+    rationale: str = ""
 
 
 class MarketSizing(ArtifactBase):
@@ -40,7 +40,7 @@ class Force(BaseModel):
     intensity: Literal["low", "medium", "high"]
     drivers: list[str] = Field(min_length=2)
     evidence: list[str] = Field(min_length=1)
-    implication: str = Field(min_length=20)
+    implication: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
@@ -55,12 +55,12 @@ class FiveForces(ArtifactBase):
 
 class MarketPlayer(BaseModel):
     """竞品玩家统一表示（取代多份名单）"""
-    name: str = Field(min_length=1)
+    name: str = ""
     company: str = ""
     market_role: Literal["incumbent", "challenger", "emerging", "niche", "substitute"]
     market_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
     yoy_growth_pct: Optional[float] = None
-    one_line_summary: str = Field(min_length=10)
+    one_line_summary: str = ""
     key_differentiator: str = ""
     is_recommended: bool = False
     is_collected: bool = False
@@ -68,7 +68,7 @@ class MarketPlayer(BaseModel):
 
 
 class ConsumerSegment(BaseModel):
-    name: str = Field(min_length=2)
+    name: str = ""
     size_estimate: str = ""
     share_pct: Optional[float] = Field(default=None, ge=0, le=100)
     key_needs: list[str] = Field(min_length=1)
@@ -78,8 +78,8 @@ class ConsumerSegment(BaseModel):
 
 
 class Trend(BaseModel):
-    trend_name: str = Field(min_length=4)
-    description: str = Field(min_length=20)
+    trend_name: str = ""
+    description: str = ""
     supporting_data: str = Field(default="")
     direction: Literal["up", "flat", "down"]
     time_horizon: Literal["short_term", "mid_term", "long_term"]
@@ -88,14 +88,14 @@ class Trend(BaseModel):
 
 
 class Risk(BaseModel):
-    description: str = Field(min_length=10)
+    description: str = ""
     likelihood: Literal["low", "medium", "high"]
     impact: Literal["low", "medium", "high"]
-    mitigation: str = Field(min_length=10)
+    mitigation: str = ""
 
 
 class Phase(BaseModel):
-    phase_name: str = Field(min_length=4)
+    phase_name: str = ""
     duration: str
     key_milestones: list[str] = Field(min_length=1)
     resource_requirements: str = ""
@@ -108,17 +108,17 @@ class EntryStrategy(ArtifactBase):
         "partnership", "acquisition", "wait_and_see"
     ]
     target_segments: list[str] = Field(min_length=1)
-    initial_positioning: str = Field(min_length=20)
+    initial_positioning: str = ""
     key_success_factors: list[str] = Field(min_length=2)
     main_risks: list[Risk] = Field(min_length=1)
     timeline_phases: list[Phase] = Field(min_length=2)
 
 
 class PESTELFactor(BaseModel):
-    name: str = Field(min_length=4)
+    name: str = ""
     impact: Literal["opportunity", "threat", "neutral"]
     severity: Literal["low", "medium", "high"]
-    description: str = Field(min_length=20)
+    description: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
@@ -134,20 +134,20 @@ class PESTEL(ArtifactBase):
 
 
 class RecommendedCompetitor(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = ""
     company: str = ""
-    why_recommended: str = Field(min_length=10)
+    why_recommended: str = ""
     confidence: Literal["high", "medium", "low"]
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class CompetitorRecommendations(BaseModel):
     """recommender 节点产出（仅 S2 有）"""
-    user_provided_industry: str = Field(min_length=2)
+    user_provided_industry: str = ""
     user_provided_competitors: list[str] = Field(default_factory=list)
     recommended_competitors: list[RecommendedCompetitor] = Field(min_length=3)
     selection_method: Literal["search_api_top_n", "llm_inference", "hybrid"]
-    selection_rationale: str = Field(min_length=30)
+    selection_rationale: str = ""
 
 
 class S2MarketEntryPayload(BaseModel):

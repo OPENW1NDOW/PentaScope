@@ -17,10 +17,10 @@ from src.schemas.scenarios.s5 import S5PositioningPayload
 
 class ExecutiveSummary(BaseModel):
     """执行摘要 5 段式（替代旧 4 段）"""
-    context: str = Field(min_length=80, max_length=200)
-    core_thesis: str = Field(min_length=50, max_length=120)
+    context: str = Field(max_length=300)
+    core_thesis: str = Field(max_length=200)
     key_findings_brief: list[str] = Field(min_length=2, max_length=4)
-    implications: str = Field(min_length=100, max_length=250)
+    implications: str = Field(max_length=400)
     path_forward: list[str] = Field(min_length=1, max_length=3)
 
 
@@ -32,27 +32,27 @@ class ReportScope(BaseModel):
 
 
 class Methodology(BaseModel):
-    """方法论章节，字数预算 1000+ 字"""
-    data_collection_approach: str = Field(min_length=200)
-    evaluation_criteria: list[str] = Field(min_length=3)
-    limitations: list[str] = Field(min_length=2)
-    sample_size_note: str = Field(min_length=80)
+    """方法论章节"""
+    data_collection_approach: str = ""
+    evaluation_criteria: list[str] = Field(min_length=2)
+    limitations: list[str] = Field(min_length=1)
+    sample_size_note: str = ""
     analyst_disclosure: str = Field(
         default="本报告由 AI 多 Agent 协作系统生成，分析模型 Doubao-Seed-2.0-lite"
     )
 
 
 class Finding(BaseModel):
-    statement: str = Field(min_length=20)
-    evidence: str = Field(min_length=20)
-    implication: str = Field(min_length=20)
+    statement: str
+    evidence: str
+    implication: str
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class AnalysisSection(BaseModel):
     section_id: str = Field(min_length=3, max_length=40)
-    heading: str = Field(min_length=4)
-    narrative: str = Field(min_length=300)
+    heading: str
+    narrative: str
     section_type: Literal[
         "overview", "executive_overview", "background", "conclusions_summary",
         "feature_matrix_analysis", "vendor_profile_analysis", "jtbd_analysis", "roadmap_analysis",
@@ -70,17 +70,17 @@ class AnalysisSection(BaseModel):
 
 
 class Recommendation(BaseModel):
-    action: str = Field(min_length=20)
+    action: str
     target_role: str
     priority: Literal["critical", "important", "consider"]
     timeline: Literal["immediate", "short_term", "long_term"]
-    rationale: str = Field(min_length=20)
+    rationale: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class SwotEntry(BaseModel):
-    point: str = Field(min_length=10)
-    evidence: str = Field(min_length=10)
+    point: str
+    evidence: str = ""
     dimension: str = Field(default="overall")
     source_refs: list[SourceRef] = Field(default_factory=list)
 
@@ -155,17 +155,17 @@ class ReportMetadata(BaseModel):
 class BaseReport(BaseModel):
     """所有 5 场景共用的报告通用骨架"""
     metadata: ReportMetadata
-    title: str = Field(min_length=10, max_length=80)
+    title: str = Field(max_length=100)
     subtitle: Optional[str] = Field(default=None, max_length=120)
     at_a_glance: list[str] = Field(min_length=3, max_length=6)
     executive_summary: ExecutiveSummary
-    background: str = Field(min_length=200, max_length=1500)
+    background: str = Field(max_length=2000)
     scope: ReportScope
     methodology: Methodology
     key_findings: list[Finding] = Field(min_length=3, max_length=6)
     analysis_sections: list[AnalysisSection] = Field(min_length=4, max_length=8)
     swot: Swot
-    conclusions: str = Field(min_length=200, max_length=1500)
+    conclusions: str = Field(max_length=2000)
     recommendations: list[Recommendation] = Field(min_length=3)
     appendix: Appendix = Field(default_factory=lambda: Appendix())
 

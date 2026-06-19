@@ -8,15 +8,15 @@ from src.schemas.scenarios.s1 import VendorStrength, VendorCaution
 
 class S5VendorProfile(BaseModel):
     """仿 Gartner MQ Vendor Strengths & Cautions 卡（mq_quadrant 由代码派生）"""
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
 
     ability_to_execute_score: float = Field(ge=0, le=5)
-    ability_to_execute_rationale: str = Field(min_length=50)
+    ability_to_execute_rationale: str = ""
     completeness_of_vision_score: float = Field(ge=0, le=5)
-    completeness_of_vision_rationale: str = Field(min_length=50)
+    completeness_of_vision_rationale: str = ""
 
-    overview: str = Field(min_length=20, max_length=200)
-    strengths: list[VendorStrength] = Field(min_length=2, max_length=5)
+    overview: str = Field(max_length=200)
+    strengths: list[VendorStrength] = Field(min_length=1, max_length=5)
     cautions: list[VendorCaution] = Field(min_length=1, max_length=4)
     source_refs: list[SourceRef] = Field(min_length=1)
 
@@ -36,35 +36,35 @@ class S5VendorProfile(BaseModel):
 
 class PerceptualAxis(BaseModel):
     """Perceptual Map 的一个轴"""
-    attribute: str = Field(min_length=4)
-    low_label: str = Field(min_length=2)
-    high_label: str = Field(min_length=2)
+    attribute: str = ""
+    low_label: str = ""
+    high_label: str = ""
     scale_max: int = Field(default=5, ge=3, le=10)
-    rationale: str = Field(min_length=20)
+    rationale: str = ""
 
 
 class PlottedBrand(BaseModel):
     """Perceptual Map 上的单个品牌位置"""
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     is_self: bool = False
     x_score: float = Field(ge=0)
     y_score: float = Field(ge=0)
     bubble_size_metric: Optional[float] = None
 
     confidence: Literal["high", "medium", "low"]
-    score_rationale: str = Field(min_length=20)
+    score_rationale: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
 class WhiteSpaceZone(BaseModel):
     quadrant: Literal["top_right", "top_left", "bottom_right", "bottom_left", "center"]
-    opportunity_description: str = Field(min_length=20)
+    opportunity_description: str = ""
     interpretation: str = Field(default="")
 
 
 class ClusterZone(BaseModel):
     brands_in_cluster: list[str] = Field(min_length=2)
-    implication: str = Field(min_length=20)
+    implication: str = ""
 
 
 class PerceptualMap(ArtifactBase):
@@ -99,13 +99,13 @@ class PerceptualMap(ArtifactBase):
 
 
 class CompetitiveFactor(BaseModel):
-    name: str = Field(min_length=4)
+    name: str = ""
     industry_avg_level: float = Field(ge=0, le=10)
 
 
 class ValueCurve(BaseModel):
     """单品牌的 value curve"""
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     is_self: bool = False
     factor_levels: dict[str, float]
     source_refs: list[SourceRef] = Field(default_factory=list)
@@ -140,8 +140,8 @@ class StrategyCanvas(ArtifactBase):
 
 
 class ERRCAction(BaseModel):
-    factor: str = Field(min_length=4)
-    rationale: str = Field(min_length=20)
+    factor: str = ""
+    rationale: str = ""
     proposed_level: Optional[float] = Field(default=None, ge=0, le=10)
     buyer_value: str = Field(default="")
 
@@ -158,26 +158,26 @@ class ERRCGrid(ArtifactBase):
 class BlueOceanMove(ArtifactBase):
     """基于 ERRC 的新价值曲线"""
     artifact_type: Literal["blue_ocean_move"] = "blue_ocean_move"
-    new_value_curve_summary: str = Field(min_length=50)
+    new_value_curve_summary: str = ""
 
     focus_assessment: Literal["focused", "scattered", "uncertain"]
-    focus_rationale: str = Field(min_length=20)
+    focus_rationale: str = ""
     divergence_assessment: Literal["divergent", "overlapping", "uncertain"]
-    divergence_rationale: str = Field(min_length=20)
+    divergence_rationale: str = ""
 
-    compelling_tagline: str = Field(min_length=10, max_length=40)
+    compelling_tagline: str = Field(max_length=40)
     target_noncustomers: list[str] = Field(min_length=1)
 
 
 class PositioningStatement(BaseModel):
     """Geoffrey Moore 6 位模板"""
-    target_customer: str = Field(min_length=10)
-    need_or_opportunity: str = Field(min_length=10)
-    product_name: str = Field(min_length=2)
-    product_category: str = Field(min_length=4)
-    key_benefit: str = Field(min_length=10)
-    primary_alternative: str = Field(min_length=4)
-    primary_differentiation: str = Field(min_length=10)
+    target_customer: str = ""
+    need_or_opportunity: str = ""
+    product_name: str = ""
+    product_category: str = ""
+    key_benefit: str = ""
+    primary_alternative: str = ""
+    primary_differentiation: str = ""
 
     confidence: Literal["from_user_brief", "llm_inferred", "low_confidence"]
 
@@ -196,8 +196,8 @@ class PositioningStatement(BaseModel):
 
 class CategoryStrategy(BaseModel):
     """品类战略（competitors_implied 由 S5 顶层 validator 校验子集关系）"""
-    chosen_category: str = Field(min_length=4)
-    why_this_category: str = Field(min_length=30)
+    chosen_category: str = ""
+    why_this_category: str = ""
     competitors_implied: list[str] = Field(min_length=1)
     risk_of_category_choice: str = Field(default="")
 

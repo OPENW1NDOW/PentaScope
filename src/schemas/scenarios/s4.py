@@ -10,7 +10,7 @@ class ReviewPeriod(BaseModel):
     """监控时间窗"""
     last_review_date: Optional[date] = None
     current_review_date: date
-    review_period_label: str = Field(min_length=4)
+    review_period_label: str = ""
     monitored_competitors: list[str] = Field(min_length=1)
     prior_trace_id: Optional[str] = None  # 缺失则走"首次监控"模式
 
@@ -20,14 +20,14 @@ class ReviewPeriod(BaseModel):
 
 class FIATuple(BaseModel):
     """Klue FIA 三元组（fact 必填，impact + act Optional）"""
-    fact: str = Field(min_length=10)
+    fact: str = ""
     impact: Optional[str] = None
     act: Optional[str] = None
 
 
 class _BaseChange(BaseModel):
     """所有变更条目共享的基础字段"""
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     detected_date: Optional[date] = None
     fia: FIATuple
     severity: Literal["low", "medium", "high"]
@@ -38,7 +38,7 @@ class _BaseChange(BaseModel):
 class FeatureChange(_BaseChange, ArtifactBase):
     artifact_type: Literal["feature_change"] = "feature_change"
     change_type: Literal["new_feature", "removed_feature", "feature_updated"]
-    feature_name: str = Field(min_length=2)
+    feature_name: str = ""
 
 
 class PricingChange(_BaseChange, ArtifactBase):
@@ -66,12 +66,12 @@ class NewsEvent(_BaseChange, ArtifactBase):
         "funding", "partnership", "leadership", "legal", "product_launch",
         "acquisition", "ipo", "layoff", "other",
     ]
-    headline: str = Field(min_length=10)
+    headline: str = ""
 
 
 class OrgChange(_BaseChange, ArtifactBase):
     artifact_type: Literal["org_change"] = "org_change"
-    role: str = Field(min_length=2)
+    role: str = ""
     person_name: Optional[str] = None
     action: Literal[
         "hired", "departed", "promoted", "demoted",
@@ -82,11 +82,11 @@ class OrgChange(_BaseChange, ArtifactBase):
 class MonitoringThreat(ArtifactBase):
     """威胁评估（quadrant 由 severity×likelihood 自动派生）"""
     artifact_type: Literal["monitoring_threat"] = "monitoring_threat"
-    title: str = Field(min_length=10)
+    title: str = ""
     severity: Literal["low", "medium", "high"]
     likelihood: Literal["low", "medium", "high"]
-    description: str = Field(min_length=30)
-    recommended_response: str = Field(min_length=20)
+    description: str = ""
+    recommended_response: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
     @computed_field
@@ -109,10 +109,10 @@ class MonitoringOpportunity(ArtifactBase):
     opportunity_type: Literal[
         "abandoned_segment", "product_gap", "messaging_white_space", "operational_weakness",
     ]
-    description: str = Field(min_length=20)
+    description: str = ""
     estimated_effort: Literal["low", "medium", "high"]
     expected_impact: Literal["low", "medium", "high"]
-    first_step: str = Field(min_length=10)
+    first_step: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
@@ -127,7 +127,7 @@ class MonitoringTrends(BaseModel):
 
 class MonitoringAction(BaseModel):
     """推荐行动（supporting_intel_refs 用 artifact_id）"""
-    description: str = Field(min_length=20)
+    description: str = ""
     owner_team: Literal["product", "marketing", "sales", "exec", "engineering", "support"]
     priority_tier: Literal["critical", "important", "consider"]
     due_date_estimate: Optional[date] = None
@@ -149,7 +149,7 @@ class BattlecardSection(BaseModel):
 class Battlecard(ArtifactBase):
     """单竞品活体 Battlecard"""
     artifact_type: Literal["battlecard"] = "battlecard"
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     sections: list[BattlecardSection] = Field(min_length=4)
     overall_completeness: Literal["full", "partial", "empty"] = "partial"
 

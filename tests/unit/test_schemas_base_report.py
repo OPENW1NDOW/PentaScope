@@ -6,23 +6,23 @@ from src.schemas.report import (
 )
 
 
-def test_executive_summary_5_fields_with_length():
-    """ExecutiveSummary 5 段，每段有字数硬约束"""
+def test_executive_summary_5_fields():
+    """ExecutiveSummary 5 段结构校验（字数约束已移交 critic）"""
     es = ExecutiveSummary(
-        context="x" * 100,
-        core_thesis="y" * 60,
-        key_findings_brief=["finding 1 detail" * 3, "finding 2 detail" * 3],
-        implications="z" * 120,
+        context="短背景",
+        core_thesis="短论点",
+        key_findings_brief=["finding 1", "finding 2"],
+        implications="短启示",
         path_forward=["action 1"],
     )
     assert len(es.key_findings_brief) == 2
 
-    # context 太短应失败
+    # max_length 仍在（防爆）
     with pytest.raises(ValidationError):
         ExecutiveSummary(
-            context="short", core_thesis="y" * 60,
-            key_findings_brief=["a" * 30, "b" * 30],
-            implications="z" * 120, path_forward=["a"]
+            context="x" * 301, core_thesis="y",
+            key_findings_brief=["a", "b"],
+            implications="z", path_forward=["a"]
         )
 
 
@@ -33,21 +33,22 @@ def test_report_scope_competitors_min_1():
         ReportScope(competitors=[], time_window="2026 Q1")
 
 
-def test_methodology_1000_word_budget():
-    """Methodology data_collection_approach min_length=200"""
+def test_methodology_structure():
+    """Methodology 结构校验（字数约束已移交 critic）"""
     m = Methodology(
-        data_collection_approach="x" * 200,
-        evaluation_criteria=["c1", "c2", "c3"],
-        limitations=["l1", "l2"],
-        sample_size_note="x" * 80,
+        data_collection_approach="方法",
+        evaluation_criteria=["c1", "c2"],
+        limitations=["l1"],
+        sample_size_note="样本",
     )
     assert m.analyst_disclosure.startswith("本报告")
+    # evaluation_criteria 仍需 ≥2
     with pytest.raises(ValidationError):
         Methodology(
-            data_collection_approach="too short",
-            evaluation_criteria=["a", "b", "c"],
-            limitations=["l1", "l2"],
-            sample_size_note="x" * 80,
+            data_collection_approach="",
+            evaluation_criteria=["only_one"],
+            limitations=["l1"],
+            sample_size_note="",
         )
 
 

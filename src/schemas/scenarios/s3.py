@@ -17,9 +17,9 @@ class PricingBaseline(BaseModel):
 
 
 class ValueDriver(BaseModel):
-    driver_name: str = Field(min_length=4)
+    driver_name: str = ""
     importance: Literal["low", "medium", "high"]
-    evidence: str = Field(min_length=20)
+    evidence: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
 
 
@@ -39,7 +39,7 @@ class WTPResearch(BaseModel):
     sample_size: Optional[int] = None
     optimal_price_point: Optional[str] = None
     confidence: Literal["low", "medium", "high"] = "low"
-    rationale: str = Field(min_length=20)
+    rationale: str = ""
     limitations: str = Field(default="")
 
     @model_validator(mode='after')
@@ -54,14 +54,14 @@ class WTPResearch(BaseModel):
 
 class RecommendedPriceTier(BaseModel):
     """我方推荐套餐的单层（用于 Packaging）"""
-    name: str = Field(min_length=2)
+    name: str = ""
     position: Literal["good", "better", "best", "enterprise", "free"]
     monthly_price: Optional[float] = Field(default=None, ge=0)
     annual_price: Optional[float] = Field(default=None, ge=0)
     currency: Literal["CNY", "USD", "EUR", "JPY", "unknown"] = "CNY"
     billing_unit: Literal["per_seat", "flat_rate", "usage_based", "tier_subscription"]
     is_recommended: bool = False
-    target_persona: str = Field(min_length=10)
+    target_persona: str = ""
     included_features: list[str] = Field(min_length=1)
     gated_features: list[str] = Field(default_factory=list)
     cta_copy: str = Field(default="")
@@ -79,7 +79,7 @@ class RecommendedPriceTier(BaseModel):
 
 class ObservedCompetitorTier(BaseModel):
     """竞品现有套餐的单层（每条价格强制 source_refs）"""
-    name: str = Field(min_length=2)
+    name: str = ""
     monthly_price: Optional[float] = Field(default=None, ge=0)
     annual_price: Optional[float] = Field(default=None, ge=0)
     currency: Literal["CNY", "USD", "EUR", "JPY", "unknown"] = "CNY"
@@ -97,7 +97,7 @@ class Packaging(ArtifactBase):
     tiers: list[RecommendedPriceTier] = Field(min_length=2, max_length=5)
     annual_discount_pct: Optional[float] = Field(default=None, ge=0, le=50)
     default_billing_cycle: Literal["monthly", "annual"] = "annual"
-    rationale: str = Field(min_length=50)
+    rationale: str = ""
 
     @model_validator(mode='after')
     def _check_recommended_tier(self) -> 'Packaging':
@@ -120,7 +120,7 @@ class Packaging(ArtifactBase):
 class CompetitorPricing(ArtifactBase):
     """单个竞品的定价矩阵"""
     artifact_type: Literal["competitor_pricing"] = "competitor_pricing"
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     pricing_model: Literal[
         "per_seat", "flat_rate", "usage_based", "hybrid", "freemium", "platform_fee", "unknown"
     ]
@@ -149,7 +149,7 @@ class PricingPageAuditScore(BaseModel):
 class PricingPageAudit(ArtifactBase):
     """竞品定价页审计（无 URL 时不允许填 audit_scores）"""
     artifact_type: Literal["pricing_page_audit"] = "pricing_page_audit"
-    competitor_name: str = Field(min_length=1)
+    competitor_name: str = ""
     audit_scores: list[PricingPageAuditScore] = Field(default_factory=list, max_length=8)
     pricing_page_url: Optional[str] = Field(default=None, min_length=8)
     source_refs: list[SourceRef] = Field(default_factory=list)
@@ -171,13 +171,13 @@ class PricingPageAudit(ArtifactBase):
 
 class PricingRecommendationsSummary(BaseModel):
     """推荐定价方案总结"""
-    recommended_packaging_summary: str = Field(min_length=50)
+    recommended_packaging_summary: str = ""
     expected_arr_uplift_pct: Optional[float] = Field(default=None, ge=-50, le=200)
     expected_arr_uplift_basis: Literal[
         "measured_pilot", "competitor_benchmark", "industry_estimate", "llm_inferred"
     ] = "llm_inferred"
     expected_arr_uplift_methodology: str = Field(default="")
-    expected_uplift_rationale: str = Field(min_length=20)
+    expected_uplift_rationale: str = ""
     main_risks: list[Risk] = Field(min_length=1)
 
     @model_validator(mode='after')
@@ -193,8 +193,8 @@ class PricingRecommendationsSummary(BaseModel):
 class RolloutStep(ArtifactBase):
     """Rollout 步骤"""
     artifact_type: Literal["rollout_step"] = "rollout_step"
-    step_name: str = Field(min_length=4)
-    description: str = Field(min_length=20)
+    step_name: str = ""
+    description: str = ""
     duration: str
     owner_team: str = Field(default="")
     success_metric: str = Field(default="")

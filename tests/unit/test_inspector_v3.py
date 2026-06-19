@@ -16,7 +16,6 @@ from src.agents.inspector import (
     _check_s3,
     _check_s4,
     _check_s5,
-    _check_warnings_prefix,
     _dispatch_scenario_check,
 )
 
@@ -28,7 +27,7 @@ def _section(sid="sec-1"):
 
 
 def _rec(priority="important"):
-    return SimpleNamespace(priority=priority)
+    return SimpleNamespace(priority=priority, action="test recommendation action")
 
 
 def _ds_list(n=3):
@@ -331,38 +330,6 @@ def test_dispatcher_unknown_scenario_returns_empty():
     assert _dispatch_scenario_check(report) == []
 
 
-# ============ _check_warnings_prefix（E3 / v3-R17） ============
-
-def test_warnings_prefix_no_placeholder_returns_empty():
-    report = SimpleNamespace(metadata=SimpleNamespace(warnings=["info: 普通信息"]))
-    assert _check_warnings_prefix(report) == []
-
-
-def test_warnings_prefix_detects_placeholder_section():
-    report = SimpleNamespace(metadata=SimpleNamespace(warnings=[
-        "placeholder_section:feature_matrix_analysis",
-        "placeholder_section:vendor_profile_analysis",
-    ]))
-    issues = _check_warnings_prefix(report)
-    assert len(issues) == 1
-    assert issues[0].severity == "major"
-    assert "placeholder" in issues[0].reason
-
-
-def test_warnings_prefix_detects_dropped_unverified_entries():
-    report = SimpleNamespace(metadata=SimpleNamespace(warnings=[
-        "dropped_unverified_entries:6 条 SWOT entries 缺 source_refs",
-    ]))
-    issues = _check_warnings_prefix(report)
-    assert len(issues) == 1
-
-
-def test_warnings_prefix_detects_placeholder_swot():
-    report = SimpleNamespace(metadata=SimpleNamespace(warnings=["placeholder_swot 全部填占位"]))
-    issues = _check_warnings_prefix(report)
-    assert len(issues) == 1
-
-
 # ============ InspectorAgent.inspect 整合 ============
 
 @pytest.mark.asyncio
@@ -389,21 +356,32 @@ async def test_inspect_writes_quality_score_to_metadata():
         analysis_sections=[_section()],
         at_a_glance=["足够长的洞察文本一" * 2, "足够长的洞察文本二" * 2, "足够长的洞察文本三" * 2],
         recommendations=[_rec("important")],
-        key_findings=[SimpleNamespace(source_refs=["x"])],
+        key_findings=[SimpleNamespace(source_refs=["x"], statement="test finding statement")],
+        executive_summary=SimpleNamespace(implications="test implications text"),
         swot=swot,
         metadata=metadata,
     )
     report.model_dump_json = MagicMock(return_value="{}")  # for LLM check
+    report.model_dump = MagicMock(return_value={  # for critic inputs
+        "analysis_sections": [{"section_id": "s1", "narrative": "x" * 100}],
+        "key_findings": [{"statement": "s", "evidence": "e", "implication": "i"}],
+        "recommendations": [{"action": "a"}],
+    })
 
     mock_llm = MagicMock()
-    mock_llm.call_json = AsyncMock(return_value={"issues": []})
+    mock_llm.call_json = AsyncMock(return_value={
+        "evidence": {"reasoning": [], "score": 3, "issues": []},
+        "specificity": {"reasoning": [], "score": 3, "issues": []},
+        "coherence": {"reasoning": [], "score": 3, "issues": []},
+        "actionability": {"reasoning": [], "score": 3, "issues": []},
+    })
 
     insp = InspectorAgent(llm=mock_llm)
     feedback = await insp.inspect(report)
 
     assert metadata.quality_score is not None
     assert 0.0 <= metadata.quality_score <= 1.0
-    assert "score=" in metadata.quality_score_calculation_note
+    assert "ev=" in metadata.quality_score_calculation_note
     assert feedback.passed is True  # 干净报告应过
 
 
@@ -434,6 +412,9 @@ async def test_inspect_llm_failure_does_not_block():
         metadata=metadata,
     )
     report.model_dump_json = MagicMock(return_value="{}")
+    report.model_dump = MagicMock(return_value={
+        "analysis_sections": [], "key_findings": [], "recommendations": [],
+    })
 
     mock_llm = MagicMock()
     mock_llm.call_json = AsyncMock(side_effect=RuntimeError("LLM down"))
@@ -441,12 +422,12 @@ async def test_inspect_llm_failure_does_not_block():
     insp = InspectorAgent(llm=mock_llm)
     feedback = await insp.inspect(report)
     assert feedback is not None
-    assert metadata.quality_score is not None  # quality_score 仍被回填
+    assert metadata.quality_score is not None  # quality_score 仍被回填（fallback 0.5）
 
 
 @pytest.mark.asyncio
-async def test_inspect_caps_quality_score_at_0_5_when_placeholder_warnings_present():
-    """v3-R17：metadata.warnings 含 placeholder 前缀 → quality_score cap 到 0.5"""
+async def test_inspect_placeholder_warnings_no_longer_cap_quality_score():
+    """v4：v3-R17 cap 删除——placeholder warnings 不再 cap quality_score"""
     metadata = SimpleNamespace(
         data_sources=_ds_list(3),
         quality_score=None,
@@ -468,19 +449,31 @@ async def test_inspect_caps_quality_score_at_0_5_when_placeholder_warnings_prese
         analysis_sections=[_section()],
         at_a_glance=["足够长一" * 3, "足够长二" * 3, "足够长三" * 3],
         recommendations=[_rec("important")],
-        key_findings=[SimpleNamespace(source_refs=["x"])],
+        key_findings=[SimpleNamespace(source_refs=["x"], statement="test finding")],
+        executive_summary=SimpleNamespace(implications="test implications"),
         swot=swot,
         metadata=metadata,
     )
     report.model_dump_json = MagicMock(return_value="{}")
+    report.model_dump = MagicMock(return_value={
+        "analysis_sections": [{"section_id": "s1", "narrative": "x" * 100}],
+        "key_findings": [{"statement": "s", "evidence": "e", "implication": "i"}],
+        "recommendations": [{"action": "a"}],
+    })
 
     mock_llm = MagicMock()
-    mock_llm.call_json = AsyncMock(return_value={"issues": []})
+    mock_llm.call_json = AsyncMock(return_value={
+        "evidence": {"reasoning": [], "score": 4, "issues": []},
+        "specificity": {"reasoning": [], "score": 4, "issues": []},
+        "coherence": {"reasoning": [], "score": 4, "issues": []},
+        "actionability": {"reasoning": [], "score": 4, "issues": []},
+    })
 
     insp = InspectorAgent(llm=mock_llm)
     await insp.inspect(report)
-    assert metadata.quality_score == 0.5
-    assert "capped" in metadata.quality_score_calculation_note
+    # v4：placeholder warnings 不再 cap，全 4 分 → quality_score = 1.0
+    assert metadata.quality_score == 1.0
+    assert "capped" not in (metadata.quality_score_calculation_note or "")
 
 
 @pytest.mark.asyncio
@@ -508,20 +501,30 @@ async def test_inspect_dedups_issues_by_agent_field_keep_severest():
         at_a_glance=["足够长一" * 3, "足够长二" * 3, "足够长三" * 3],
         recommendations=[_rec("important")],
         key_findings=[],
+        executive_summary=SimpleNamespace(implications="test implications"),
         swot=swot,
         metadata=metadata,
     )
     report.model_dump_json = MagicMock(return_value="{}")
+    report.model_dump = MagicMock(return_value={
+        "analysis_sections": [], "key_findings": [], "recommendations": [],
+    })
 
-    # LLM 报同 field 的 minor + major，去重应保留 major
+    # v4 critic：evidence 维度报 2 个 issues（同 agent + field + dimension），去重应保留 severity 更高的
     mock_llm = MagicMock()
-    mock_llm.call_json = AsyncMock(return_value={"issues": [
-        {"agent": "writer", "field": "x", "severity": "minor", "reason": "minor msg"},
-        {"agent": "writer", "field": "x", "severity": "major", "reason": "major msg"},
-    ]})
+    mock_llm.call_json = AsyncMock(return_value={
+        "evidence": {"reasoning": [], "score": 2, "issues": [
+            {"field": "x", "issue_type": "source_irrelevant", "reason": "minor msg", "suggestion": "fix"},
+            {"field": "x", "issue_type": "vague_description", "reason": "major msg", "suggestion": "fix"},
+        ]},
+        "specificity": {"reasoning": [], "score": 3, "issues": []},
+        "coherence": {"reasoning": [], "score": 3, "issues": []},
+        "actionability": {"reasoning": [], "score": 3, "issues": []},
+    })
 
     insp = InspectorAgent(llm=mock_llm)
     feedback = await insp.inspect(report)
+    # source_irrelevant 和 vague_description 都映射到 agent="writer"，同 (writer, x, evidence) 去重
     same_field = [i for i in feedback.issues if i.field == "x"]
     assert len(same_field) == 1
     assert same_field[0].severity == "major"

@@ -1,21 +1,18 @@
-"""InspectorAgent 重写版：_check_common + _check_s1..s5 dispatcher + LLM 质检 + quality_score 三项加权。
+"""InspectorAgent v4：程序硬查 + LLM-as-critic 4 维 rubric 评分 + quality_score 回填。
 
-设计原则：
-- 不重复 Pydantic 已查的硬约束（vendor↔matrix 一致性、is_self 唯一、tier_added baseline 等已被各 scenario 的 model_validator 拦截）
-- 只查 Pydantic 不查的「语义级问题」：占位文本、显著缺值、低质模式
-- LLM 质检保留（issue 严重度由 LLM 自评）
-- quality_score 由 calc_quality_score 三项加权得出，写回 metadata（v3-R22 锁定 inspector 一次性回填）
-
-E3 后续在 _check_warnings_prefix 中实现 metadata.warnings 前缀降分。
+spec v4 路线 A：critic 内嵌 inspector，单次 LLM 调用同时输出 rubric 评分 + 关联 issues。
 """
+import hashlib
+import json
 import logging
+from typing import Any
 
+from pydantic import ValidationError
+
+from src.agents.prompts.inspector import CRITIC_SYSTEM, CRITIC_PROMPT_VERSION
 from src.agents.quality_score import calc_critic_score
-from src.schemas.feedback import FeedbackIssue, RejectionFeedback
+from src.schemas.feedback import CriticScores, FeedbackIssue, RejectionFeedback
 from src.schemas.report import BaseReport
-
-# 临时兼容旧 inspect()——Task 12 会删除
-from src.agents.prompts import INSPECTOR_SYSTEM  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -42,37 +39,160 @@ def _score_to_severity(dim_score: int, all_scores: dict) -> str:
     return "minor"
 
 
-# ============ Placeholder warnings 前缀（v3-R17） ============
+# ============ Critic 子函数（spec v4） ============
 
-# writer 在 metadata.warnings 中以这些前缀标记 placeholder 输出，inspector 必须降分
-_PLACEHOLDER_WARNING_PREFIXES = (
-    "placeholder_section:",
-    "placeholder_swot",
-    "dropped_unverified_entries:",
-)
-_QUALITY_SCORE_CAP_ON_PLACEHOLDER = 0.5
-
-
-def _detect_placeholder_warnings(report: BaseReport) -> list[str]:
-    """从 metadata.warnings 中过滤出含 placeholder 前缀的 warning"""
-    return [
-        w for w in report.metadata.warnings
-        if any(w.startswith(p) for p in _PLACEHOLDER_WARNING_PREFIXES)
-    ]
+_ISSUE_TYPE_TO_AGENT = {
+    # collector 类（采集层缺失或 snippet 错）
+    "url_not_discovered": "collector",
+    "source_mismatch": "collector",
+    # writer 类（writer 选错引用 / 写作质量）
+    "source_irrelevant": "writer",
+    "vague_description": "writer",
+    "cross_field_contradiction": "writer",
+    "vague_recommendation": "writer",
+    # critic_failed 特殊路由（spec v4 cycle3/C5）
+    "critic_failed": "end",
+}
 
 
-def _check_warnings_prefix(report: BaseReport) -> list[FeedbackIssue]:
-    """v3-R17：将 placeholder warnings 转为 inspector issues（同时触发 quality_score cap 0.5）"""
-    placeholder_warnings = _detect_placeholder_warnings(report)
-    if not placeholder_warnings:
-        return []
-    return [FeedbackIssue(
-        agent="writer",
-        field="metadata.warnings",
-        severity="major",
-        reason=f"writer 产出 {len(placeholder_warnings)} 个 placeholder/dropped warnings: {placeholder_warnings[:3]}",
-        suggestion="检查 collector 数据完整度或重写 affected sections",
-    )]
+def _map_issue_type_to_agent(issue_type: str | None) -> str:
+    """spec v3 cycle2/m6 + v4 cycle3/M11 — issue_type → agent 映射。"""
+    if issue_type is None:
+        return "writer"
+    return _ISSUE_TYPE_TO_AGENT.get(issue_type, "writer")
+
+
+def _safe_minimal_fallback() -> tuple[None, list[FeedbackIssue]]:
+    """spec v4 cycle3/C4 — 二次兜底协议（fallback 自身失败时的"绝对安全"返回）。"""
+    safe_issue = FeedbackIssue(
+        agent="end",
+        field="critic_check",
+        severity="critical",
+        reason="critic 评分系统失败（最终兜底）",
+        suggestion="人工 review 或排查 inspector 日志",
+        dimension="critic_failed",
+        issue_type="critic_failed",
+    )
+    return None, [safe_issue]
+
+
+def _sample_items_deterministic(
+    items: list[dict],
+    n: int = 5,
+    seed_field: str = "id",
+) -> list[dict]:
+    """spec v3 cycle2/M7 + v4 cycle3/M7 — deterministic 抽样。"""
+    if len(items) <= n:
+        return list(items)
+
+    def _key(item):
+        if seed_field in item and item[seed_field] is not None:
+            return ("a", str(item[seed_field]))
+        canonical = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return ("b", digest)
+
+    sorted_items = sorted(items, key=_key)
+    return sorted_items[:n]
+
+
+def _build_limited_pairs(report: BaseReport) -> list[dict]:
+    """spec v3 cycle2/M5 + v4 cycle3/M5 — 固定构造 3 个 coherence 对照 pair。"""
+    pairs: list[dict] = []
+
+    # Pair 1: SWOT.strengths vs vendor_profiles[*].cautions
+    swot_strengths = list(report.swot.strengths) if report.swot else []
+    vendor_cautions: list = []
+    payload = report.scenario_payload
+    if payload and hasattr(payload, "vendor_profiles"):
+        for vp in payload.vendor_profiles:
+            if hasattr(vp, "cautions"):
+                for c in vp.cautions:
+                    vendor_cautions.append({"vendor": vp.competitor_name, "caution": c.point})
+
+    if swot_strengths and vendor_cautions:
+        pairs.append({
+            "id": "swot_vs_vendor_cautions",
+            "data_a": {"swot.strengths": [s.point for s in swot_strengths]},
+            "data_b": {"vendor_profiles[*].cautions": vendor_cautions},
+        })
+    else:
+        pairs.append({
+            "id": "swot_vs_vendor_cautions",
+            "data_a": None, "data_b": None, "skip_reason": "missing",
+        })
+
+    # Pair 2: key_findings vs recommendations
+    findings = list(report.key_findings)
+    recs = list(report.recommendations)
+    if findings and recs:
+        pairs.append({
+            "id": "findings_vs_recommendations",
+            "data_a": {"key_findings": [f.statement for f in findings]},
+            "data_b": {"recommendations": [r.action for r in recs]},
+        })
+    else:
+        pairs.append({
+            "id": "findings_vs_recommendations",
+            "data_a": None, "data_b": None, "skip_reason": "missing",
+        })
+
+    # Pair 3: executive_summary.implications vs recommendations
+    impl = report.executive_summary.implications if report.executive_summary else None
+    if impl and recs:
+        pairs.append({
+            "id": "exec_summary_vs_recommendations",
+            "data_a": {"executive_summary.implications": impl},
+            "data_b": {"recommendations": [r.action for r in recs]},
+        })
+    else:
+        pairs.append({
+            "id": "exec_summary_vs_recommendations",
+            "data_a": None, "data_b": None, "skip_reason": "missing",
+        })
+
+    return pairs
+
+
+def _build_critic_inputs(
+    report: BaseReport,
+    discovered_sources: list[dict],
+) -> str:
+    """spec v3 cycle2/M5/M6/M7 + v4 cycle3/C3 — 拼装 critic LLM user_prompt。"""
+    report_dict = report.model_dump()
+    sections = report_dict.get("analysis_sections", [])
+    for s in sections:
+        nar = s.get("narrative", "")
+        if len(nar) > 2000:
+            s["narrative"] = nar[:2000] + "...[truncated]"
+
+    findings = report_dict.get("key_findings", [])
+    sampled_findings = _sample_items_deterministic(findings, n=5)
+
+    narratives = [{"section_id": s.get("section_id", ""), "narrative": s.get("narrative", "")}
+                  for s in sections]
+    sampled_narratives = _sample_items_deterministic(narratives, n=5, seed_field="section_id")
+
+    recs = report_dict.get("recommendations", [])
+    sampled_recommendations = _sample_items_deterministic(recs, n=5)
+
+    pairs = _build_limited_pairs(report)
+
+    inputs = {
+        "report_brief": report_dict,
+        "discovered_sources": discovered_sources,
+        "limited_pairs": pairs,
+        "sampled_findings": sampled_findings,
+        "sampled_narratives": sampled_narratives,
+        "sampled_recommendations": sampled_recommendations,
+    }
+    if not discovered_sources:
+        inputs["__warning__"] = (
+            "discovered_sources 为空。evidence 维度仅能基于 URL 字段判断，"
+            "不要要求严格相关性。"
+        )
+
+    return json.dumps(inputs, ensure_ascii=False, default=str)
 
 
 # ============ 通用硬查 ============
@@ -345,40 +465,141 @@ def _dispatch_scenario_check(report: BaseReport) -> list[FeedbackIssue]:
     return fn(report.scenario_payload)
 
 
-# ============ InspectorAgent ============
+# ============ InspectorAgent v4 ============
 
 class InspectorAgent:
-    """质检 Agent v3：通用硬查 + 场景硬查 + LLM 质检 + quality_score 回填"""
+    """质检 Agent v4：程序硬查 + LLM-as-critic 4 维 rubric + quality_score 回填"""
 
     def __init__(self, llm):
         self.llm = llm
 
     def _programmatic_checks(self, report: BaseReport) -> list[FeedbackIssue]:
-        """通用硬查 + 场景硬查 + placeholder warnings 前缀检查（v3-R17）"""
-        return (
-            _check_common(report)
-            + _dispatch_scenario_check(report)
-            + _check_warnings_prefix(report)
-        )
+        """通用硬查 + 场景硬查（v4：删除 _check_warnings_prefix）"""
+        return _check_common(report) + _dispatch_scenario_check(report)
 
-    async def _llm_check(self, report: BaseReport) -> list[FeedbackIssue]:
-        """LLM 内容质量与深度检查（非阻断：失败仅 warning）"""
+    # ---- critic 子流程 ----
+
+    async def _critic_check(
+        self,
+        report: BaseReport,
+        discovered_sources: list[dict],
+    ) -> tuple[CriticScores | None, list[FeedbackIssue]]:
+        """spec v4 — critic 内嵌主流程。外层 broad except 兜底。"""
         try:
-            report_text = report.model_dump_json()
-            llm_result = await self.llm.call_json(
-                INSPECTOR_SYSTEM, f"请检查以下报告：\n\n{report_text}",
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[inspector] LLM 质检失败（非阻断）: %s", e)
-            return []
-
-        issues: list[FeedbackIssue] = []
-        for raw in llm_result.get("issues", []):
+            return await self._critic_check_inner(report, discovered_sources)
+        except Exception as critic_err:
+            logger.error("[critic] LLM 调用最外层异常 → 二次兜底: %s", critic_err)
             try:
-                issues.append(FeedbackIssue(**raw))
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[inspector] LLM issue 解析失败: %s, raw=%s", e, raw)
+                return self._build_fallback_result(error_code="unexpected_error")
+            except Exception as fallback_err:
+                logger.error("[critic] 二次兜底也失败 → _safe_minimal_fallback: %s", fallback_err)
+                return _safe_minimal_fallback()
+
+    async def _critic_check_inner(
+        self,
+        report: BaseReport,
+        discovered_sources: list[dict],
+    ) -> tuple[CriticScores | None, list[FeedbackIssue]]:
+        """正常 LLM 调用 + retry 逻辑。"""
+        user_prompt = _build_critic_inputs(report, discovered_sources)
+
+        max_retries = 1
+        last_error_code = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                raw = await self.llm.call_json(
+                    CRITIC_SYSTEM, user_prompt, max_tokens=8192,
+                )
+                critic_scores = self._parse_critic_response(raw)
+                critic_issues = self._extract_critic_issues(raw, critic_scores)
+                logger.info(
+                    "[critic] 评分通过 ev=%d sp=%d co=%d ac=%d",
+                    critic_scores.evidence, critic_scores.specificity,
+                    critic_scores.coherence, critic_scores.actionability,
+                )
+                return critic_scores, critic_issues
+
+            except (ValidationError, ValueError, KeyError) as e:
+                last_error_code = self._classify_error(e)
+                logger.warning("[critic] attempt %d/%d 失败：%s", attempt + 1, max_retries + 1, e)
+
+        return self._build_fallback_result(error_code=last_error_code or "unknown")
+
+    def _parse_critic_response(self, raw: dict) -> CriticScores:
+        """从 LLM 响应构造 CriticScores。"""
+        scores_kwargs = {}
+        reasoning = {}
+        for dim in ("evidence", "specificity", "coherence", "actionability"):
+            if dim not in raw:
+                raise KeyError(f"缺 {dim} 维度对象")
+            dim_data = raw[dim]
+            if "score" not in dim_data:
+                raise KeyError(f"{dim}.score 缺失")
+            scores_kwargs[dim] = dim_data["score"]
+            reasoning[dim] = dim_data.get("reasoning", []) or []
+
+        return CriticScores(**scores_kwargs, reasoning=reasoning)
+
+    def _extract_critic_issues(
+        self,
+        raw: dict,
+        critic_scores: CriticScores,
+    ) -> list[FeedbackIssue]:
+        """从 LLM 响应提取 issues + 用 _score_to_severity 计算 severity。"""
+        all_scores = {
+            "evidence": critic_scores.evidence,
+            "specificity": critic_scores.specificity,
+            "coherence": critic_scores.coherence,
+            "actionability": critic_scores.actionability,
+        }
+        issues: list[FeedbackIssue] = []
+        for dim in ("evidence", "specificity", "coherence", "actionability"):
+            dim_data = raw.get(dim, {})
+            for raw_issue in dim_data.get("issues", []):
+                try:
+                    issue_type = raw_issue.get("issue_type")
+                    issue = FeedbackIssue(
+                        agent=_map_issue_type_to_agent(issue_type),
+                        field=raw_issue.get("field", "<unknown>"),
+                        severity=_score_to_severity(all_scores[dim], all_scores),
+                        reason=raw_issue.get("reason", ""),
+                        suggestion=raw_issue.get("suggestion", ""),
+                        dimension=dim,
+                        issue_type=issue_type,
+                    )
+                    issues.append(issue)
+                except (ValidationError, KeyError) as e:
+                    logger.warning("[critic] issue 构造失败跳过：%s, raw=%s", e, raw_issue)
         return issues
+
+    def _classify_error(self, e: Exception) -> str:
+        msg = str(e).lower()
+        if "json" in msg or isinstance(e, ValueError):
+            return "json_parse_error"
+        if "score" in msg and ("range" in msg or "le" in msg or "ge" in msg):
+            return "score_out_of_range"
+        if isinstance(e, KeyError):
+            return "field_missing"
+        return "unexpected_error"
+
+    def _build_fallback_result(
+        self,
+        error_code: str,
+    ) -> tuple[None, list[FeedbackIssue]]:
+        """spec v4 cycle2/C3 + cycle3/C5 — 失败降级。"""
+        fallback_issue = FeedbackIssue(
+            agent="end",
+            field="critic_check",
+            severity="critical",
+            reason=f"critic 系统故障：{error_code}（非报告内容问题）",
+            suggestion="检查 critic LLM 配置 / 重新跑整个分析；不要让 writer 重写",
+            dimension="critic_failed",
+            issue_type="critic_failed",
+        )
+        return None, [fallback_issue]
+
+    # ---- 主入口 ----
 
     async def inspect(
         self,
@@ -386,33 +607,75 @@ class InspectorAgent:
         competitors: list[str] | None = None,
         retry_count: int = 0,
         max_retries: int = 2,
+        discovered_sources: list[dict] | None = None,
     ) -> RejectionFeedback:
-        """执行质检 + 回填 quality_score。
+        """执行质检 + 回填 quality_score。spec v4 重写。"""
+        logger.info("[inspector] 开始质检 v4, scenario=%s, retry=%d", report.scenario, retry_count)
+        _ = competitors
+        discovered_sources = discovered_sources or []
 
-        competitors 参数保留兼容旧 graph 调用，本版未使用（scope 由 report.scope 自带）。
-        """
-        logger.info("[inspector] 开始质检 v3, scenario=%s, retry=%d", report.scenario, retry_count)
-        _ = competitors  # 兼容 graph 旧 signature
-
+        # Step 1: 程序硬查
         prog_issues = self._programmatic_checks(report)
-        llm_issues = await self._llm_check(report)
-        all_issues = prog_issues + llm_issues
 
-        # 去重 (agent, field) 保留最严重的
-        seen: dict[tuple[str, str], FeedbackIssue] = {}
+        # Step 2: critic 评分
+        critic_scores, critic_issues = await self._critic_check(report, discovered_sources)
+
+        # Step 3: 合并 + 去重
+        all_issues = prog_issues + critic_issues
+        seen: dict[tuple[str, str, str | None], FeedbackIssue] = {}
         sev_rank = {"critical": 0, "major": 1, "minor": 2}
         for issue in sorted(all_issues, key=lambda i: sev_rank[i.severity]):
-            key = (issue.agent, issue.field)
+            key = (issue.agent, issue.field, issue.dimension)
             if key not in seen:
                 seen[key] = issue
         unique_issues = list(seen.values())
 
-        # 回填 quality_score（v4 临时占位——Task 12 重写 inspect()）
-        report.metadata.quality_score = 0.5
-        report.metadata.quality_score_calculation_note = "v4 placeholder (pending inspect rewrite)"
-        logger.info("[inspector] quality_score=%.3f (v4 placeholder)", 0.5)
+        # Step 4: quality_score 计算
+        if critic_scores is not None:
+            quality_score = calc_critic_score(critic_scores)
+            score_source = "critic"
+            report.metadata.critic_scores = critic_scores
+            report.metadata.critic_prompt_version = CRITIC_PROMPT_VERSION
+        else:
+            quality_score = 0.5
+            score_source = "fallback"
+            report.metadata.critic_scores = None
+            report.metadata.critic_prompt_version = None
+            existing_warnings = list(report.metadata.warnings or [])
+            error_code = "unknown"
+            for i in critic_issues:
+                if i.issue_type == "critic_failed":
+                    if "：" in i.reason:
+                        error_code = i.reason.split("：")[1].split("（")[0].strip()
+                    break
+            existing_warnings.append(f"critic_failed:{error_code}")
+            report.metadata.warnings = existing_warnings
 
-        passed = all(i.severity == "minor" for i in unique_issues)
+        report.metadata.quality_score = max(0.0, min(1.0, quality_score))
+        report.metadata.score_source = score_source
+
+        prog_critical = sum(1 for i in prog_issues if i.severity == "critical")
+        prog_major = sum(1 for i in prog_issues if i.severity == "major")
+
+        if critic_scores is not None:
+            cs = critic_scores
+            report.metadata.quality_score_calculation_note = (
+                f"{CRITIC_PROMPT_VERSION} | "
+                f"ev={cs.evidence} sp={cs.specificity} co={cs.coherence} ac={cs.actionability} "
+                f"→ norm={quality_score:.3f} | "
+                f"prog_issues={prog_critical} critical / {prog_major} major"
+            )
+        else:
+            report.metadata.quality_score_calculation_note = (
+                f"fallback | quality_score=0.5 | "
+                f"prog_issues={prog_critical} critical / {prog_major} major"
+            )
+
+        # Step 5: passed 判定
+        passed = not any(
+            issue.severity in {"critical", "major"} for issue in unique_issues
+        )
+
         feedback = RejectionFeedback(
             passed=passed,
             issues=unique_issues,
@@ -420,7 +683,8 @@ class InspectorAgent:
             max_retries=max_retries,
         )
         logger.info(
-            "[inspector] 质检完成 v3, passed=%s, issues=%d (prog=%d, llm=%d)",
-            passed, len(unique_issues), len(prog_issues), len(llm_issues),
+            "[inspector] 质检完成 v4, passed=%s, issues=%d (prog=%d, critic=%d), score=%.3f source=%s",
+            passed, len(unique_issues), len(prog_issues), len(critic_issues),
+            report.metadata.quality_score, score_source,
         )
         return feedback

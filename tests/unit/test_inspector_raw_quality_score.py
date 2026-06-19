@@ -22,7 +22,7 @@ def _section(sid="sec-1"):
 
 
 def _rec(priority="important"):
-    return SimpleNamespace(priority=priority)
+    return SimpleNamespace(priority=priority, action="test recommendation action")
 
 
 def _make_clean_report(*, with_placeholder: bool):
@@ -54,46 +54,56 @@ def _make_clean_report(*, with_placeholder: bool):
         analysis_sections=[_section()],
         at_a_glance=["足够长的洞察文本一" * 2, "足够长的洞察文本二" * 2, "足够长的洞察文本三" * 2],
         recommendations=[_rec("important")],
-        key_findings=[SimpleNamespace(source_refs=["x"])],
+        key_findings=[SimpleNamespace(source_refs=["x"], statement="test finding statement")],
+        executive_summary=SimpleNamespace(implications="test implications text"),
         swot=swot,
         metadata=metadata,
     )
     report.model_dump_json = MagicMock(return_value="{}")
+    report.model_dump = MagicMock(return_value={
+        "analysis_sections": [{"section_id": "s1", "narrative": "x" * 100}],
+        "key_findings": [{"statement": "s", "evidence": "e", "implication": "i"}],
+        "recommendations": [{"action": "a"}],
+    })
     return report, metadata
 
 
 @pytest.mark.asyncio
-async def test_raw_quality_score_no_placeholder_equals_quality_score():
-    """无 placeholder warning 时 raw_quality_score == quality_score。"""
+async def test_quality_score_set_by_critic():
+    """v4：quality_score 由 critic 评分计算。"""
     report, metadata = _make_clean_report(with_placeholder=False)
     mock_llm = MagicMock()
-    mock_llm.call_json = AsyncMock(return_value={"issues": []})
+    mock_llm.call_json = AsyncMock(return_value={
+        "evidence": {"reasoning": [], "score": 3, "issues": []},
+        "specificity": {"reasoning": [], "score": 3, "issues": []},
+        "coherence": {"reasoning": [], "score": 3, "issues": []},
+        "actionability": {"reasoning": [], "score": 3, "issues": []},
+    })
 
     insp = InspectorAgent(llm=mock_llm)
     await insp.inspect(report)
 
-    assert metadata.raw_quality_score is not None
     assert metadata.quality_score is not None
-    assert metadata.raw_quality_score == metadata.quality_score
+    assert 0.0 <= metadata.quality_score <= 1.0
+    assert metadata.score_source == "critic"
     assert "capped" not in (metadata.quality_score_calculation_note or "")
 
 
 @pytest.mark.asyncio
-async def test_raw_quality_score_with_placeholder_caps_only_final():
-    """有 placeholder warning 时：raw 保留 cap 前真实分；quality_score 被 cap 到 0.5。"""
+async def test_placeholder_warnings_no_longer_cap_quality_score():
+    """v4：placeholder warnings 不再 cap quality_score。"""
     report, metadata = _make_clean_report(with_placeholder=True)
     mock_llm = MagicMock()
-    mock_llm.call_json = AsyncMock(return_value={"issues": []})
+    mock_llm.call_json = AsyncMock(return_value={
+        "evidence": {"reasoning": [], "score": 4, "issues": []},
+        "specificity": {"reasoning": [], "score": 4, "issues": []},
+        "coherence": {"reasoning": [], "score": 4, "issues": []},
+        "actionability": {"reasoning": [], "score": 4, "issues": []},
+    })
 
     insp = InspectorAgent(llm=mock_llm)
     await insp.inspect(report)
 
-    raw = metadata.raw_quality_score
-    final = metadata.quality_score
-    assert raw is not None and final is not None
-    # raw 是 cap 前；final ≤ raw
-    assert final <= raw
-    # 若 raw > 0.5，cap 触发
-    if raw > 0.5:
-        assert final == 0.5
-        assert "capped" in (metadata.quality_score_calculation_note or "")
+    # v4：全 4 分 → quality_score = 1.0，不被 cap
+    assert metadata.quality_score == 1.0
+    assert "capped" not in (metadata.quality_score_calculation_note or "")

@@ -147,3 +147,66 @@ def test_v1_trace_can_be_loaded_with_v4_schema():
     assert report.metadata.critic_scores is None
     assert report.metadata.score_source is None
     assert report.metadata.critic_prompt_version is None
+
+
+def test_calc_critic_score_normal():
+    """4 维加权 + 归一化 + clamp。"""
+    from src.agents.quality_score import calc_critic_score
+    from src.schemas.feedback import CriticScores
+
+    scores = CriticScores(evidence=4, specificity=4, coherence=4, actionability=4)
+    # weighted_raw = 0.30*4 + 0.30*4 + 0.20*4 + 0.20*4 = 4.0
+    # normalized = (4.0 - 1) / 3 = 1.0
+    assert calc_critic_score(scores) == pytest.approx(1.0)
+
+
+def test_calc_critic_score_minimum():
+    """全 1 分 → quality_score 0."""
+    from src.agents.quality_score import calc_critic_score
+    from src.schemas.feedback import CriticScores
+
+    scores = CriticScores(evidence=1, specificity=1, coherence=1, actionability=1)
+    # weighted_raw = 1.0; (1.0 - 1) / 3 = 0.0
+    assert calc_critic_score(scores) == pytest.approx(0.0)
+
+
+def test_calc_critic_score_mixed():
+    """混合分数：ev=4 sp=2 co=3 ac=3 → raw=3.0 → norm=0.667。"""
+    from src.agents.quality_score import calc_critic_score
+    from src.schemas.feedback import CriticScores
+
+    scores = CriticScores(evidence=4, specificity=2, coherence=3, actionability=3)
+    # weighted_raw = 0.30*4 + 0.30*2 + 0.20*3 + 0.20*3 = 1.2 + 0.6 + 0.6 + 0.6 = 3.0
+    # normalized = (3.0 - 1) / 3 = 0.667
+    assert calc_critic_score(scores) == pytest.approx(0.667, abs=0.001)
+
+
+def test_calc_critic_score_accepts_dict():
+    """spec v3 cycle2/C5 + cycle2/m4：calc_critic_score 兼容 CriticScores 模型和 dict。"""
+    from src.agents.quality_score import calc_critic_score
+
+    dict_input = {"evidence": 3, "specificity": 3, "coherence": 3, "actionability": 3}
+    # raw = 3.0; (3.0 - 1) / 3 = 0.667
+    assert calc_critic_score(dict_input) == pytest.approx(0.667, abs=0.001)
+
+
+def test_calc_critic_score_dict_ignores_extra_fields():
+    """spec v3 cycle2/m4：dict 输入只读 4 个维度 key，忽略 reasoning 等额外 key。"""
+    from src.agents.quality_score import calc_critic_score
+
+    dict_with_extra = {
+        "evidence": 3, "specificity": 3, "coherence": 3, "actionability": 3,
+        "reasoning": ["[Step 1] foo"],  # 额外 key 必须被忽略
+        "unknown_field": "garbage",
+    }
+    assert calc_critic_score(dict_with_extra) == pytest.approx(0.667, abs=0.001)
+
+
+def test_calc_critic_score_clamps_to_unit_interval():
+    """spec v4 验收 6：quality_score 永远 ∈ [0, 1] 即使输入异常。"""
+    from src.agents.quality_score import calc_critic_score
+
+    # 异常 dict（超出 1-4 区间）—— clamp 应保住边界
+    weird_dict = {"evidence": 0, "specificity": 0, "coherence": 0, "actionability": 0}
+    result = calc_critic_score(weird_dict)
+    assert 0.0 <= result <= 1.0

@@ -1,90 +1,56 @@
-"""quality_score 三项加权计算。
+"""quality_score 计算 — LLM-as-critic v4 重写。
 
-三项（各 1/3 等权，缺项时剩余项重新归一化）：
-1. source_coverage   — BaseReport 中需 source_refs 的字段，实际填了 ≥1 条 ref 的占比
-2. confidence_avg    — metadata.data_sources 各 DataSource.confidence 数值化平均（high=1.0/medium=0.6/low=0.3）
-3. inspector_pass_rate — 1.0 - sum(severity_penalty), clamp[0,1]
-                        penalty: critical=0.4 / major=0.2 / minor=0.05
+v4 修订：删除 calc_source_coverage / calc_confidence_avg / calc_inspector_pass_rate
+三个旧函数（v3 三项加权废弃，详见 spec v4）。新版本只有一个 calc_critic_score。
 
-最终 quality_score ∈ [0, 1]；source_coverage 全空或 data_sources 全空时跳过该项重新归一化；
-全部三项都缺时返回 0.0（极端兜底）。
-
-由 inspector 在质检结束时一次性调用 `calc_quality_score(report, issues)` 写入
-metadata.quality_score；writer phase 4 不参与（与 confidence_level 语义边界由 v3-R22 锁定）。
+注意：calling code 必须先实例化 CriticScores 或传 dict 含 4 个维度 key。
+critic 失败降级时（critic_scores=None），quality_score 由 inspector 直接写 0.5
+（不走本函数）。
 """
 from __future__ import annotations
 
-from src.schemas.feedback import FeedbackIssue
-from src.schemas.report import BaseReport
+from collections.abc import Mapping
+from typing import Any
+
+from src.schemas.feedback import CriticScores
 
 
-_CONFIDENCE_NUM = {"high": 1.0, "medium": 0.6, "low": 0.3}
-_SEVERITY_PENALTY = {"critical": 0.4, "major": 0.2, "minor": 0.05}
+_DIMENSION_WEIGHTS = {
+    "evidence": 0.30,
+    "specificity": 0.30,
+    "coherence": 0.20,
+    "actionability": 0.20,
+}
+
+_VALID_DIMENSIONS = set(_DIMENSION_WEIGHTS.keys())
 
 
-def calc_source_coverage(report: BaseReport) -> float | None:
-    """统计需 source_refs 的字段覆盖率：分母 = 所有需 ref 的条目数，分子 = 实际 ref ≥1 条的条目数。
+def calc_critic_score(scores: CriticScores | Mapping[str, Any]) -> float:
+    """4 维加权（0.30/0.30/0.20/0.20）+ 归一化到 [0, 1] + clamp。
 
-    范围：BaseReport.key_findings + analysis_sections + recommendations + swot 4 类。
-    全部为 0（不该发生，但 schema 允许 swot 各 list min=1，4 类合计 ≥7）→ 返回 None 触发缺值降权。
+    输入：CriticScores 实例 或 dict[str, Any]——dict 时仅读 4 个维度 key，
+          忽略其他 key（如 reasoning）（spec v3 cycle2/m4）。
+    输出：quality_score ∈ [0.0, 1.0]，永远非空（spec v4 验收 6）。
+
+    算法：
+      weighted_raw = Σ(weight[dim] * score[dim])  # 1-4 区间
+      quality_score = clamp((weighted_raw - 1) / 3, 0.0, 1.0)  # 归一化 + clamp
     """
-    items = []
-    items.extend(report.key_findings)
-    items.extend(report.analysis_sections)
-    items.extend(report.recommendations)
-    items.extend(report.swot.strengths)
-    items.extend(report.swot.weaknesses)
-    items.extend(report.swot.opportunities)
-    items.extend(report.swot.threats)
+    if isinstance(scores, CriticScores):
+        score_dict = scores.model_dump()
+    else:
+        score_dict = dict(scores)
 
-    if not items:
-        return None
-    with_refs = sum(1 for it in items if getattr(it, "source_refs", None))
-    return with_refs / len(items)
+    # 仅读 4 个维度 key，缺失或非数值时填 0（让 clamp 兜底到 [0, 1]）
+    weighted_raw = 0.0
+    for dim, weight in _DIMENSION_WEIGHTS.items():
+        raw_value = score_dict.get(dim)
+        try:
+            score_int = int(raw_value) if raw_value is not None else 0
+        except (TypeError, ValueError):
+            score_int = 0
+        weighted_raw += weight * score_int
 
-
-def calc_confidence_avg(report: BaseReport) -> float | None:
-    """metadata.data_sources 各 DataSource.confidence 数值化平均。
-
-    data_sources 全空（schema min=1 应不发生）→ 返回 None。
-    confidence 字段缺失或非合法值（schema 已约束三档）→ 默认 medium。
-    """
-    sources = report.metadata.data_sources
-    if not sources:
-        return None
-    nums = [_CONFIDENCE_NUM.get(s.confidence, 0.6) for s in sources]
-    return sum(nums) / len(nums)
-
-
-def calc_inspector_pass_rate(issues: list[FeedbackIssue]) -> float:
-    """1.0 - sum(severity_penalty)，clamp 到 [0, 1]。"""
-    penalty = sum(_SEVERITY_PENALTY.get(i.severity, 0.0) for i in issues)
-    return max(0.0, min(1.0, 1.0 - penalty))
-
-
-def calc_quality_score(
-    report: BaseReport,
-    issues: list[FeedbackIssue],
-) -> tuple[float, str]:
-    """三项加权计算 quality_score，返回 (score, calculation_note)。
-
-    note 格式：`coverage=0.85 confidence=0.73 pass_rate=0.80 → score=0.793`，
-    inspector 写入 metadata.quality_score_calculation_note 用于追溯。
-    """
-    cov = calc_source_coverage(report)
-    conf = calc_confidence_avg(report)
-    rate = calc_inspector_pass_rate(issues)
-
-    parts = []
-    if cov is not None:
-        parts.append(("coverage", cov))
-    if conf is not None:
-        parts.append(("confidence", conf))
-    parts.append(("pass_rate", rate))
-
-    if not parts:
-        return 0.0, "no metrics available → 0.0"
-
-    score = sum(v for _, v in parts) / len(parts)
-    note = " ".join(f"{name}={val:.2f}" for name, val in parts) + f" → score={score:.3f}"
-    return round(score, 3), note
+    # weighted_raw ∈ [0, 4] → 归一化到 [-1/3, 1] → clamp 到 [0, 1]
+    quality_score = (weighted_raw - 1) / 3
+    return max(0.0, min(1.0, round(quality_score, 3)))

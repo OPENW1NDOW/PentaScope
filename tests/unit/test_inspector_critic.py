@@ -127,3 +127,23 @@ def test_report_metadata_v4_fields_settable():
     assert md.critic_scores.evidence == 3
     assert md.score_source == "critic"
     assert md.critic_prompt_version == "critic-prompt-v1.0.0"
+
+
+def test_v1_trace_can_be_loaded_with_v4_schema():
+    """spec v4 验收 2：真实历史 trace 能用 v4 BaseReport schema 加载。"""
+    import json
+    from pathlib import Path
+    from src.schemas.report import BaseReport
+
+    # 找一个真实历史 trace（v1 schema 落盘的）
+    trace_path = Path("runs/20260618-095358-c5ab5c/03_report.json")
+    if not trace_path.exists():
+        pytest.skip(f"trace fixture 不存在: {trace_path}")
+
+    raw = json.loads(trace_path.read_text(encoding="utf-8"))
+    report = BaseReport.model_validate(raw)
+
+    # v4 修订（cycle3/C1）：旧 trace 反序列化后所有 v4 新字段必须为 None
+    assert report.metadata.critic_scores is None
+    assert report.metadata.score_source is None
+    assert report.metadata.critic_prompt_version is None

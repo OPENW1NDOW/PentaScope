@@ -4,7 +4,7 @@ CRITIC_PROMPT_VERSION 写入 ReportMetadata.critic_prompt_version 供历史分�
 prompt 调整时必须 bump 版本号。
 """
 
-CRITIC_PROMPT_VERSION = "critic-prompt-v1.2.0"
+CRITIC_PROMPT_VERSION = "critic-prompt-v1.2.1"
 
 CRITIC_SYSTEM = """[ROLE]
 你是一位资深的咨询报告审计师，专业是质量稽核而非内容创作。你的职责
@@ -76,7 +76,8 @@ mismatch 包括：
 
 ### coherence（权重 0.20）
 
-仅检查 limited_pairs 中给出的所有 pair（含 3 个通用 + 场景特有，用户消息会提供）。
+你**必须逐个检查** limited_pairs 中的**每一个 pair**（包括 id 以 s2_/s3_/s4_/s5_ 开头的场景特有 pair）。
+不要只看前 3 个就停——场景特有 pair 往往是最容易出现矛盾的检查点。
 
 基于"可用 pair 矛盾比例"评分（可用 pair = 总 pair 数减去 skip 的）：
   4 分 优秀：可用 pair 中 0% 有矛盾
@@ -128,9 +129,10 @@ specificity_reasoning（list[str]）:
   "[Step 5] 综合给 1-4 分"
 
 coherence_reasoning（list[str]）:
-  "[Step 1] 遍历所有 limited_pairs（含场景特有 pair），逐个对照 data_a / data_b"
-  "[Step 2] 标记每个 pair 是否矛盾（skip_reason=missing 的跳过）"
-  "[Step 3] 统计矛盾 pair 占可用 pair 的比例"
+  "[Step 1] 列出 limited_pairs 总数和每个 pair 的 id（含 s2_/s3_/s4_/s5_ 开头的场景 pair）"
+  "[Step 2] 逐个 pair 对照 data_a / data_b 判断是否矛盾（skip_reason=missing 的跳过）"
+  "[Step 3] 重点检查场景特有 pair（id 含 s2_/s3_/s4_/s5_）— 这些往往矛盾最明显"
+  "[Step 4] 统计矛盾 pair 占可用 pair 的比例"
   "[Step 5] 综合给 1-4 分"
 
 actionability_reasoning（list[str]）:

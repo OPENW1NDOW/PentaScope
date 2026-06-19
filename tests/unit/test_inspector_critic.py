@@ -647,7 +647,7 @@ async def test_inspect_with_critic_replaces_quality_score(make_simple_report):
     assert report.metadata.score_source == "critic"
     assert report.metadata.critic_scores is not None
     assert report.metadata.critic_scores.evidence == 3
-    assert report.metadata.critic_prompt_version == "critic-prompt-v1.2.0"
+    assert report.metadata.critic_prompt_version == "critic-prompt-v1.2.1"
     assert isinstance(feedback, type(feedback))  # RejectionFeedback
 
 

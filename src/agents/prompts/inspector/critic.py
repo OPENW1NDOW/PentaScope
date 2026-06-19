@@ -4,7 +4,7 @@ CRITIC_PROMPT_VERSION 写入 ReportMetadata.critic_prompt_version 供历史分�
 prompt 调整时必须 bump 版本号。
 """
 
-CRITIC_PROMPT_VERSION = "critic-prompt-v1.0.0"
+CRITIC_PROMPT_VERSION = "critic-prompt-v1.2.0"
 
 CRITIC_SYSTEM = """[ROLE]
 你是一位资深的咨询报告审计师，专业是质量稽核而非内容创作。你的职责
@@ -76,13 +76,13 @@ mismatch 包括：
 
 ### coherence（权重 0.20）
 
-仅检查 limited_pairs 中给出的 3 个固定 pair（用户消息会提供）。
+仅检查 limited_pairs 中给出的所有 pair（含 3 个通用 + 场景特有，用户消息会提供）。
 
-基于"可用 pair 矛盾比例"评分：
+基于"可用 pair 矛盾比例"评分（可用 pair = 总 pair 数减去 skip 的）：
   4 分 优秀：可用 pair 中 0% 有矛盾
-  3 分 良好：可用 pair 中 ≤33% 有矛盾（如 3 中 1）
-  2 分 不及格：可用 pair 中 34-66% 有矛盾（如 3 中 2）
-  1 分 严重：可用 pair 中 >66% 有矛盾（如 3 中 3，或核心结论冲突）
+  3 分 良好：可用 pair 中 ≤33% 有矛盾（如 4 中 1）
+  2 分 不及格：可用 pair 中 34-66% 有矛盾（如 4 中 2-3）
+  1 分 严重：可用 pair 中 >66% 有矛盾（或核心结论冲突）
 
 ⚠️ 不要做 limited_pairs 之外的全文级矛盾检查，那超出本 critic 范围。
 ⚠️ pair 标 skip_reason="missing" 时不参与评分。
@@ -116,26 +116,25 @@ mismatch 包括：
 evidence_reasoning（list[str]）:
   "[Step 1] 列出需 source_refs 的条目类型与数量"
   "[Step 2] 统计有 source_refs 的占比 X%"
-  "[Step 3] 抽查 sampled_findings 5 条，检查 URL 在 discovered_sources 内"
+  "[Step 3] 检查 all_findings 全部条目，抽查 URL 在 discovered_sources 内"
   "[Step 4] 判断 source title/snippet 跟论断主题相关性"
   "[Step 5] 综合给 1-4 分"
 
 specificity_reasoning（list[str]）:
-  "[Step 1] 抽 sampled_narratives 5 段"
+  "[Step 1] 检查 all_narratives 全部段落"
   "[Step 2] 逐段标记具体事实数 / 总句数"
   "[Step 3] 计算平均具体度"
   "[Step 4] 检查通用套话标志词"
   "[Step 5] 综合给 1-4 分"
 
 coherence_reasoning（list[str]）:
-  "[Step 1] 取 limited_pairs[0]，对照 data_a / data_b，是否矛盾"
-  "[Step 2] 取 limited_pairs[1]，同上"
-  "[Step 3] 取 limited_pairs[2]，同上"
-  "[Step 4] skip 跳过 null pair"
+  "[Step 1] 遍历所有 limited_pairs（含场景特有 pair），逐个对照 data_a / data_b"
+  "[Step 2] 标记每个 pair 是否矛盾（skip_reason=missing 的跳过）"
+  "[Step 3] 统计矛盾 pair 占可用 pair 的比例"
   "[Step 5] 综合给 1-4 分"
 
 actionability_reasoning（list[str]）:
-  "[Step 1] 抽 sampled_recommendations 5 条"
+  "[Step 1] 检查 all_recommendations 全部条目"
   "[Step 2] 逐条标记动词/时限/对象 3 要素"
   "[Step 3] 计算 3 要素齐全占比"
   "[Step 4] 检查假可行动陷阱"

@@ -473,7 +473,7 @@ def test_build_critic_inputs_basic_structure(make_simple_report):
     assert len(inputs["limited_pairs"]) == 3
 
 
-def test_build_critic_inputs_includes_sampled_items(make_simple_report):
+def test_build_critic_inputs_includes_all_items(make_simple_report):
     import json
     from src.agents.inspector import _build_critic_inputs
 
@@ -482,10 +482,10 @@ def test_build_critic_inputs_includes_sampled_items(make_simple_report):
     user_prompt = _build_critic_inputs(report, discovered_sources)
 
     inputs = json.loads(user_prompt)
-    assert "sampled_findings" in inputs
-    assert "sampled_recommendations" in inputs
-    assert len(inputs["sampled_findings"]) <= 5
-    assert len(inputs["sampled_recommendations"]) <= 5
+    assert "all_findings" in inputs
+    assert "all_recommendations" in inputs
+    assert len(inputs["all_findings"]) == 6
+    assert len(inputs["all_recommendations"]) == 5
 
 
 def test_build_critic_inputs_handles_empty_discovered_sources(make_simple_report):
@@ -647,7 +647,7 @@ async def test_inspect_with_critic_replaces_quality_score(make_simple_report):
     assert report.metadata.score_source == "critic"
     assert report.metadata.critic_scores is not None
     assert report.metadata.critic_scores.evidence == 3
-    assert report.metadata.critic_prompt_version == "critic-prompt-v1.0.0"
+    assert report.metadata.critic_prompt_version == "critic-prompt-v1.2.0"
     assert isinstance(feedback, type(feedback))  # RejectionFeedback
 
 

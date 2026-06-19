@@ -99,13 +99,25 @@ def _sample_items_deterministic(
 
 
 def _build_limited_pairs(report: BaseReport) -> list[dict]:
-    """spec v3 cycle2/M5 + v4 cycle3/M5 — 固定构造 3 个 coherence 对照 pair。"""
-    pairs: list[dict] = []
+    """构造 coherence 对照 pairs：3 个通用 + 场景特有。
 
-    # Pair 1: SWOT.strengths vs vendor_profiles[*].cautions
+    通用 pairs（5 场景共享）：
+      Pair 1: SWOT strengths vs vendor cautions（仅 S1 有 vendor_profiles）
+      Pair 2: key_findings vs recommendations
+      Pair 3: executive_summary.implications vs recommendations
+
+    场景特有 pairs：
+      S2: market_sizing vs entry_strategy（规模判断 vs 进入方式应自洽）
+      S3: packaging vs recommendations_summary（套餐设计 vs ARR 预期应自洽）
+      S4: threats vs monitoring_actions（高危威胁 vs 行动优先级应对齐）
+      S5: perceptual_map (is_self) vs positioning_statement（定位坐标 vs 定位陈述应一致）
+    """
+    pairs: list[dict] = []
+    payload = report.scenario_payload
+
+    # === 通用 Pair 1: SWOT strengths vs vendor cautions ===
     swot_strengths = list(report.swot.strengths) if report.swot else []
     vendor_cautions: list = []
-    payload = report.scenario_payload
     if payload and hasattr(payload, "vendor_profiles"):
         for vp in payload.vendor_profiles:
             if hasattr(vp, "cautions"):
@@ -124,7 +136,7 @@ def _build_limited_pairs(report: BaseReport) -> list[dict]:
             "data_a": None, "data_b": None, "skip_reason": "missing",
         })
 
-    # Pair 2: key_findings vs recommendations
+    # === 通用 Pair 2: key_findings vs recommendations ===
     findings = list(report.key_findings)
     recs = list(report.recommendations)
     if findings and recs:
@@ -139,7 +151,7 @@ def _build_limited_pairs(report: BaseReport) -> list[dict]:
             "data_a": None, "data_b": None, "skip_reason": "missing",
         })
 
-    # Pair 3: executive_summary.implications vs recommendations
+    # === 通用 Pair 3: executive_summary.implications vs recommendations ===
     impl = report.executive_summary.implications if report.executive_summary else None
     if impl and recs:
         pairs.append({
@@ -153,6 +165,93 @@ def _build_limited_pairs(report: BaseReport) -> list[dict]:
             "data_a": None, "data_b": None, "skip_reason": "missing",
         })
 
+    # === 场景特有 Pair ===
+    if payload is None:
+        return pairs
+
+    scenario = getattr(payload, "scenario_type", None)
+
+    if scenario == "S2" and hasattr(payload, "market_sizing") and hasattr(payload, "entry_strategy"):
+        ms = payload.market_sizing
+        es = payload.entry_strategy
+        ms_summary = {
+            "TAM": ms.tam.amount if ms.tam else None,
+            "SAM": ms.sam.amount if ms.sam else None,
+            "SOM": ms.som.amount if ms.som else None,
+            "TAM_basis": ms.tam.value_basis if ms.tam else None,
+        }
+        es_summary = {
+            "recommended_mode": es.recommended_mode,
+            "target_segments": es.target_segments,
+            "initial_positioning": es.initial_positioning,
+        }
+        if any(v for v in ms_summary.values()) and any(v for v in es_summary.values()):
+            pairs.append({
+                "id": "s2_market_sizing_vs_entry_strategy",
+                "data_a": {"market_sizing": ms_summary},
+                "data_b": {"entry_strategy": es_summary},
+            })
+
+    elif scenario == "S3" and hasattr(payload, "packaging") and hasattr(payload, "recommendations_summary"):
+        pkg = payload.packaging
+        rec_sum = payload.recommendations_summary
+        pkg_summary = {
+            "tiers": [{"name": t.name, "position": t.position, "monthly_price": t.monthly_price} for t in pkg.tiers],
+            "default_billing_cycle": pkg.default_billing_cycle,
+        }
+        rec_sum_summary = {
+            "expected_arr_uplift_pct": rec_sum.expected_arr_uplift_pct,
+            "expected_arr_uplift_basis": rec_sum.expected_arr_uplift_basis,
+            "recommended_packaging_summary": rec_sum.recommended_packaging_summary[:200],
+        }
+        if pkg.tiers and rec_sum.recommended_packaging_summary:
+            pairs.append({
+                "id": "s3_packaging_vs_recommendations_summary",
+                "data_a": {"packaging": pkg_summary},
+                "data_b": {"recommendations_summary": rec_sum_summary},
+            })
+
+    elif scenario == "S4" and hasattr(payload, "threats") and hasattr(payload, "monitoring_actions"):
+        threats = payload.threats
+        actions = payload.monitoring_actions
+        if threats and actions:
+            pairs.append({
+                "id": "s4_threats_vs_monitoring_actions",
+                "data_a": {"threats": [
+                    {"title": t.title, "severity": t.severity, "likelihood": t.likelihood}
+                    for t in threats
+                ]},
+                "data_b": {"monitoring_actions": [
+                    {"description": a.description[:100], "priority_tier": a.priority_tier, "owner_team": a.owner_team}
+                    for a in actions
+                ]},
+            })
+
+    elif scenario == "S5" and hasattr(payload, "perceptual_map") and hasattr(payload, "positioning_statement"):
+        pm = payload.perceptual_map
+        ps = payload.positioning_statement
+        if pm and hasattr(pm, "plotted_brands") and ps:
+            self_brand = [b for b in pm.plotted_brands if b.is_self]
+            self_info = {}
+            if self_brand:
+                sb = self_brand[0]
+                self_info = {
+                    "competitor_name": sb.competitor_name,
+                    "axis_x": sb.x_score,
+                    "axis_y": sb.y_score,
+                }
+            ps_info = {
+                "target_customer": ps.target_customer,
+                "key_benefit": ps.key_benefit,
+                "primary_differentiation": ps.primary_differentiation,
+            }
+            if self_info and any(ps_info.values()):
+                pairs.append({
+                    "id": "s5_perceptual_map_vs_positioning",
+                    "data_a": {"perceptual_map_self": self_info},
+                    "data_b": {"positioning_statement": ps_info},
+                })
+
     return pairs
 
 
@@ -160,11 +259,14 @@ def _build_critic_inputs(
     report: BaseReport,
     discovered_sources: list[dict],
 ) -> str:
-    """spec v3 cycle2/M5/M6/M7 + v4 cycle3/C3 — 拼装 critic LLM user_prompt。"""
+    """拼装 critic LLM user_prompt。
+
+    包含完整 report_brief（含 scenario_payload）+ discovered_sources +
+    limited_pairs + 全量 findings/narratives/recommendations。
+    """
     report_dict = report.model_dump()
 
-    # 裁剪大字段，控制 token 预算（I4）
-    report_dict.pop("scenario_payload", None)
+    # 仅裁剪 appendix（纯术语表/附加展览，critic 不需要）和过长 methodology
     report_dict.pop("appendix", None)
     methodology = report_dict.get("methodology", {})
     for k in ("data_collection_approach", "sample_size_note"):
@@ -178,15 +280,11 @@ def _build_critic_inputs(
         if len(nar) > 2000:
             s["narrative"] = nar[:2000] + "...[truncated]"
 
+    # 全量传递，消除抽样偏差
     findings = report_dict.get("key_findings", [])
-    sampled_findings = _sample_items_deterministic(findings, n=5)
-
     narratives = [{"section_id": s.get("section_id", ""), "narrative": s.get("narrative", "")}
                   for s in sections]
-    sampled_narratives = _sample_items_deterministic(narratives, n=5, seed_field="section_id")
-
     recs = report_dict.get("recommendations", [])
-    sampled_recommendations = _sample_items_deterministic(recs, n=5)
 
     pairs = _build_limited_pairs(report)
 
@@ -194,9 +292,9 @@ def _build_critic_inputs(
         "report_brief": report_dict,
         "discovered_sources": discovered_sources,
         "limited_pairs": pairs,
-        "sampled_findings": sampled_findings,
-        "sampled_narratives": sampled_narratives,
-        "sampled_recommendations": sampled_recommendations,
+        "all_findings": findings,
+        "all_narratives": narratives,
+        "all_recommendations": recs,
     }
     if not discovered_sources:
         inputs["__warning__"] = (

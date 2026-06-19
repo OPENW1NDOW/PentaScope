@@ -11,6 +11,50 @@ logger = logging.getLogger(__name__)
 _BARE_BACKSLASH_PATTERN = re.compile(r'\\(?!["\\/bfnrtu])')
 
 
+def _fix_unescaped_quotes_in_values(text: str) -> str:
+    """修复 JSON 字符串值内未转义的 ASCII 双引号。
+
+    LLM 常输出类似 {"rationale": "从"设计画布"扩展到"产品原型""} 的内容，
+    其中"设计画布"的双引号是中文引用而非 JSON 结构性引号，导致解析失败。
+
+    策略：用状态机扫描，在字符串值内部遇到的 " 若后跟非 JSON 结构字符
+    （即不是 , : } ] 或空白），则认定为内容引号，替换为中文引号 “/”。
+    """
+    result = []
+    i = 0
+    n = len(text)
+    in_string = False
+
+    while i < n:
+        ch = text[i]
+
+        if not in_string:
+            result.append(ch)
+            if ch == '”':
+                in_string = True
+            i += 1
+        else:
+            if ch == '\\' and i + 1 < n:
+                result.append(ch)
+                result.append(text[i + 1])
+                i += 2
+            elif ch == '”':
+                after = i + 1
+                while after < n and text[after] in ' \t\r\n':
+                    after += 1
+                if after >= n or text[after] in ',:]}\n\r':
+                    result.append(ch)
+                    in_string = False
+                else:
+                    result.append('“')
+                i += 1
+            else:
+                result.append(ch)
+                i += 1
+
+    return ''.join(result)
+
+
 class LLMClient:
     """Doubao LLM 客户端（OpenAI 兼容格式）"""
 
@@ -71,12 +115,19 @@ class LLMClient:
                     fixed = _BARE_BACKSLASH_PATTERN.sub(r'\\\\', stripped)
                     try:
                         return json.loads(fixed, strict=False)
+                    except json.JSONDecodeError:
+                        pass
+
+                    # 三次兜底：修复字符串值内未转义的 ASCII 双引号
+                    # LLM 常输出 "从"设计"到"开发"" 这类中文引用，导致 Expecting ',' delimiter
+                    fixed2 = _fix_unescaped_quotes_in_values(fixed)
+                    try:
+                        return json.loads(fixed2, strict=False)
                     except json.JSONDecodeError as fallback_err:
-                        # 二次兜底也失败：把失败位置前后 200 字符 dump 出来便于定位
                         pos = fallback_err.pos
-                        ctx = fixed[max(0, pos - 100):pos + 100]
+                        ctx = fixed2[max(0, pos - 100):pos + 100]
                         logger.warning(
-                            "[llm] 反斜杠兜底也失败 char=%d, 原始/修复后报错均存在; 上下文片段: %r",
+                            "[llm] 三次兜底也失败 char=%d, 原始/修复后报错均存在; 上下文片段: %r",
                             pos, ctx,
                         )
                         raise inner  # 抛原始错误，让外层 catch 走 attempt 重试

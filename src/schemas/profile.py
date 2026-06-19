@@ -20,7 +20,7 @@ class BasicInfo(BaseModel):
 class Feature(BaseModel):
     """单个功能"""
     name: str
-    description: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=500)
     is_new: bool = False
     source_url: str = ""
 

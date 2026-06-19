@@ -30,47 +30,12 @@ PentaScope 项目里**已发现但未决定如何应对**的深层问题。与 P
 - **字数约束代理失效**（原 Q-2026-06-17-字数约束）→ 已决断采用 LLM-as-critic + 字数约束渐进退役，spec v2 已落 `docs/superpowers/specs/2026-06-19-llm-as-critic-design.md`，进开发阶段，本条移出 OPEN_QUESTIONS
 - **narrative 偶发抖动**（原 Q-2026-06-18-narrative-偶发抖动）→ 已决断方案 (a) phase 3 加 1 次轻重试，已记入 PROGRESS 06-18 待办，本条移出 OPEN_QUESTIONS
 
-剩下 6 条都挂在「LLM 输出鲁棒性差 + 字数约束副作用」这条根因上，**等 critic 落地后回头看可能消解一半**，所以现在统一冻结观察、不深入决策：
+剩下的条目（2026-06-19 晚 session 重新评估后）：
 
----
-
-## Q-2026-06-17-llm-长输出鲁棒性
-
-**状态**：未决（等 critic）
-
-LLM 生成长 JSON 时字符串值在写到一半被 `max_tokens` 硬截断 → `Unterminated string` → 3 次重试都失败。`llm_client.py:_BARE_BACKSLASH_PATTERN` 兜底无效。
-
-候选：(a) 拆 phase / (b) 容错 JSON 解析 / (c) structured outputs
-
-**等 critic 决策原因**：critic + 字数退役后 writer 单次输出复杂度自然降，本问题可能消解一半。**不要单独修**。
-
-实证：`runs/20260617-181916-91bc54/04_writer_error.json` —— `Unterminated string starting at: line 199 column 26 (char 8274)`
-
----
-
-## Q-2026-06-17-phase3-不重试占位
-
-**状态**：未决（部分已并入 narrative 抖动决策）
-
-writer phase 3 narrative 单次失败直接占位 → `placeholder_section` warning → quality_score cap 0.5 → passed=False。
-
-**重叠提示**：本问题与已决断的 Q-2026-06-18-narrative-偶发抖动 重叠——加 1 次轻重试（已排进 PROGRESS）能消解大半。剩下「输入大 section 是否要拆」「占位是否触发 cap」等 critic 落地后再评估。
-
-实证：`runs/20260617-181916-91bc54/run.log:63` —— `phase 3 section competitive_moves_analysis 失败 → 占位降级`
-
----
-
-## Q-2026-06-17-collector-抽取全或无
-
-**状态**：未决（等 critic，可叠加 normalizer 应急）
-
-Collector 抽取 LLM 把网页正文转 dict 时 Pydantic 整体校验：1 个字段违反 schema（如 `feature_tree[i].features[j].description` >200 字符）→ 整个 profile 被丢弃。LLM 干了 99% 正确的活，1 个 description 多写 20 字 → 100% 作废。
-
-候选：(a) 抽取后接 normalizer 自动截断 / (b) 字段级回填 / (c) prompt 加显式硬约束 / (d) 字数约束渐进退役
-
-**等 critic 决策原因**：(d) 跟 critic 同方向；(a) 是应急止血方案、可以不等 critic 单独排期，但优先级 Cooper 后续决定。
-
-实证：`runs/20260617-181916-91bc54/run.log:23-27` —— Mixpanel `feature_tree.4.features.1.description: String should have at most 200 characters` → completeness=0.0
+- Q-2026-06-17-llm-长输出鲁棒性 → **已并入 DECISIONS**：max_tokens 实证调参（phase1=6144/phase2=12288/phase3=8192），S5 实测零截断
+- Q-2026-06-17-phase3-不重试占位 → **已并入 DECISIONS**：narrative 轻重试实现（commit eae4e44），S5 实战验证救回 1 section
+- Q-2026-06-18-llm-反馈修一退一 → **已消解**：字符 min_length 全部退役（commit 0ad443c），触发"修一退一"的根因不存在了
+- Q-2026-06-17-collector-抽取全或无 → **已修复**：Feature.description max_length 200→500（commit 本次），不再因 20 字超限丢整个 profile
 
 ---
 

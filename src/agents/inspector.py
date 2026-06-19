@@ -10,12 +10,36 @@ E3 后续在 _check_warnings_prefix 中实现 metadata.warnings 前缀降分。
 """
 import logging
 
-from src.agents.prompts import INSPECTOR_SYSTEM
-from src.agents.quality_score import calc_quality_score
+from src.agents.quality_score import calc_critic_score
 from src.schemas.feedback import FeedbackIssue, RejectionFeedback
 from src.schemas.report import BaseReport
 
+# 临时兼容旧 inspect()——Task 12 会删除
+from src.agents.prompts import INSPECTOR_SYSTEM  # noqa: F401
+
 logger = logging.getLogger(__name__)
+
+
+def _score_to_severity(dim_score: int, all_scores: dict) -> str:
+    """spec v3 cycle2/M2 + v4 cycle3/M1 — D' 阈值规则。
+
+    规则（按优先级）：
+      1. dim_score == 1 → critical（单维度灾难）
+      2. dim_score == 2 → major（维度不及格）
+      3. dim_score >= 4 → minor（v4/M1：显式处理防 fall-through）
+      4. dim_score == 3 → 看聚合分：< 0.50 major / 否则 minor
+    """
+    if dim_score <= 1:
+        return "critical"
+    if dim_score == 2:
+        return "major"
+    if dim_score >= 4:
+        return "minor"
+    # dim_score == 3
+    quality_score = calc_critic_score(all_scores)
+    if quality_score < 0.50:
+        return "major"
+    return "minor"
 
 
 # ============ Placeholder warnings 前缀（v3-R17） ============
@@ -383,16 +407,10 @@ class InspectorAgent:
                 seen[key] = issue
         unique_issues = list(seen.values())
 
-        # 回填 quality_score（v3-R22 inspector 一次性写入）
-        score, note = calc_quality_score(report, unique_issues)
-        report.metadata.raw_quality_score = score  # PD-3：保留 cap 前真实分供 KPI 显示
-        # v3-R17：placeholder warnings 强制 cap 到 0.5
-        if _detect_placeholder_warnings(report) and score > _QUALITY_SCORE_CAP_ON_PLACEHOLDER:
-            note = f"{note}; capped to {_QUALITY_SCORE_CAP_ON_PLACEHOLDER} due to placeholder warnings (v3-R17)"
-            score = _QUALITY_SCORE_CAP_ON_PLACEHOLDER
-        report.metadata.quality_score = score
-        report.metadata.quality_score_calculation_note = note
-        logger.info("[inspector] quality_score=%.3f (%s)", score, note)
+        # 回填 quality_score（v4 临时占位——Task 12 重写 inspect()）
+        report.metadata.quality_score = 0.5
+        report.metadata.quality_score_calculation_note = "v4 placeholder (pending inspect rewrite)"
+        logger.info("[inspector] quality_score=%.3f (v4 placeholder)", 0.5)
 
         passed = all(i.severity == "minor" for i in unique_issues)
         feedback = RejectionFeedback(

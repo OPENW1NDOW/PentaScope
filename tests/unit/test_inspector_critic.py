@@ -210,3 +210,41 @@ def test_calc_critic_score_clamps_to_unit_interval():
     weird_dict = {"evidence": 0, "specificity": 0, "coherence": 0, "actionability": 0}
     result = calc_critic_score(weird_dict)
     assert 0.0 <= result <= 1.0
+
+
+def test_score_to_severity_dim1_critical():
+    """spec v3 cycle2/M2：dim ≤1 → critical。"""
+    from src.agents.inspector import _score_to_severity
+
+    all_scores = {"evidence": 4, "specificity": 4, "coherence": 4, "actionability": 4}
+    assert _score_to_severity(1, all_scores) == "critical"
+
+
+def test_score_to_severity_dim2_major():
+    """spec v3 cycle2/M2：dim == 2 → major（不再仅靠均值）。"""
+    from src.agents.inspector import _score_to_severity
+
+    # 即使均值 4，evidence=2 仍要 major
+    all_scores = {"evidence": 2, "specificity": 4, "coherence": 4, "actionability": 4}
+    assert _score_to_severity(2, all_scores) == "major"
+
+
+def test_score_to_severity_dim3_low_agg_major():
+    """dim==3 + 低均值 → major。"""
+    from src.agents.inspector import _score_to_severity
+
+    # 全 3 分（边缘）：raw=3.0; norm=0.667 ≥ 0.5 → minor
+    all_scores = {"evidence": 3, "specificity": 3, "coherence": 3, "actionability": 3}
+    assert _score_to_severity(3, all_scores) == "minor"
+
+    # 多维度 2，均值低：ev=3 sp=2 co=2 ac=2 → raw=2.3; norm=0.433 < 0.5 → major
+    low_all_scores = {"evidence": 3, "specificity": 2, "coherence": 2, "actionability": 2}
+    assert _score_to_severity(3, low_all_scores) == "major"
+
+
+def test_score_to_severity_dim4_minor():
+    """spec v4 cycle3/M1：dim >= 4 显式 → minor 防 fall-through。"""
+    from src.agents.inspector import _score_to_severity
+
+    weird_all_scores = {"evidence": 4, "specificity": 1, "coherence": 1, "actionability": 1}
+    assert _score_to_severity(4, weird_all_scores) == "minor"

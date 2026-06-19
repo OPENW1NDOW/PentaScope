@@ -115,3 +115,22 @@ inspector LLM 返回的 issue list 部分条目自身违反 `FeedbackIssue` sche
 实证：`runs/20260618-095358-c5ab5c/run.log` —— inspector LLM issue 解析失败 2 次
 
 ---
+
+## Q-2026-06-19-scenario-query-低相关
+
+**状态**：未决（归入 collector 搜索优化课题）
+
+S5 query `"{name} 品牌定位 战略差异化 核心竞争力"` 搜到大量无关内容（MBA 百科、社科院论文、金融研报），12 条 Tavily 结果中仅 5 条与竞品真实相关（42% 有效率）。其他场景也存在类似问题但程度不同。
+
+根因：query 用学术/抽象术语而非产品实操语言，Tavily 把 query 理解为"搜品牌定位这个概念"而非"搜这个产品的竞争信息"。
+
+候选改进方向：
+- (a) 每场景 2-3 条 query（当前仅 1 条），覆盖不同角度（产品对比 / 市场份额 / 用户评价）
+- (b) query 模板改用产品实操语言（如 `"{name} vs 竞品 对比 2024"` / `"{name} 用户评价 优缺点"`）
+- (c) 动态 query 生成：LLM 根据 scenario + competitor_name 生成 2-3 条针对性 query
+
+关联待办：PROGRESS 里多次出现的"collector 信息收集优化：多次搜索 + 不同关键词"
+
+实证：`runs/20260619-203923-9f5681` S5 场景——Sketch 搜到 wiki.mbalib.com 品牌百科 / bdrc.sass.org.cn 社科院论文 / pdf.dfcfw.com 东财研报；Adobe XD 搜到 Adobe Campaign 品牌指南（同名污染）
+
+---

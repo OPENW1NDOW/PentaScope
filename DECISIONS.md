@@ -15,6 +15,50 @@
 
 ---
 
+## 2026-06-19: 架构级 spec 必须走 cross-model doubt-driven，author self-review 不可靠
+
+- 选择：**任何架构级 / 数据流改造级 spec（如 critic / 大重构）落盘前，必须用 codex CLI 做至少 1 轮跨模型 doubt-driven 审查**
+- 理由：实证 author bias 极强——LLM-as-critic spec v1 落盘后我自己 self-review 只发现 1 处问题（max_tokens retry 笔误），cross-model codex GPT-5.5 同 spec 发现 33 条；v2 self-review 0 处遗漏，cycle 2 又发现 22 条；v3 self-review 0 处遗漏，cycle 3 又发现 20 条。**3 轮 75 条问题，自我审查只能找到不足 2%**。author bias 不是注意力问题，是结构问题——作者把"决策"当"事实"，把"想得清楚"等同"实施可行"，跨章节接口不一致 / 类型签名漂移 / 边界条件遗漏都看不见
+- 备选 a（只 self-review，节省时间）：实证不靠谱——v3 之后又有 5 个 critical 是 spec 自相矛盾或代码不可执行，self-review 全漏
+- 备选 b（每轮都 brainstorming + doubt-driven，包括小 spec）：成本过高——bug fix 级 / 单文件级修改 self-review 够用，三轮 doubt-driven 应该限制在"架构级"和"数据流改造级"
+- 适用边界：
+  - **必须走**：新增 agent / 改 graph 拓扑 / Schema 大改 / 新评分系统 / 反馈闭环改造
+  - **不必走**：单文件 bug fix / 测试 fixture 修订 / prompt 文字微调 / 命名重构
+- 操作指引：用 `codex exec --sandbox read-only -C <repo> - < prompt.md` 经 stdin 喂 prompt（避免 shell 转义），prompt 含 ARTIFACT + CONTRACT 但**不传 CLAIM**（避免引导审查者认同）
+- 关联记忆：`feedback_proxy_metric_bias.md`（看到代理失效就想换代理是 author bias 同根问题）
+
+## 2026-06-19: critic_failed 走 terminal 路由不消耗 max_retries
+
+- 选择：critic 失败时强制生成 `FeedbackIssue(agent="end", severity="critical", dimension="critic_failed")`；builder.py `_should_continue` 加 `agent="end"` 特判直接 `return "end"`，不增 retry_count
+- 理由：critic 系统故障（LLM timeout / JSON parse error / input builder 异常）跟 writer 内容缺陷无关——让 writer 重写不能修复 LLM API 故障，反而消耗 max_retries 预算让真正可恢复的内容问题没机会重试
+- 备选 a（agent="writer" + major）：cycle 2 v3 的方案，cycle 3 codex 抓出"writer 重写解决不了系统故障"的根本问题
+- 备选 b（agent="inspector" + major）：v2 方案，graph 路由会形成 inspector→inspector 循环（cycle 2 codex 抓出）
+- 备选 c（不生成 issue 让 passed=True）：错——critic 失败的报告不应被当作合格通过
+- 实施位置：`src/agents/inspector.py::_safe_minimal_fallback` + `src/graph/builder.py::_should_continue`
+
+## 2026-06-19: 字数约束分阶段退役 + critic 是退役前提
+
+- 选择：字数 schema 约束（`Field(min_length=N)`）退役按 5 阶段，critic 落地是阶段 1（前置必修），不能反过来
+- 理由：直接删字数约束会让"长但空"的 LLM 输出无人管；必须先有 LLM-as-critic 接管"内容是否够具体"的判断，再逐字段评估字数约束"实际拦住的是什么"，拦"水且违规"才保留，拦"真但不合规"或"水但合规"则删
+- 5 阶段：
+  - 阶段 1：critic 设计 + 落地（本期 spec / plan）
+  - 阶段 2：跑 2-3 次端到端校准 critic 准确度（手动 eval）
+  - 阶段 3：分批退役 ≥10 / ≥20 小约束
+  - 阶段 4：退役 ≥50 / ≥100 大约束（字数 ValidationError 高发区）
+  - 阶段 5：保留上限约束（≤200 防 token 爆炸）+ 结构约束（必填 / 数量 / 枚举），永久不动
+- 备选 a（一次删完字数约束）：风险高，没 critic 接管会让报告质量崩
+- 备选 b（永远保留字数约束）：与 OPEN_QUESTIONS Q-2026-06-17-字数约束 决策矛盾——字数代理失效是已确认根因
+- 范围控制：本 PR（critic 实施）严禁修改任何 schema min_length / max_length 字段（spec v4 验收 7 + Task 18 影响面脚本验证）
+
+## 2026-06-19: quality_score 限定为 semantic 分，programmatic 通过 passed 阻断
+
+- 选择：critic 4 维加权后的归一化分作为 `metadata.quality_score`，**不再** 把 programmatic critical/major 计入分数；programmatic issue 通过 `passed = not any(severity in {critical, major})` 阻断，并在 `quality_score_calculation_note` 加 `prog_issues=N critical / M major` 计数让追溯可见
+- 理由：v3 删除 inspector_pass_rate 三项后留下漏洞——schema 外硬查失败的报告 critic 给 4 分仍能拿 1.0 quality_score（cycle 3 codex 抓出）。修法分两路：(a) 让 programmatic 也降分（恢复部分旧逻辑）；(b) 明确 quality_score 是"semantic 分"语义，programmatic 走 passed 通道。选 (b) 因为信号纯净 + 反馈闭环已经能阻断
+- 备选 a（programmatic 降低 quality_score）：跟 critic 双重计算，破坏"critic_score 完全替换三项"的设计干净度
+- 备选 c（新增 semantic_quality_score 字段并存）：metadata 复杂度上升，前端要展示两个分
+
+---
+
 ## 2026-06-10（前端美化 + 报告导出 session）: 6 个产品决策 + 7 个技术决策
 
 ### 6 个产品决策（PD-1 ~ PD-6）

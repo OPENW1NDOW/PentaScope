@@ -16,6 +16,41 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-19（LLM-as-critic spec 三轮 doubt-driven + plan 落盘 + finish_reason 可观测性）
+- 完成：
+  - **Brainstorming 8 个问题逐一拍板**（critic 路线 A / 4 维 evidence+specificity+coherence+actionability / 0.30/0.30/0.20/0.20 加权 / 集成顺序 C 内嵌单次调用 / coherence 限定 pair / 失败 retry 1 次后 fallback / D 阈值映射 / CoT 全维度 / 整报告级评分 / 测试三层 / v3-R17 cap 删除）
+  - **Spec v1 → v4 三轮 Codex 跨模型 doubt-driven 审查**（`docs/superpowers/specs/2026-06-19-llm-as-critic-design.md`）：
+    - cycle 1: 33 条（8 critical / 16 major / 9 minor）→ v2 消化 26 条 actionable（commit 2cbcde4）
+    - cycle 2: 22 条（4 critical / 12 major / 6 minor）→ v3 消化 20 条 actionable（commit 725e0af）
+    - cycle 3: 20 条（5 critical / 10 major / 5 minor）→ v4 消化 5 critical，10 major + 5 minor 留 plan 阶段（commit f0ff223）
+    - 总共 75 条问题，消化 51 条 actionable
+    - critical 数 8→4→5（未单调收敛）→ skill Step 5 触发 escalate → Cooper 选 A 修 critical 进 plan
+  - **关键认知翻转**：实证 author bias —— 我自己 self-review v1 只发现 1 处问题，跨模型 codex 发现 75 条。每轮"修订引入新问题"+"v2 漏审继续在 v3 暴露"两类 bug 各占一半。今后**任何架构级 spec 必须走 doubt-driven，不能 self-review 后直接 ship**
+  - **Plan 落盘**（`docs/superpowers/plans/2026-06-19-llm-as-critic.md`，2507 行 / 19 task / commit 48bde22）：自底向上 TDD（schema → quality_score → critic prompt → inspector 子函数 → 主流程 → graph 集成 → collector snippet → 测试三层 → 影响面验收脚本 → 全量回归）。每 task 含失败测试 / 实现 / 验证 / commit 五步
+  - **finish_reason 可观测性增强**（commit fc94c8b）：`llm_client.py` 加 finish_reason + completion_tokens 日志 + length 时打 WARNING。为后续 max_tokens 调参决策积累硬证据（之前用 char 数反推 token 不可靠）
+  - **OPEN_QUESTIONS 06-19 统一处置**：6 条 LLM 输出鲁棒性 + 字数代理副作用问题统一冻结观察"等 critic 落地后回头看可能消解一半"（Cooper 整理）
+- 关键讨论结论（已落 brainstorming 8 决策 + spec v4）：
+  - **Critic 不冲突 inspector**：现有 _llm_check 是"半成品 critic"（无 rubric / 输出非评分），路线 A 是升级它，不是新建 agent
+  - **字数约束分阶段退役**：critic 落地是阶段 1，删字数 schema 是阶段 3-5 留后续 spec；本 PR 严禁动 schema min_length
+  - **DataSource.confidence 是假动态**：Cooper 实证 `writer_orchestrator.py:1375` 写死 "medium"，confidence_avg 历史所有 trace 都是 0.6 → 删
+  - **max_tokens 暂不动**：我前后矛盾论断（Cooper 反复挑战），最终结论"先加 finish_reason 日志收集硬证据，再决定要不要调"
+  - **critic_failed 路由 agent="end"**（cycle3/C5）：critic 系统故障让 writer 重写无效，必须 terminal 不消耗 max_retries
+  - **quality_score 是 semantic 分**（cycle3/C2）：programmatic critical 通过 passed 阻断而非降分；calculation_note 加 prog_issues 计数让追溯可见
+- 进行中：plan 落盘完毕，等下次 session 实施
+- 下一步（TODO，按优先级）：
+  1. **执行 LLM-as-critic plan 19 task**（推荐 subagent-driven，预计 3-4 小时）—— 见 `docs/superpowers/plans/2026-06-19-llm-as-critic.md`
+  2. **phase 3 narrative 轻重试**（继承 06-18 待办）：单 section 失败重跑 1 次再占位
+  3. **max_tokens 调参决策**：跑 1-2 次新分析后看 finish_reason 日志数据，决定 phase 1/3/analyzer 是否调到 8192
+  4. **字数约束阶段 3-5 退役**（critic 跑通后启动）：critic 校准稳定后逐字段评估"实际拦住的是什么"
+- 阻塞：无
+- 协作模型实证（重要）：
+  - **doubt-driven 三轮没收敛**（critical 8/4/5 起伏）→ skill 文档预警的"3 cycles 后仍有 substantive issues = artifact 可能太大或有结构性问题"信号确实成立
+  - **author bias 反复发作**：max_tokens 推理（机制 A vs B）+ self-review 草率（4 项检查走过场）+ "Unterminated 是机制 A 特征"拍脑袋——3 次都靠 Cooper 反问拽回来。建议未来类似讨论 Cooper 主动逼"用证据说话"
+  - **Cooper 产品判断 vs Claude 工程评审**协作模型再次验证有效（feedback_pm_dev_collab_with_doubt_driven.md）：维度选 C/A/D 不要 actionability、不重跑 S5 验证、跑满 3 轮、修 critical 进 plan、A subagent-driven 等 5 处都是 Cooper 拍板我执行
+- 安全提醒：本 session 全程文档 + spec + plan，无 key 引入
+
+---
+
 ## 2026-06-18（S5 拆分端到端首次真跑 + 4 bug 修复 + OPEN_QUESTIONS 文档体系建立）
 - 完成：
   - **OPEN_QUESTIONS.md 文档体系建立**：与 PROGRESS / DECISIONS 三文档边界划清，问题 ID 格式 `Q-YYYY-MM-DD-关键词`，状态 4 档（未决 / 设计中 / 实施中 / 已并入）。CLAUDE.md "上下文恢复"章节同步加入 OPEN_QUESTIONS 必读
@@ -34,11 +69,10 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
   - **Q-2026-06-18-llm-反馈修一退一**：错误反馈回灌重试机制的天然弱点——LLM 全文重写时无"上次合规字段别动"记忆，常 attempt 0 错 A、attempt 1 修 A 但反退 B、attempt 2 修 B 但反退 C，max_retries=2 预算紧
   - **Q-2026-06-18-inspector-llm-issue-丢失**：inspector LLM 输出 issue 自身违反 `FeedbackIssue` schema 的部分被丢弃（trace 实证 2/8 条丢失），inspector 反馈信号容量被自身鲁棒性问题压低
   - **Q-2026-06-18-narrative-偶发抖动**：phase 3 narrative 单 section 失败率 ~17% 是 MiMo 在该任务的底噪，**与输入大小关系不强**（修正昨天的"输入大 → 失败概率高"假设）；同 section 重跑就过 → 强证偶发抖动可通过重试救
-- 进行中：4 个 bug 已修，需重跑 S5 验证修复效果
+- 进行中：4 个 bug 已修，跳过重跑验证（Cooper 决策不必再验证浪费时间），直接进 LLM-as-critic 讨论
 - 下一步（TODO）：
-  1. **重跑 S5 验证 4 bug 修复效果**（推荐）：验 phase 1 outline 即时校验是否生效、phase 2 是否减少重试浪费、quality_score 是否突破 cap 0.5
-  2. **LLM-as-critic 评分 brainstorming**（沿用 06-17）：今天 trace 又添 4 类 OPEN_QUESTIONS 全部关联回字数约束代理失效，brainstorming 时把这些当作集中实证素材
-  3. **观察项**：Q-2026-06-18-narrative-偶发抖动 的修法（phase 3 加 1 次轻重试 vs cap 机制改造）需要单独决策
+  1. **LLM-as-critic 评分**（最高 ROI 提质方向，正在开发中）：spec v2 已落 `docs/superpowers/specs/2026-06-19-llm-as-critic-design.md`，进 plan / 实施阶段
+  2. **phase 3 narrative 轻重试**（2026-06-19 Cooper 决断）：单 section 失败重跑 1 次仍失败才占位，最坏 +3min（6 sections × 30s）。修复 `WriterOrchestrator._phase3_narrative` + 单测
 - 阻塞：无
 
 ---

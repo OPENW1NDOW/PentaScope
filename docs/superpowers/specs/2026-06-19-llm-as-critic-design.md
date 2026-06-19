@@ -1,7 +1,8 @@
-# LLM-as-Critic 评分系统设计 v2
+# LLM-as-Critic 评分系统设计 v3
 
-> **v2 状态**：v1 经 Codex 跨模型 doubt-driven 审查（2026-06-19）发现 33 条问题，
-> 26 条 actionable 已合入本版本。v2 修订日志见文末。
+> **v3 状态**：v1 → v2 已合 33 条审查反馈中的 26 条 actionable；v2 经 cycle 2
+> Codex 审查再发现 22 条问题（4 critical / 12 major / 6 minor），其中 20 条
+> actionable 在本 v3 版本中合入。修订日志见文末。
 
 > 落实 OPEN_QUESTIONS Q-2026-06-17-字数约束的代理失效 的核心修法。
 > 不再用字数 schema 代理"内容质量"，改用语义级 LLM critic 给报告打分。
@@ -85,9 +86,10 @@ inspect(report):
     - 写入 metadata.quality_score_calculation_note（已有字段，复用）
 
   Step 5: passed 判定
-    - passed = all(issue.severity == "minor")
+    # v3 修订（cycle2/M2）：改成显式判定，避免 all([]) == True 隐式语义
+    - passed = not any(issue.severity in {"critical", "major"} for issue in issues)
     - critic_failed major issue 强制让 passed=False，触发反馈闭环
-    - 现有判定逻辑不变
+    - 现有判定逻辑等价但更显式（empty issue list 仍为 passed=True，符合预期）
 ```
 
 ### 组件清单
@@ -115,7 +117,7 @@ inspect(report):
 | `src/agents/inspector.py` | `_build_limited_pairs(report)` | deterministic 构造 3 个 coherence pair |
 | `src/agents/inspector.py` | `_sample_items_deterministic(items, n=5, seed_field='id')` | deterministic 抽样（hash by id 排序后取前 N）|
 | `src/agents/inspector.py` | `_build_critic_inputs(report, discovered_urls)` | 拼装 critic LLM 的 user_prompt（含 source title + snippet）|
-| `src/agents/quality_score.py` | `calc_critic_score(scores: CriticScores \| Mapping[str, int]) -> float` | 4 维加权 + 归一化 + clamp，签名兼容 model 和 dict |
+| `src/agents/quality_score.py` | `calc_critic_score(scores: CriticScores \| Mapping[str, Any]) -> float` | 4 维加权 + 归一化 + clamp；签名兼容 model 和 dict；**仅读 evidence/specificity/coherence/actionability 4 个 key 当 int 处理，其他 key（如 reasoning）一律忽略**（v3 修订 cycle2/m4） |
 | `src/agents/prompts/inspector/__init__.py` | 模块包 | 新建 |
 | `src/agents/prompts/inspector/critic.py` | `CRITIC_SYSTEM`, `CRITIC_VERSION` | critic 4 维 CoT rubric prompt + 版本标识 |
 | `src/schemas/feedback.py` | `CriticScores`（新 BaseModel） | 持久化 4 维分到 metadata |
@@ -165,9 +167,35 @@ src/agents/quality_score.py ← import CriticScores from feedback
 内容。
 ```
 
-### [INPUTS] 输入构造（v2 修订 - M5/M6/M7）
+### 上游数据流改动（v3 新增 - cycle2/M4）
 
-由 `_build_critic_inputs(report, discovered_urls)` 代码生成，传给 LLM 的 user_prompt：
+**关键发现**：v2 假设 inspector 能拿到 source title/snippet 用于 evidence rubric 判断
+URL 相关性，但当前架构不支持：
+- `inspector.inspect()` 现有签名：`(report, competitors=None, retry_count=0, max_retries=2)`，**不传 discovered_urls**
+- `AnalysisState` 没有 discovered URLs 字段
+- collector 落盘的 `01_profiles.json` 含 source URL + title 但**不含 snippet**（只是搜索结果标题，没正文片段）
+
+**v3 上游改动清单**（plan 阶段必须含）：
+
+1. `src/graph/state.py::AnalysisState` 新增字段：
+   ```python
+   discovered_sources: list[dict] | None  # [{"url": str, "title": str, "snippet": str}]
+   ```
+2. `src/agents/collector.py` 在搜索阶段把 Tavily 返回的 `content` 字段（snippet）也保存
+3. `src/graph/builder.py::collector_node` 把 discovered_sources 写入 state
+4. `src/graph/builder.py::inspector_node` 调 `inspector.inspect(report, discovered_sources=state['discovered_sources'])`
+5. `inspector.inspect()` 签名扩展含 `discovered_sources` 参数（保持 Optional 默认 None 向后兼容）
+
+**降级策略**（cycle2/M4）：
+- 如果 collector 没成功抓到 snippet（旧 trace / Tavily 失败），`discovered_sources[i]["snippet"]` 设 `""` 空字符串
+- prompt 里 `_build_critic_inputs` 检查若 ≥80% sources 都是 `snippet=""`，加 prompt warning：
+  `"⚠️ 大部分 source 缺少 snippet，evidence 维度仅能基于 URL/title 判断"`
+- 这种情况下 critic 给 evidence 评分时降级标准：仅判定 URL 是否在 list 内 + title 主题匹配，不能要求严格相关性
+- inspector 不因此降级 critic 整体评分（因为是上游数据问题，不是报告问题）
+
+### [INPUTS] 输入构造（v2 修订 - M5/M6/M7；v3 调整 - cycle2/M4/M5）
+
+由 `_build_critic_inputs(report, discovered_sources)` 代码生成，传给 LLM 的 user_prompt：
 
 ```python
 {
@@ -188,10 +216,13 @@ src/agents/quality_score.py ← import CriticScores from feedback
       "data_a": {"key_findings": [...]},
       "data_b": {"recommendations": [...]}
     },
+    # v3 修订（cycle2/M5）：替换 score_vs_warnings 伪 pair
+    # 原 pair 用 quality_score_hint="TBD（critic 计算中）"，critic 评分时此值还不存在，
+    # 等于让 LLM 对未知字段做无意义推断。改用真实字段对照：
     {
-      "id": "score_vs_warnings",
-      "data_a": {"quality_score_hint": "TBD（critic 计算中）"},
-      "data_b": {"warnings_count": <len(metadata.warnings)>}
+      "id": "exec_summary_vs_recommendations",
+      "data_a": {"executive_summary.implications": "..."},
+      "data_b": {"recommendations": [...]}
     }
   ],
   "sampled_findings": [<deterministic 抽 5 条 key_findings + analysis_sections>],
@@ -204,9 +235,12 @@ src/agents/quality_score.py ← import CriticScores from feedback
 - 任何 pair 的 `data_a` 或 `data_b` 缺失 → 该 pair 进 inputs 时显式标 `"data_a": null, "data_b": null, "skip_reason": "missing"`
 - LLM 看到 `null` pair 不评分，coherence 自动按"剩余 pair 数"计算
 
-**deterministic 抽样规则**（v2 - M7）：
+**deterministic 抽样规则**（v2 - M7；v3 修订 - cycle2/M7）：
 - `_sample_items_deterministic(items, n=5, seed_field='id')`
-- 按 item.id（或 hash(json.dumps(item))）排序，取前 N
+- 优先按 item.id（如果存在）排序，取前 N
+- 没有 id 时用 `hashlib.sha256(json.dumps(item, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()` 排序
+- **禁止使用 Python 内建 `hash()`**——受 PYTHONHASHSEED 影响跨进程不稳定
+- **必须 `sort_keys=True`**——避免 dict key 顺序影响 json.dumps 输出
 - 不用随机数 / 不让 LLM 自选
 - N=5 个为上限，items 数 <5 时全取
 
@@ -214,19 +248,35 @@ src/agents/quality_score.py ← import CriticScores from feedback
 
 #### evidence（证据可溯，权重 0.30）
 
-**v2 修订 - M15**：阈值改为互斥区间 `<40% / 40-69% / 70-89% / ≥90%` source support rate；mismatch 单独降级。
+**v2 修订 - M15**：阈值改为互斥区间 `<40% / 40-69% / 70-89% / ≥90%` source support rate。
+**v3 修订 - cycle2/m6**：明确 support rate 与 mismatch rate 的优先级和分母。
 
 ```
-4 分 优秀：≥90% 论断有合规 source_refs（URL 在 discovered_sources 内
-        且 title/snippet 跟论断主题相关）
-3 分 良好：70-89% 论断有合规 source_refs，少数轻微 mismatch
-2 分 不及格：40-69% 论断有合规 source_refs，或 ≥30% 论断出现明显
-        URL/内容 mismatch（如 "PostHog 月活" 引用 "OpenAI 事故公告"）
-1 分 严重：<40% 论断有 source_refs，或大量 ≥50% 引用第三方聚合站
+评分依据（按优先级，从严到松）：
 
-第三方聚合站示例（注：可在 prompt 中扩展，未来挪到配置文件）：
-  upmarket.co / spyingbee.com / similarweb.com 这类
-  非官方非权威媒体的非直接信息源
+第 1 优先：support rate（有 source_refs 的论断 / 总论断数）
+  4 分 优秀：≥90%
+  3 分 良好：70-89%
+  2 分 不及格：40-69%
+  1 分 严重：<40%
+
+第 2 优先（升级降级）：mismatch rate（mismatch 论断 / 有 source_refs 的论断）
+  ≥30% mismatch → 强制降到 ≤2 分
+  ≥50% mismatch → 强制降到 1 分
+
+mismatch 包括：
+  - URL 不在 discovered_sources（issue_type=url_not_discovered）
+  - URL 在 list 内但 title/snippet 跟论断主题不符（issue_type=source_mismatch）
+  - URL/snippet 都对但论断本身引错源（issue_type=source_irrelevant）
+
+第三方源策略（v3 修订 - cycle2/M12）：
+  按 claim 类型判断 source 合规性，不再硬编码黑名单：
+  - 产品/定价/功能 claim：优先官方 URL；引用第三方时 mismatch 升级
+  - 流量/排名/估算 claim：第三方数据（similarweb.com 等）合理；
+    仅当未标注估算性质 / 来源时才扣分
+  - 新闻 claim：权威媒体 OK；纯 SEO 聚合站（upmarket.co / spyingbee.com）扣分
+
+⚠️ 不要硬记"哪些域名是聚合站"——按 claim 类型 + 来源权威性综合判断。
 ```
 
 #### specificity（内容具体，权重 0.30）
@@ -255,14 +305,16 @@ src/agents/quality_score.py ← import CriticScores from feedback
 仅检查 limited_pairs 中给出的 3 个固定 pair（见 [INPUTS] 章节构造规则）。
 
 ```
-4 分 优秀：3 个 pair（或可用 pair）均无矛盾
-3 分 良好：1 个 pair 有轻微矛盾（用词差异 / 维度切换）
-2 分 不及格：2-3 个 pair 有明显矛盾
-1 分 严重：核心结论之间冲突（如 SWOT.strengths 说 X 强 + cautions
-       说 X 弱，针对同一竞品同一维度）
+基于"可用 pair 矛盾比例"评分（v3 修订 - cycle2/M6）：
+  4 分 优秀：可用 pair 中 0% 有矛盾
+  3 分 良好：可用 pair 中 ≤33% 有矛盾（如 3 中 1）
+  2 分 不及格：可用 pair 中 34-66% 有矛盾（如 3 中 2）
+  1 分 严重：可用 pair 中 >66% 有矛盾（如 3 中 3，或核心结论冲突）
 
 ⚠️ 不要做 limited_pairs 之外的全文级矛盾检查，那超出本 critic 范围。
-⚠️ pair 标 skip_reason="missing" 时不参与评分，按剩余 pair 数评估。
+⚠️ pair 标 skip_reason="missing" 时不参与评分，仅按剩余可用 pair 数计算比例。
+⚠️ 如果可用 pair 数为 0（极端情况，所有 pair 都缺失）→ 跳过 coherence 维度，
+   coherence_score=4 兜底（不作为约束信号），但 critic_failed 不触发。
 ```
 
 #### actionability（可行动性，权重 0.20）
@@ -349,14 +401,20 @@ actionability_reasoning（list[str]，同上）:
 
 **v2 修订 - M4 / m5 / m6 / C8**：
 
-`issue.issue_type` 枚举（v2 新增）：
-- `url_not_discovered`：source_ref URL 不在 discovered_urls（agent → collector）
-- `source_mismatch`：URL 在 list 内但内容不相关（agent → writer）
+`issue.issue_type` 枚举（v2 新增；v3 修订 - cycle2/M3 + cycle2/M11）：
+- `url_not_discovered`：source_ref URL 不在 discovered_sources（agent → **collector**——因为是采集层缺失）
+- `source_mismatch`：URL 在 list 内但 title/snippet 跟论断主题不符（agent → **collector**——因为采集 snippet 错或没抓全）
+- `source_irrelevant`：URL 在 list 内、snippet 真实，但论断本身就引错了源（agent → **writer**——writer 选错引用）
 - `vague_description`：内容空泛（agent → writer）
 - `cross_field_contradiction`：跨字段矛盾（agent → writer）
 - `vague_recommendation`：建议无具体动作（agent → writer）
+- `critic_failed`：v3 新增 - critic 自身失败（agent → writer，让 writer 重写一次）
 
-代码层用 `_map_issue_type_to_agent` 自动设置 `FeedbackIssue.agent` 字段。
+**v3 修订（cycle2/M11）**：v2 把 `source_mismatch` 全归 writer 太粗——mismatch 可能是 collector
+错抓 snippet（应给 collector）也可能是 writer 引错源（应给 writer）。拆成 source_mismatch
+（collector）+ source_irrelevant（writer）两类，让 LLM 在 prompt 里判断后输出正确类型。
+
+代码层用 `_map_issue_type_to_agent` 字典做自动映射（不再依赖 LLM 直接打 agent）。
 
 **reasoning 字段格式**：
 - `list[str]` 而非单一长字符串
@@ -382,13 +440,21 @@ FeedbackIssue(
 ```
 1. 严格按 [OUTPUT_CONTRACT] JSON 输出，不要 markdown，不要解释开头
 2. score 必须是 1/2/3/4 整数（不接受 2.5）
-3. reasoning 必填，必须是 list[str]，每条 ≤80 字
+3. reasoning 应为 list[str]，每条建议 ≤80 个 Python `len()` 字符
+   （v3 修订 cycle2/m5：明确按 Python `len()` 计数；prompt 层是 soft constraint）
 4. issues 列表可空（如果该维度无问题）
 5. 你是审计师，不要为报告写不足之处辩护
 6. 不要做 limited_pairs 之外的全文级一致性检查
 7. issue_type 必须从枚举中选（url_not_discovered / source_mismatch /
-   vague_description / cross_field_contradiction / vague_recommendation）
+   source_irrelevant / vague_description / cross_field_contradiction /
+   vague_recommendation）；critic_failed 仅由代码层在 fallback 时使用，LLM 不得输出
 ```
+
+**v3 修订（cycle2/M8）**：reasoning 缺失策略
+- 如果 LLM 返回的 dict 缺 reasoning 字段：代码层填空 list `[]` 而非 retry/fallback——
+  reasoning 是辅助分析的 nice-to-have，缺它不算 critic 失败
+- 如果 LLM 返回的 dict 缺 score 字段：retry 1 次仍缺则 fallback
+- 这平衡了"reasoning 不持久化全文"目标 vs "缺 reasoning 不应炸"
 
 ## 数据流与时序
 
@@ -419,26 +485,30 @@ quality_score = clamp((weighted_raw_score - 1) / 3, 0.0, 1.0)     # 归一化 [0
 report.metadata.quality_score = quality_score                     # ∈ [0, 1] 永远非空
 report.metadata.score_source = "critic"
 report.metadata.critic_scores = critic_scores
-report.metadata.critic_version = CRITIC_VERSION                   # 如 "critic-v1.0.0"
+report.metadata.critic_prompt_version = CRITIC_PROMPT_VERSION     # 如 "critic-prompt-v1.0.0"
+# v3 修订（cycle2/m2）：消除 "critic v{CRITIC_VERSION}" 的双 v 笔误
 report.metadata.quality_score_calculation_note =
-    f"critic v{CRITIC_VERSION}: ev={ev} sp={sp} co={co} ac={ac} → raw={raw:.2f} → norm={quality_score:.3f}"
+    f"{CRITIC_PROMPT_VERSION} | ev={ev} sp={sp} co={co} ac={ac} → raw={raw:.2f} → norm={quality_score:.3f}"
   ↓
 RejectionFeedback(passed, issues, ...)
 ```
 
 ### 失败路径（critic LLM 出错）
 
-**v2 修订 - C2 + C3 + M8 + M10**：
+**v3 修订 - cycle2/C3 + cycle2/M8**：fallback 路径自身做"无异常构造"，并在最外层
+broad except 兜底——避免 fallback 内部还能抛错。
 
 ```
 _critic_check(report, discovered_urls)
   ↓
-[外层 broad try/except，覆盖所有非 LLM 异常：
+[外层 broad try/except，覆盖所有非 LLM 异常 + fallback 自身可能的异常]
+  ↓
+正常调用：
  - _build_critic_inputs 失败（report 缺字段、limited_pairs 构造异常等）
  - report.model_dump() 异常
  - JSON 解析失败 / score 字段缺失 / score 越界
  - FeedbackIssue 构造失败
- - 任何 unexpected exception]
+ - 任何 unexpected exception
   ↓
 attempt 0: _llm_call_with_quota(max_tokens=8192) → 失败
   ├─ 检查 finish_reason
@@ -449,24 +519,31 @@ attempt 1（仅当 finish_reason != "length" 时执行）:
   ├─ 成功 → 走正常路径
   └─ 失败 → 进入降级
   ↓
-降级路径：
+降级路径（v3 修订：内部做"无异常构造"——任何字段操作都先做 None safe）：
   ├─ critic_score (raw) = 2.5（中位数对应 1-4 区间）
   ├─ quality_score = clamp((2.5 - 1) / 3, 0.0, 1.0) = 0.5（中位数）
   ├─ critic_scores = None
   ├─ score_source = "fallback"
-  ├─ critic_version = None
-  ├─ warnings.append("critic_failed:<error_code>")
+  ├─ critic_prompt_version = None
+  ├─ # v3 修订（cycle2/C3）：先做 None safe 转换，避免 metadata.warnings is None 时 .append 崩
+  ├─ existing_warnings = list(report.metadata.warnings or [])
+  ├─ existing_warnings.append(f"critic_failed:{error_code}")
+  ├─ report.metadata.warnings = existing_warnings
   │     # error_code 枚举: llm_timeout / json_parse_error / score_out_of_range /
   │     #                  field_missing / max_tokens_length / build_inputs_error /
   │     #                  unexpected_error
-  ├─ 强制生成 1 条 FeedbackIssue（v2 关键修订 - C3）：
+  ├─ 强制生成 1 条 FeedbackIssue（v3 修订 - cycle2/C1）：
+  │     # builder.py:436 用 issue.agent 直接路由 graph 节点
+  │     # graph 节点只有 recommender/collector/analyzer/writer/inspector
+  │     # 用 agent="inspector" 会形成循环 → 必须用现有合法 retry target
   │     FeedbackIssue(
-  │         agent="inspector",
+  │         agent="writer",  # critic 失败语义上是"质量未确认"，让 writer 重写一次
   │         field="critic_check",
   │         severity="major",  # 强制 major，让 passed=False 触发反馈
   │         reason=f"critic 评分失败：{error_code}",
-  │         suggestion="人工 review 或重跑分析",
+  │         suggestion="人工 review 或重跑分析；如重试仍 critic 失败则 max_retries 终止",
   │         dimension="critic_failed",
+  │         issue_type="critic_failed",  # cycle2/M3：枚举里加这条
   │     )
   └─ logger.error("[critic] LLM 失败重试后仍失败，降级 score_source=fallback")
 ```
@@ -495,13 +572,15 @@ def _score_to_severity(dim_score: int, all_scores: dict[str, int]) -> str:
         return "critical"
     if dim_score == 2:
         return "major"
+    # v3 修订（cycle2/M1）：显式处理 dim_score >= 4 case，避免 fall-through 误升级 major
+    if dim_score >= 4:
+        return "minor"
     # dim_score == 3
     raw = sum(W[k] * v for k, v in all_scores.items())  # weighted raw 1-4
     quality_score = max(0.0, min(1.0, (raw - 1) / 3))
     if quality_score < 0.50:
         return "major"
     return "minor"
-    # dim_score == 4 不该到这里（4 分应该不生成 issue）
 ```
 
 **对照 v1 D 规则的差异**：v1 是"单维度 ≤1 critical / 否则全看聚合"，v2 升级为"单维度 ≤2 至少 major"——防 evidence=2 + 其他=4 时 evidence issue 被错标 minor。
@@ -556,10 +635,14 @@ class ReportMetadata(BaseModel):
     # ...现有字段...
     critic_scores: Optional[CriticScores] = None
     """critic 4 维评分；critic 失败降级时为 None"""
-    score_source: Literal["critic", "fallback"] = "critic"
-    """quality_score 的来源；"fallback" 表示 critic 失败降级 0.5"""
-    critic_version: Optional[str] = None
-    """critic prompt 版本（如 "critic-v1.0.0"），用于历史分数可比"""
+    # v3 修订（cycle2/C2）：必须 Optional 默认 None，否则旧 trace 反序列化时
+    # 会被错填 "critic"，污染 provenance 语义
+    score_source: Optional[Literal["critic", "fallback"]] = None
+    """quality_score 的来源；"critic"=critic 真分；"fallback"=critic 失败降级 0.5；
+    None=旧 v1 trace（来自旧 coverage/confidence/pass_rate 三项加权）"""
+    critic_prompt_version: Optional[str] = None
+    """critic prompt 版本（如 "critic-prompt-v1.0.0"），用于历史分数可比；
+    v3 修订（cycle2/m1）：字段名改 critic_prompt_version 跟 spec 版本号区分"""
 ```
 
 ### Schema 兼容验收（v2 - C1 + M11）
@@ -590,7 +673,7 @@ class ReportMetadata(BaseModel):
 | `test_critic_check_score_to_severity_d_prime_dim_eq3_low_agg_major` | dim=3 + quality_score<0.5 → major |
 | `test_critic_check_score_to_severity_d_prime_dim_eq3_high_agg_minor` | dim=3 + quality_score≥0.5 → minor |
 | `test_critic_check_score_out_of_range_retries` | LLM 返回 score=5 → retry 1 次 |
-| `test_critic_check_missing_dimension_retries` | LLM 返回缺 evidence_score → retry 1 次 |
+| `test_critic_check_missing_dimension_retries` | LLM 返回缺 `evidence.score` 或缺 `evidence` 整对象 → retry 1 次（v3 修订 cycle2/m3：字段名跟 OUTPUT_CONTRACT 对齐） |
 | `test_critic_check_finish_reason_length_no_retry` | finish_reason=length → 不 retry，直接 fallback |
 | `test_critic_check_retry_then_fallback` | retry 仍失败 → critic_score=0.5 + critic_failed major issue |
 | `test_critic_check_build_inputs_failure_falls_back` | _build_critic_inputs 抛异常 → fallback |
@@ -721,7 +804,9 @@ bullet list ≤10 条 × 80 字 ≈ 800 字符上限/维 × 4 维 = ≤3.2KB 单
 ## 不在本 spec 范围
 
 - 字数约束实际删除（留给后续 spec，**本 PR 严禁动 schema min_length**）
-- max_tokens 调参（等 finish_reason 证据积累）
+- 现有 phase 1/2/3 的 max_tokens 调参（等 finish_reason 证据积累）；
+  **本 PR 仅新增 critic 调用 max_tokens=8192 这一项**——是新建 LLM 调用，不是调参
+  （v3 修订 cycle2/M9：消除"调参"声明跟新调用 max_tokens 的语义冲突）
 - inspector LLM 调用之外的其他 critic 应用场景（如 writer phase 内嵌 critic）
 - 多 critic 投票 / 跨模型 critic（成本高，单一 LLM 够用阶段不需要）
 - critic 自身的训练或 fine-tuning（在线 prompt 工程已经够）
@@ -729,15 +814,55 @@ bullet list ≤10 条 × 80 字 ≈ 800 字符上限/维 × 4 维 = ≤3.2KB 单
 
 ## 验收标准
 
-实施完成后必须满足：
+实施完成后必须满足。**v3 修订（cycle2/M10）拆两类**：
 
-1. **测试**：单元 + 集成全绿 / `ruff check src tests` 全清 / 手动 eval 至少跑 1 次确认 5 条反例集 fixture 期望符合
-2. **旧 trace 反序列化**：`runs/20260618-095358-c5ab5c/03_report.json` 能用 v2 BaseReport schema 加载（独立验收）
-3. **critic 失败降级**：mock critic 异常 → inspect 不抛 / score_source="fallback" / critic_failed major issue 生成 / passed=False（独立验收）
-4. **新报告产出**：metadata 含 `critic_scores` + `score_source` + `critic_version` 字段
-5. **quality_score 永远非空且 ∈ [0, 1]**：所有路径（成功 / fallback / 异常）下 metadata.quality_score 都被写入，clamp 保证范围
-6. **本 PR 范围控制**：diff 中无任何 schema min_length / max_length 字段的修改（git grep 验证）
-7. **手动 S5 真跑**：至少 1 次（不进 CI），人工对比 critic 4 维评分 vs 直觉是否大致符合（可记入 PROGRESS）
+#### CI required（PR 合并门禁）
+
+1. **CI 测试全绿**：单元 + 集成 `pytest -m "not eval"` 全绿（mock LLM，不依赖外部 API）
+2. **lint 通过**：`ruff check src tests` 全清（v3 修订 cycle2/m8：用 `ruff check` 不是 `ruff clean`）
+3. **旧 trace 反序列化**：`runs/20260618-095358-c5ab5c/03_report.json` 能用 v3 BaseReport schema 加载，且加载后 `score_source=None / critic_scores=None / critic_prompt_version=None`（独立验收）
+4. **critic 失败降级**：mock critic 异常 → inspect 不抛 / score_source="fallback" / critic_failed major issue 生成 / passed=False（独立验收）
+5. **新报告产出**：metadata 含 `critic_scores` + `score_source` + `critic_prompt_version` 字段（fallback 路径含 critic_scores=None / score_source="fallback"）
+6. **quality_score 永远非空且 ∈ [0, 1]**：所有路径（成功 / fallback / 异常）下 metadata.quality_score 都被写入，clamp 保证范围
+7. **本 PR 范围控制**：diff 中无任何 schema `min_length` / `max_length` 字段的修改（手动 git grep 验证）
+8. **影响面回归**（v3 新增 cycle2/C4）：`grep -r "calc_source_coverage\|calc_confidence_avg\|calc_inspector_pass_rate\|_QUALITY_SCORE_CAP_ON_PLACEHOLDER\|_detect_placeholder_warnings\|_check_warnings_prefix" src/ tests/` 必须无遗留引用（写入 verify 脚本进 CI）
+
+#### Manual pre-release（不进 CI，记录到 PROGRESS）
+
+9. **手动 critic eval**：跑 `pytest tests/eval/ -m eval` 至少 1 次，确认 5 条反例集 fixture 期望符合
+10. **手动 S5 真跑**：至少 1 次端到端，人工对比 critic 4 维评分 + reasoning bullets vs 直觉是否大致符合
+
+## v3 修订日志
+
+v2 经 Codex cycle 2 跨模型审查（2026-06-19）发现 22 条问题，处理如下：
+
+**Critical 4 条（全部消化）**：
+- cycle2/C1 → fallback issue agent 改 "writer"（不破坏 builder.py 反馈路由）+ M3 issue_type 加 critic_failed
+- cycle2/C2 → score_source 改 Optional[Literal[...]]=None，旧 trace 期望 None 不污染语义
+- cycle2/C3 → fallback 路径自身 None safe + 内部失败兜底
+- cycle2/C4 → 验收 8 加影响面 grep 检查（旧三项无遗留引用）
+
+**Major 12 条（11 必修 + 1 文档化）**：
+- cycle2/M1 → `_score_to_severity` 显式加 `if dim_score >= 4: return "minor"` 防 fall-through
+- cycle2/M2 → passed 判定改 `not any(severity in {critical, major})` 显式语义
+- cycle2/M3 → issue_type 枚举加 `critic_failed`
+- cycle2/M4 → discovered_urls 升级为 discovered_sources（含 title/snippet）+ 上游 collector/state/builder 改动清单
+- cycle2/M5 → score_vs_warnings 伪 pair 替换为 exec_summary_vs_recommendations
+- cycle2/M6 → coherence 缺 pair 时按比例评分规则 + 0 可用 pair 兜底 score=4
+- cycle2/M7 → 抽样改用 sha256 + sort_keys=True，禁用 Python 内建 hash()
+- cycle2/M8 → reasoning 缺失 → 代码填空 list 不 fallback；score 缺失才 fallback
+- cycle2/M9 → "本 PR 仅新增 critic 调用 max_tokens=8192"声明，消除调参矛盾
+- cycle2/M10 → 验收拆 CI required (1-8) vs Manual pre-release (9-10)
+- cycle2/M11 → source_mismatch 拆 source_mismatch (collector) + source_irrelevant (writer)
+- cycle2/M12 → evidence rubric 第三方源策略改"按 claim 类型"，不再硬编码黑名单
+
+**Minor 6 条（5 必修 + 1 noise）**：
+- cycle2/m1 → critic_version 改名 critic_prompt_version 跟 spec 版本号区分
+- cycle2/m2 → quality_score_calculation_note 双 v 笔误修
+- cycle2/m3 → 测试字段名 evidence.score 跟 OUTPUT_CONTRACT 对齐
+- cycle2/m4 → calc_critic_score 签名 Mapping[str, Any] + 仅读 4 个维度 key
+- cycle2/m5 → "≤80 字符" 明确按 Python `len()` 计数
+- cycle2/m6 → mismatch rate 优先级 + 分母明确（mismatch / 有 source_refs 的论断）
 
 ## v2 修订日志
 

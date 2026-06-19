@@ -191,12 +191,22 @@ def make_report_third_party_only():
 
 
 def make_report_swot_self_contradiction():
-    """SWOT.strengths 说 X 强 + weaknesses 说 X 弱 — 期望 coherence ≤ 2。"""
+    """多处跨字段矛盾 — 期望 coherence ≤ 2（≥2/3 pair 矛盾 → 67% → 2 分）。
+
+    Pair 1: strengths 说竞品A功能全面 vs caution 说竞品A高级功能不足
+    Pair 2: findings 说市场增长快 vs recommendations 建议收缩退出
+    """
     report = make_report_all_placeholder()
-    report.swot.strengths[0].point = "AI 功能是核心竞争力，技术壁垒高"
-    report.swot.strengths[0].evidence = "自研大模型在多项 benchmark 上领先"
-    report.swot.weaknesses[0].point = "AI 能力薄弱，与竞品差距明显"
-    report.swot.weaknesses[0].evidence = "AI 功能用户满意度低于行业平均"
+    # Pair 1 矛盾：strengths vs vendor cautions
+    report.swot.strengths[0].point = "竞品 A 的高级功能覆盖全面，产品成熟度行业领先"
+    report.swot.strengths[0].evidence = "竞品 A 高级功能模块数量是竞品 B 的两倍以上"
+    # Pair 2 矛盾：findings 说市场好 vs recommendations 说退出
+    report.key_findings[0].statement = "市场增长势头强劲，年增长率超过 40%，各厂商均在加大投入"
+    report.recommendations[0] = _make_recommendation(
+        "建议立即退出该市场，资源转移到其他业务线",
+        "战略负责人", "critical", "immediate",
+        "市场竞争过于激烈，继续投入回报率低",
+    )
     return report
 
 

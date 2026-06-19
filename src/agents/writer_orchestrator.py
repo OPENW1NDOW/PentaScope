@@ -988,7 +988,7 @@ class WriterOrchestrator:
         discovered_urls: list[str],
         warnings: list[str],
         max_retries: int = 2,  # [fix5] 1→2: LLM 一次只能修一两个字段错位，多给一次机会逐次修正
-        max_tokens: int = 8192,
+        max_tokens: int = 12288,
     ):
         """Phase 2 LLM call → normalize → 注入 → 实例化场景 Payload schema。
 

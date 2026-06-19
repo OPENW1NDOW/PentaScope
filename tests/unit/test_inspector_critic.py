@@ -68,3 +68,62 @@ def test_feedback_issue_new_fields_settable():
     )
     assert issue.dimension == "evidence"
     assert issue.issue_type == "source_irrelevant"
+
+
+def test_report_metadata_v4_fields_optional():
+    """v4 新增字段必须 Optional 默认 None，旧 v1 trace 反序列化兼容。"""
+    from src.schemas.report import ReportMetadata
+
+    # 模拟旧 v1 trace：不含 critic_scores / score_source / critic_prompt_version
+    old_metadata_dict = {
+        "report_id": "rpt-test",
+        "trace_id": "test-trace",
+        "scenario": "S5",
+        "schema_version": "2.0",
+        "publication_date": "2026-06-18",
+        "confidence_level": "medium",
+        "warnings": [],
+        "data_sources": [{
+            "url": "https://example.com",
+            "title": "test",
+            "accessed_at": "2026-06-18",
+            "source_type": "other",
+            "confidence": "medium",
+        }],
+    }
+    md = ReportMetadata.model_validate(old_metadata_dict)
+
+    # v4 修订（cycle3/C1）：旧 trace 期望统一为 None
+    assert md.critic_scores is None
+    assert md.score_source is None
+    assert md.critic_prompt_version is None
+
+
+def test_report_metadata_v4_fields_settable():
+    """v4 新增字段能正常设置。"""
+    from src.schemas.report import ReportMetadata
+    from src.schemas.feedback import CriticScores
+
+    md = ReportMetadata.model_validate({
+        "report_id": "rpt-test",
+        "trace_id": "test-trace",
+        "scenario": "S5",
+        "schema_version": "2.0",
+        "publication_date": "2026-06-18",
+        "confidence_level": "medium",
+        "warnings": [],
+        "data_sources": [{
+            "url": "https://example.com", "title": "t",
+            "accessed_at": "2026-06-18", "source_type": "other",
+            "confidence": "medium",
+        }],
+        "critic_scores": {
+            "evidence": 3, "specificity": 3, "coherence": 3, "actionability": 3,
+            "reasoning": {},
+        },
+        "score_source": "critic",
+        "critic_prompt_version": "critic-prompt-v1.0.0",
+    })
+    assert md.critic_scores.evidence == 3
+    assert md.score_source == "critic"
+    assert md.critic_prompt_version == "critic-prompt-v1.0.0"

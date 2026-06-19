@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 from src.schemas.common import DataSource, Exhibit, Revision, SourceRef
+from src.schemas.feedback import CriticScores
 from src.schemas.scenarios.s1 import S1FeatureIterationPayload
 from src.schemas.scenarios.s2 import S2MarketEntryPayload
 from src.schemas.scenarios.s3 import S3PricingStrategyPayload
@@ -137,6 +138,15 @@ class ReportMetadata(BaseModel):
         default="本报告基于公开渠道采集数据生成，不构成投资建议。生成时间晚于数据采集时间可能存在滞后。"
     )
     citation_format: Optional[str] = None
+
+    # v4 新增（spec v4 cycle2/C2 + cycle3/C1）：critic 评分相关
+    critic_scores: Optional[CriticScores] = None
+    """critic 4 维评分；critic 失败降级时为 None"""
+    score_source: Optional[Literal["critic", "fallback"]] = None
+    """quality_score 的来源；"critic"=critic 真分；"fallback"=critic 失败降级 0.5；
+    None=旧 v1 trace（来自旧 coverage/confidence/pass_rate 三项加权）"""
+    critic_prompt_version: Optional[str] = None
+    """critic prompt 版本（如 "critic-prompt-v1.0.0"），用于历史分数可比"""
 
 
 # ============ BaseReport（接通 5 场景 discriminated union） ============

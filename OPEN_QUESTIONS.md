@@ -41,15 +41,9 @@ PentaScope 项目里**已发现但未决定如何应对**的深层问题。与 P
 
 ## Q-2026-06-18-json-extra-data
 
-**状态**：未决（等 critic）
+**状态**：已并入（2026-06-19 晚修复）
 
-LLM 输出 JSON 时偶尔在合法 JSON 之后追加纯文本说明段 → `Extra data: line N column M` → 解析失败。`_strip_json_fence` 只处理 ```` ``` ```` 围栏，不处理 JSON 后的纯文本尾巴。
-
-候选：(a) `_strip_json_fence` 改用 `json.JSONDecoder().raw_decode()` 找第一个完整 JSON / (b) prompt 加显式提醒 / (c) structured outputs
-
-**等 critic 决策原因**：(c) 跟 critic 同方向；(a) 工程量极小、可独立做，优先级 Cooper 后续决定。
-
-实证：`runs/20260618-095358-c5ab5c/run.log` —— writer phase 2b `Extra data: line 74 column 4 (char 2655)`
+已采用方案 (a) `raw_decode()`：在所有兜底之前优先用 `json.JSONDecoder(strict=False).raw_decode()` 提取第一个完整 JSON 对象，忽略后续追加文本。
 
 ---
 

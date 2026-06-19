@@ -107,6 +107,13 @@ class LLMClient:
                     )
                 content = response.choices[0].message.content
                 stripped = self._strip_json_fence(content)
+                # 优先用 raw_decode 提取第一个完整 JSON（忽略 LLM 在 JSON 后追加的纯文本）
+                try:
+                    obj, _ = json.JSONDecoder(strict=False).raw_decode(stripped)
+                    if isinstance(obj, dict):
+                        return obj
+                except (json.JSONDecodeError, ValueError):
+                    pass
                 # strict=False 允许字符串值内的裸控制字符（LLM 常在内容里直接输出换行）
                 try:
                     return json.loads(stripped, strict=False)

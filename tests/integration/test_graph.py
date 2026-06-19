@@ -519,7 +519,7 @@ def _mock_agents(monkeypatch, report: BaseReport):
 
     monkeypatch.setattr(
         "src.agents.collector.CollectorAgent.collect",
-        AsyncMock(return_value=([fake_profile], fake_goal)),
+        AsyncMock(return_value=([fake_profile], fake_goal, [])),
     )
     monkeypatch.setattr(
         "src.agents.analyzer.AnalyzerAgent.analyze",
@@ -530,14 +530,11 @@ def _mock_agents(monkeypatch, report: BaseReport):
         AsyncMock(return_value=report),
     )
 
-    # inspector 整个 mock 为 passed=True 兜底，仍 cap quality_score 走真实公式：
-    # 调真实 calc_quality_score 验证回填，然后包装到 RejectionFeedback。
-    # 这样既验证 quality_score 真接通，又避免 _check_sX 硬查触发图重试递归。
-    from src.agents.quality_score import calc_quality_score
-    async def fake_inspect(self, report, competitors=None, retry_count=0, max_retries=2):
-        score, note = calc_quality_score(report, [])
-        report.metadata.quality_score = score
-        report.metadata.quality_score_calculation_note = note
+    # inspector mock：passed=True + 固定 quality_score，验证图流程不崩。
+    async def fake_inspect(self, report, competitors=None, retry_count=0, max_retries=2, discovered_sources=None):
+        report.metadata.quality_score = 0.75
+        report.metadata.quality_score_calculation_note = "integration-test-mock"
+        report.metadata.score_source = "critic"
         return RejectionFeedback(
             passed=True, issues=[], retry_count=retry_count, max_retries=max_retries,
         )

@@ -5,7 +5,6 @@ spec v4 路线 A：critic 内嵌 inspector，单次 LLM 调用同时输出 rubri
 import hashlib
 import json
 import logging
-from typing import Any
 
 from pydantic import ValidationError
 
@@ -474,7 +473,7 @@ class InspectorAgent:
         self.llm = llm
 
     def _programmatic_checks(self, report: BaseReport) -> list[FeedbackIssue]:
-        """通用硬查 + 场景硬查（v4：删除 _check_warnings_prefix）"""
+        """通用硬查 + 场景硬查"""
         return _check_common(report) + _dispatch_scenario_check(report)
 
     # ---- critic 子流程 ----

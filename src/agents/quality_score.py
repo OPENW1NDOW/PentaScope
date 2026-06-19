@@ -1,7 +1,6 @@
 """quality_score 计算 — LLM-as-critic v4 重写。
 
-v4 修订：删除 calc_source_coverage / calc_confidence_avg / calc_inspector_pass_rate
-三个旧函数（v3 三项加权废弃，详见 spec v4）。新版本只有一个 calc_critic_score。
+新版本只有一个 calc_critic_score（4 维加权）。
 
 注意：calling code 必须先实例化 CriticScores 或传 dict 含 4 个维度 key。
 critic 失败降级时（critic_scores=None），quality_score 由 inspector 直接写 0.5

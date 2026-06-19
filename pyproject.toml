@@ -1,2 +1,5 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "eval: 反例集 critic 判断力测试，依赖真 LLM 调用，不进 CI（手动 pytest -m eval）",
+]

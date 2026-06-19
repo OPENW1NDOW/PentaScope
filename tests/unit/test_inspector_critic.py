@@ -7,6 +7,7 @@
 """
 import pytest
 from pydantic import ValidationError
+from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.fixture
@@ -240,7 +241,6 @@ def test_report_metadata_v4_fields_optional():
 def test_report_metadata_v4_fields_settable():
     """v4 新增字段能正常设置。"""
     from src.schemas.report import ReportMetadata
-    from src.schemas.feedback import CriticScores
 
     md = ReportMetadata.model_validate({
         "report_id": "rpt-test",
@@ -527,9 +527,6 @@ def test_map_issue_type_to_agent():
 
 
 # ============ Task 11: _critic_check ============
-
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.mark.asyncio

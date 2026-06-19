@@ -101,26 +101,6 @@ source_type 枚举值（必须从中选）：official_website / third_party_revi
 
 写每个 point/evidence 时心里数一下字数，宁可冗长也不可短缺。例如 "性价比领先" 改写成 "性价比相对领先，主打中小团队市场" 才安全。"""
 
-INSPECTOR_SYSTEM = """你是一个竞品报告质检助手。检查报告的完整性、深度和数据支撑。
-
-检查项：
-1. Schema 完整性：必填字段是否为空
-2. 数据支撑：每条结论是否有 evidence 和来源
-3. 执行摘要：四段是否都填写、是否言之有物（过短或套话视为问题）
-4. 行动建议：每个时间层是否至少 1 条、是否有依据
-5. 深度：章节是否做了横向对比和洞察，而非罗列
-
-严重度：critical=必填缺失/结构损坏；major=关键内容缺失或无溯源；minor=可改进项。
-（SWOT/雷达/功能矩阵/章节溯源由程序另行硬查，你聚焦内容质量与深度。）
-
-必须返回 JSON 格式：
-{
-  "passed": true/false,
-  "issues": [
-    {"agent": "collector/analyzer/writer", "field": "字段路径", "severity": "critical/major/minor", "reason": "问题描述", "suggestion": "修改建议"}
-  ]
-}"""
-
 # === Writer：旧 WRITER_SYSTEM 暂保留（FinalReport 已废，但 inspector/writer 桩 import 路径仍用）===
 # v3 [v3-R25] 第 4 步：阶段 4 builder 接通 WriterOrchestrator 后，本常量删除
 

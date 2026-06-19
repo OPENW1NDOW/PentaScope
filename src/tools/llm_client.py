@@ -46,6 +46,21 @@ class LLMClient:
                     timeout=settings.LLM_TIMEOUT,
                     **extra_kwargs,
                 )
+                # [2026-06-19] 记录 finish_reason + 输出 token 数，便于判定撞 max_tokens 上限（机制 A）
+                # vs LLM 自身抽风（机制 B）。finish_reason="length" → 机制 A；"stop" → 机制 B 或正常
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                usage = getattr(response, "usage", None)
+                completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+                req_max_tokens = extra_kwargs.get("max_tokens")
+                logger.info(
+                    "[llm] call_json finish_reason=%s completion_tokens=%s max_tokens=%s",
+                    finish_reason, completion_tokens, req_max_tokens,
+                )
+                if finish_reason == "length":
+                    logger.warning(
+                        "[llm] 输出撞 max_tokens 上限（机制 A）: completion_tokens=%s, max_tokens=%s",
+                        completion_tokens, req_max_tokens,
+                    )
                 content = response.choices[0].message.content
                 stripped = self._strip_json_fence(content)
                 # strict=False 允许字符串值内的裸控制字符（LLM 常在内容里直接输出换行）
@@ -99,4 +114,17 @@ class LLMClient:
             ],
             timeout=settings.LLM_TIMEOUT,
         )
+        # [2026-06-19] 同 call_json：记录 finish_reason + completion_tokens 便于判定撞上限
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        usage = getattr(response, "usage", None)
+        completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+        logger.info(
+            "[llm] call_text finish_reason=%s completion_tokens=%s",
+            finish_reason, completion_tokens,
+        )
+        if finish_reason == "length":
+            logger.warning(
+                "[llm] 输出撞 max_tokens 上限（机制 A）: completion_tokens=%s",
+                completion_tokens,
+            )
         return response.choices[0].message.content

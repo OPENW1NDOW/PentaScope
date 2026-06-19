@@ -16,6 +16,9 @@ from src.schemas.report import BaseReport
 logger = logging.getLogger(__name__)
 
 
+_SEVERITY_WEIGHTS = {"evidence": 0.30, "specificity": 0.30, "coherence": 0.20, "actionability": 0.20}
+
+
 def _score_to_severity(dim_score: int, all_scores: dict) -> str:
     """spec v3 cycle2/M2 + v4 cycle3/M1 — D' 阈值规则。
 
@@ -31,9 +34,9 @@ def _score_to_severity(dim_score: int, all_scores: dict) -> str:
         return "major"
     if dim_score >= 4:
         return "minor"
-    # dim_score == 3
-    quality_score = calc_critic_score(all_scores)
-    if quality_score < 0.50:
+    # dim_score == 3：纯内联计算，不依赖 quality_score.py（S2 消除循环依赖）
+    weighted_raw = sum(w * all_scores.get(d, 0) for d, w in _SEVERITY_WEIGHTS.items())
+    if (weighted_raw - 1) / 3 < 0.50:
         return "major"
     return "minor"
 
@@ -159,6 +162,16 @@ def _build_critic_inputs(
 ) -> str:
     """spec v3 cycle2/M5/M6/M7 + v4 cycle3/C3 — 拼装 critic LLM user_prompt。"""
     report_dict = report.model_dump()
+
+    # 裁剪大字段，控制 token 预算（I4）
+    report_dict.pop("scenario_payload", None)
+    report_dict.pop("appendix", None)
+    methodology = report_dict.get("methodology", {})
+    for k in ("data_collection_approach", "sample_size_note"):
+        v = methodology.get(k, "")
+        if len(v) > 500:
+            methodology[k] = v[:500] + "...[truncated]"
+
     sections = report_dict.get("analysis_sections", [])
     for s in sections:
         nar = s.get("narrative", "")
@@ -651,6 +664,7 @@ class InspectorAgent:
             report.metadata.warnings = existing_warnings
 
         report.metadata.quality_score = max(0.0, min(1.0, quality_score))
+        report.metadata.raw_quality_score = report.metadata.quality_score  # v4 无 cap，raw == final
         report.metadata.score_source = score_source
 
         prog_critical = sum(1 for i in prog_issues if i.severity == "critical")

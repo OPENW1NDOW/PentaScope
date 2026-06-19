@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Any, Optional
 
 
@@ -30,6 +30,15 @@ class CriticScores(BaseModel):
     actionability: int = Field(ge=1, le=4)
     reasoning: dict[str, list[str]] = Field(default_factory=dict)
     """{dim: [bullet1, bullet2, ...]}，CoT 推理过程（短 bullet，每条 ≤80 Python len 字符）"""
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _truncate_reasoning_bullets(cls, v: dict) -> dict:
+        """S3：每条 reasoning bullet 截断到 80 字符（不报错，静默截断）。"""
+        if not isinstance(v, dict):
+            return v
+        return {dim: [b[:80] if isinstance(b, str) else b for b in bullets]
+                for dim, bullets in v.items()}
 
 
 class RejectionFeedback(BaseModel):

@@ -250,3 +250,40 @@ async def test_collect_returns_goal_with_profiles():
     profiles, goal, _ = await agent.collect(user_input)
     assert goal.focus_area == "协作功能"
     assert len(profiles) == 1
+
+
+@pytest.mark.asyncio
+async def test_collect_returns_discovered_sources_with_urls():
+    """spec v4：collector 返回的 discovered_sources 必须包含 profile 中的 data_sources URL。"""
+    from src.agents.collector import CollectorAgent
+    from src.schemas.input import CompetitorInput, CompetitorBasic
+
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[
+        {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
+        {"competitor_type": "核心竞品", "reason": "test"},
+        {"basic_info": {"name": "TestProduct", "company": "TestCo"},
+         "feature_tree": [], "pricing": {}, "user_reviews": {}, "recent_updates": []},
+    ])
+    mock_pipeline = MagicMock()
+    mock_pipeline.collect = AsyncMock(return_value=(
+        "正文内容" * 30,
+        ["https://official.com/page1", "https://review.com/article1"],
+        [{"step": "tavily"}],
+        "【来源: https://official.com/page1】\n正文",
+    ))
+    agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
+    user_input = CompetitorInput(
+        scenario="S1", our_product_name="MyProduct",
+        competitors=[CompetitorBasic(name="TestProduct")], analysis_context="test",
+    )
+    profiles, goal, discovered_sources = await agent.collect(user_input)
+
+    # discovered_sources 必须包含 URL（C1 修复验证）
+    assert len(discovered_sources) > 0
+    urls = [s["url"] for s in discovered_sources]
+    assert "https://official.com/page1" in urls
+    assert "https://review.com/article1" in urls
+    # URL 不能为空字符串
+    for s in discovered_sources:
+        assert s["url"], f"discovered_sources URL 不应为空: {s}"

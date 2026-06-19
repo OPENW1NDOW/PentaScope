@@ -99,7 +99,7 @@ def make_report_all_placeholder():
     使用 model_construct() 绕过 Pydantic min_length 验证，
     因为 eval 测试只需要报告内容给 critic 评分，不需要严格 schema 校验。
     """
-    from src.schemas.report import BaseReport, Swot, Appendix
+    from src.schemas.report import BaseReport, Swot
 
     return BaseReport.model_construct(
         metadata=_make_minimal_metadata("S1"),
@@ -132,7 +132,35 @@ def make_report_all_placeholder():
             _make_recommendation("拓展市场渠道", "市场负责人", "important", "short_term", "品牌建设需要持续投入"),
             _make_recommendation("关注竞品动态", "战略负责人", "consider", "long_term", "市场变化需要持续跟踪"),
         ],
-        scenario_payload=type("MockPayload", (), {"scenario_type": "S1", "vendor_profiles": [], "model_dump": lambda self: {"scenario_type": "S1", "vendor_profiles": []}})(),
+        scenario_payload=_make_s1_payload_with_vendors(),
+    )
+
+
+def _make_s1_payload_with_vendors():
+    """构造带 vendor_profiles 的 S1 payload（model_construct 绕过验证）。"""
+    from src.schemas.scenarios.s1 import S1FeatureIterationPayload, S1VendorProfile
+
+    def _make_vp(name, caution_point):
+        vp = S1VendorProfile.model_construct(
+            competitor_name=name,
+            one_line_pitch=f"{name} 的一句话介绍",
+            strengths=[],
+            cautions=[type("C", (), {"point": caution_point})()],
+            best_fit_for="适合某类用户",
+        )
+        return vp
+
+    return S1FeatureIterationPayload.model_construct(
+        scenario_type="S1",
+        vendor_profiles=[
+            _make_vp("竞品A", "竞品A 在高级功能上存在不足"),
+            _make_vp("竞品B", "竞品B 的定价策略偏高"),
+        ],
+        feature_matrix=None,
+        radar_scores=[],
+        job_statement=None,
+        feature_gaps=[],
+        roadmap_recommendations=None,
     )
 
 

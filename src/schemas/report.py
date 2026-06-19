@@ -125,9 +125,9 @@ class ReportMetadata(BaseModel):
         ge=0,
         le=1,
         description=(
-            "cap 前的初始加权分（含 placeholder pass_rate 影响）。"
-            "用于 KPI 卡显示模型实际算分。命名 raw 仅指 cap 前，"
-            "不代表完全无任何惩罚——v3-R17 cap 仅是惩罚之一。"
+            "v3: cap 前的初始加权分（v3-R17 cap 仅是惩罚之一）。"
+            "v4: 4 维加权原始分（归一化 + clamp 前），用于 KPI 卡诊断显示。"
+            "旧 trace 中可能为 None（v1 trace 无此字段）。"
         ),
     )
     quality_score_calculation_note: str = Field(default="")

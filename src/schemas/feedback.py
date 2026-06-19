@@ -1,14 +1,35 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Any
+from typing import Literal, Any, Optional
 
 
 class FeedbackIssue(BaseModel):
     """质检发现的单个问题"""
-    agent: Literal["collector", "analyzer", "writer"]
+    agent: Literal["collector", "analyzer", "writer", "end"]
     field: str
     severity: Literal["critical", "major", "minor"]
     reason: str
     suggestion: str = ""
+    # v4 新增（Optional 兼容旧 trace 反序列化）
+    dimension: Optional[str] = None
+    """critic 维度名（"evidence"/"specificity"/"coherence"/"actionability"）
+    或 "programmatic" / "critic_failed"——用于去重 + 反馈路由"""
+    issue_type: Optional[str] = None
+    """枚举: url_not_discovered / source_mismatch / source_irrelevant /
+    vague_description / cross_field_contradiction / vague_recommendation /
+    critic_failed / programmatic_*"""
+
+
+class CriticScores(BaseModel):
+    """critic 4 维评分（持久化到 ReportMetadata.critic_scores）
+
+    每维 1-4 整数分；reasoning 是 dict[dim, list[bullet]] 结构化短列表（spec v4-M9）。
+    """
+    evidence: int = Field(ge=1, le=4)
+    specificity: int = Field(ge=1, le=4)
+    coherence: int = Field(ge=1, le=4)
+    actionability: int = Field(ge=1, le=4)
+    reasoning: dict[str, list[str]] = Field(default_factory=dict)
+    """{dim: [bullet1, bullet2, ...]}，CoT 推理过程（短 bullet，每条 ≤80 Python len 字符）"""
 
 
 class RejectionFeedback(BaseModel):

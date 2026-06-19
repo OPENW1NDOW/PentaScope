@@ -193,9 +193,14 @@ def build_graph(llm, http, parser, trace_writer=None):
             collect_input = ui.model_copy(update={"competitors": merged})
         else:
             collect_input = ui
-        profiles, goal = await collector.collect(collect_input)
+        profiles, goal, discovered_sources = await collector.collect(collect_input)
         _save("01_profiles", profiles)
-        return {"profiles": profiles, "analysis_goal": goal, "current_node": "collector"}
+        return {
+            "profiles": profiles,
+            "analysis_goal": goal,
+            "discovered_sources": discovered_sources,
+            "current_node": "collector",
+        }
 
     async def analyzer_node(state: AnalysisState) -> dict:
         """[06-09 修复] analyzer 抛 ValueError 时兜底注入 feedback，不让 graph 崩溃。
@@ -395,11 +400,13 @@ def build_graph(llm, http, parser, trace_writer=None):
 
         ui = state["user_input"]
         competitors_names = [c.name for c in ui.competitors]
+        discovered_sources = state.get("discovered_sources") or []
         feedback = await inspector.inspect(
             report,
             competitors=competitors_names,
             retry_count=state.get("retry_count", 0),
             max_retries=state.get("max_retries", 2),
+            discovered_sources=discovered_sources,
         )
         _save("04_feedback", feedback)
         # inspector 回填 quality_score 后重新落盘 report（writer 先于 inspector 落盘，初始 score=None）
@@ -423,6 +430,12 @@ def build_graph(llm, http, parser, trace_writer=None):
 
         # 没 feedback 或已通过 → 结束
         if feedback is None or feedback.passed:
+            return "end"
+
+        # spec v4 cycle3/C5：critic_failed → terminal（不消耗 max_retries）
+        if any(i.agent == "end" for i in feedback.issues):
+            logger.warning("[graph] critic 系统故障 → terminate（不消耗 retry）")
+            node_trace.append("reject->end (critic_failed)")
             return "end"
 
         if retry_count >= max_retries:

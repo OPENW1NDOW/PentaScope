@@ -50,7 +50,7 @@ class TestCollectorAgent:
             competitors=[CompetitorBasic(name="支付宝")],
             analysis_context="分析支付宝",
         )
-        profiles, _ = await agent.collect(user_input)
+        profiles, _, _ = await agent.collect(user_input)
         assert len(profiles) == 1
         assert isinstance(profiles[0], CompetitorProfile)
         assert profiles[0].metadata.pipeline_trace == [{"step": "route"}]
@@ -87,7 +87,7 @@ class TestCollectorAgent:
             competitors=[CompetitorBasic(name="甲竞品"), CompetitorBasic(name="乙竞品")],
             analysis_context="对比",
         )
-        profiles, _ = await agent.collect(user_input)
+        profiles, _, _ = await agent.collect(user_input)
         assert len(profiles) == 2
         assert profiles[1].metadata.completeness_score == 0.0
 
@@ -113,7 +113,7 @@ class TestCollectorAgent:
             scenario="S1", our_product_name="MyProduct",
             competitors=[CompetitorBasic(name="某竞品")], analysis_context="x",
         )
-        profiles, _ = await agent.collect(user_input)
+        profiles, _, _ = await agent.collect(user_input)
         assert len(profiles) == 1
         # 关键断言：pipeline 拿到的 URL 必须保留在 data_sources 中
         assert profiles[0].metadata.data_sources == ["https://a.com", "https://b.com"]
@@ -134,7 +134,7 @@ class TestCollectorAgent:
             our_product_name="MyProduct",
             competitors=[CompetitorBasic(name="空竞品")], analysis_context="x",
         )
-        profiles, _ = await agent.collect(user_input)
+        profiles, _, _ = await agent.collect(user_input)
         assert profiles[0].metadata.completeness_score == 0.0
         assert mock_llm.call_json.call_count == 2  # extract NOT called (else side_effect StopIteration)
 
@@ -247,6 +247,6 @@ async def test_collect_returns_goal_with_profiles():
                                  our_product_name="MyProduct",
                                  competitors=[CompetitorBasic(name="XX")],
                                  analysis_context="分析协作功能")
-    profiles, goal = await agent.collect(user_input)
+    profiles, goal, _ = await agent.collect(user_input)
     assert goal.focus_area == "协作功能"
     assert len(profiles) == 1

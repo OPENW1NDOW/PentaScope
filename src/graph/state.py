@@ -37,3 +37,6 @@ class AnalysisState(TypedDict, total=False):
     max_retries: int
     trace_id: str
     current_node: str  # 当前执行到的节点名称
+
+    # v4 critic：采集阶段产出的搜索源信息（供 inspector evidence rubric 使用）
+    discovered_sources: list[dict]  # [{"url", "title", "snippet"}]

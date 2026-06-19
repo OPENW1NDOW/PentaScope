@@ -15,6 +15,8 @@ class SourceResult:
     """单条数据源结果：内容页 URL + 已抽取正文。"""
     url: str
     text: str
+    title: str = ""
+    snippet: str = ""
 
 
 TAVILY_URL = "https://api.tavily.com/search"
@@ -56,5 +58,10 @@ class TavilySource:
             text = item.get("raw_content") or item.get("content") or ""
             link = item.get("url", "")
             if text and link:
-                results.append(SourceResult(url=link, text=text))
+                results.append(SourceResult(
+                    url=link,
+                    text=text,
+                    title=item.get("title", ""),
+                    snippet=item.get("content", ""),
+                ))
         return results

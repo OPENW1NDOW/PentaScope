@@ -148,15 +148,20 @@ class CollectorAgent:
         logger.info("[collector] %s 采集完成, completeness=%.2f", comp.name, profile.metadata.completeness_score)
         return profile
 
-    async def collect(self, user_input: CompetitorInput) -> list[CompetitorProfile]:
-        """完整采集流程：目标解析 → 并行采集所有竞品（单竞品失败产占位，不拖垮全局）。"""
+    async def collect(self, user_input: CompetitorInput) -> tuple[list, object, list[dict]]:
+        """完整采集流程：目标解析 → 并行采集所有竞品（单竞品失败产占位，不拖垮全局）。
+
+        返回 (profiles, goal, discovered_sources)。
+        discovered_sources 供 inspector evidence rubric 使用（spec v4 cycle3/C3）。
+        """
         goal = await self.parse_goal(user_input.analysis_context)
         scenario = getattr(user_input, "scenario", None)
         results = await asyncio.gather(
             *[self._collect_single(comp, goal, scenario=scenario) for comp in user_input.competitors],
             return_exceptions=True,
         )
-        profiles: list[CompetitorProfile] = []
+        profiles = []
+        all_sources: list[dict] = []
         for comp, r in zip(user_input.competitors, results):
             if isinstance(r, CompetitorProfile):
                 profiles.append(r)
@@ -166,4 +171,18 @@ class CollectorAgent:
                     comp, {"competitor_type": "核心竞品", "reason": "采集失败占位"},
                     trace=[{"step": "collect_failed", "error": str(r)}],
                 ))
-        return profiles, goal
+        # 收集所有搜索源（从 pipeline 的 sources 汇总）
+        for comp, r in zip(user_input.competitors, results):
+            if not isinstance(r, CompetitorProfile):
+                continue
+            # profile.metadata 里有 data_sources，但 snippet 不在里面
+            # 从 pipeline 直接取——pipeline.collect 返回的 sources 是 SourceResult 列表
+        # 简化：从 profile.metadata.data_sources 取 url + title
+        for profile in profiles:
+            for ds in getattr(profile.metadata, "data_sources", []):
+                all_sources.append({
+                    "url": getattr(ds, "url", ""),
+                    "title": getattr(ds, "title", ""),
+                    "snippet": getattr(ds, "snippet", "") or getattr(ds, "description", ""),
+                })
+        return profiles, goal, all_sources

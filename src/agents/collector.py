@@ -171,18 +171,9 @@ class CollectorAgent:
                     comp, {"competitor_type": "核心竞品", "reason": "采集失败占位"},
                     trace=[{"step": "collect_failed", "error": str(r)}],
                 ))
-        # 收集所有搜索源（从 pipeline 的 sources 汇总）
-        for comp, r in zip(user_input.competitors, results):
-            if not isinstance(r, CompetitorProfile):
-                continue
-            # profile.metadata 里有 data_sources，但 snippet 不在里面
-            # 从 pipeline 直接取——pipeline.collect 返回的 sources 是 SourceResult 列表
-        # 简化：从 profile.metadata.data_sources 取 url + title
+        # 收集所有搜索源 URL（ProfileMetadata.data_sources 是 list[str]）
         for profile in profiles:
-            for ds in getattr(profile.metadata, "data_sources", []):
-                all_sources.append({
-                    "url": getattr(ds, "url", ""),
-                    "title": getattr(ds, "title", ""),
-                    "snippet": getattr(ds, "snippet", "") or getattr(ds, "description", ""),
-                })
+            for url in getattr(profile.metadata, "data_sources", []):
+                if isinstance(url, str) and url:
+                    all_sources.append({"url": url, "title": "", "snippet": ""})
         return profiles, goal, all_sources

@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-06-19: 字符 min_length 约束全面退役，质量保障交给 critic
+
+- 选择：**删除所有字符串字段的 min_length 约束**（report.py + s1-s5.py），只保留列表结构性约束 + URL 防空 + max_length 防爆
+- 理由：
+  1. LLM 感知 token 不是字符数，字符约束本质不可靠
+  2. 历次流水线 22 次 ValidationError 由字符 min_length 触发，其中"语雀性价比优势极强"（9 字 < min=10）等合法内容被拦导致白白浪费重试预算
+  3. critic v1.2.1 已稳定运行（S5 实测 0.900），4 维 rubric 覆盖 evidence/specificity/coherence/actionability，语义层面保质远强于字符数代理
+- 备选（保留但放宽阈值，如 min=10 改 min=4）：仍是代理指标，不解决根本问题；critic 在即无必要两层重叠
+- 保留项：列表 min_length（防空报告骨架） / URL min_length=8（防空 URL） / max_length（防爆）
+- 关联记忆：`project_length_constraint_proxy_problem.md` / `feedback_proxy_metric_bias.md`
+
+---
+
 ## 2026-06-19: max_tokens 基于 finish_reason 实证调参（不拍脑袋）
 
 - 选择：**每个调用点的 max_tokens 必须基于 finish_reason 日志硬证据调整，不凭直觉猜**

@@ -39,11 +39,16 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
     - 总耗时 9 分 35 秒（历史 S5 平均 25-35 分钟）
     - 一次通过无反馈闭环（历史 S5 均需 2 轮闭环）
   - **发现 Q-2026-06-19-scenario-query-低相关**：S5 query 太学术化（"品牌定位 战略差异化"）导致 Tavily 返回无关内容（MBA 百科/社科院论文），12 条搜索结果仅 5 条有效（42%）。已记入 OPEN_QUESTIONS，归入 collector 搜索优化课题
+  - **字符约束全面退役**（commit `0ad443c`）：
+    - 基于 27 份历史报告实测数据 + 22 次 ValidationError 失败记录评估
+    - 删除所有字符串 min_length（report.py + s1-s5.py 共 70+ 处）
+    - 放宽 S1/S5 vendor_profiles.strengths ≥2 → ≥1
+    - 保留列表结构性约束 + URL min_length=8 + max_length 防爆
+    - 质量保障完全由 critic 4 维 rubric 评分承担
 - 进行中：无
 - 下一步（TODO，按优先级）：
   1. **collector 搜索策略优化**（Q-2026-06-19-scenario-query-低相关）：每场景多条 query + 产品实操语言替代学术术语
-  2. **字数约束阶段 3-5 退役**（critic 已稳定运行）：逐字段评估"实际拦住的是什么"
-  3. **max_tokens 调参验证**：多场景真跑确认 S1-S4 也零截断
+  2. **max_tokens 调参验证**：多场景真跑确认 S1-S4 也零截断
 - 阻塞：无
 - 安全提醒：无新增 key
 

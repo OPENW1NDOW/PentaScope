@@ -45,98 +45,94 @@ def _make_minimal_metadata(scenario="S1"):
     )
 
 
+def _ph(base: str, n: int) -> str:
+    """生成 ≥n 字符的占位文本（重复 base 直到够长）。"""
+    while len(base) < n:
+        base += "，" + base[:min(len(base), n - len(base))]
+    return base[:max(n, len(base))]
+
+
+def _make_swot_entry(point, evidence):
+    from src.schemas.report import SwotEntry
+    return SwotEntry.model_construct(point=point, evidence=evidence, dimension="overall", source_refs=[])
+
+def _make_finding(statement, evidence, implication):
+    from src.schemas.report import Finding
+    return Finding.model_construct(statement=statement, evidence=evidence, implication=implication, source_refs=[])
+
+def _make_section(sid, heading, narrative, section_type):
+    from src.schemas.report import AnalysisSection
+    return AnalysisSection.model_construct(section_id=sid, heading=heading, narrative=narrative, section_type=section_type, artifact_refs=[], source_refs=[])
+
+def _make_recommendation(action, target_role, priority, timeline, rationale):
+    from src.schemas.report import Recommendation
+    return Recommendation.model_construct(action=action, target_role=target_role, priority=priority, timeline=timeline, rationale=rationale, source_refs=[])
+
+def _make_scope(competitors):
+    from src.schemas.report import ReportScope
+    return ReportScope.model_construct(competitors=competitors, time_window="2025-2026", regions=[], exclusions=[])
+
+def _make_methodology():
+    from src.schemas.report import Methodology
+    return Methodology.model_construct(
+        data_collection_approach="占位数据收集方法",
+        evaluation_criteria=["功能完整度", "用户体验", "市场表现"],
+        limitations=["数据来源有限", "可能存在时效性偏差"],
+        sample_size_note="占位样本说明",
+        analyst_disclosure="AI 竞品分析系统",
+    )
+
+def _make_exec_summary():
+    from src.schemas.report import ExecutiveSummary
+    return ExecutiveSummary.model_construct(
+        context="占位背景",
+        core_thesis="占位核心论点",
+        key_findings_brief=["占位发现一", "占位发现二", "占位发现三"],
+        implications="占位启示",
+        path_forward=["占位路径一", "占位路径二"],
+    )
+
+
 def make_report_all_placeholder():
     """全章节 placeholder 的报告 — 期望 specificity ≤ 2。
 
-    所有 narrative 都是模板化占位文本，无具体数据。
+    使用 model_construct() 绕过 Pydantic min_length 验证，
+    因为 eval 测试只需要报告内容给 critic 评分，不需要严格 schema 校验。
     """
-    from src.schemas.report import (
-        BaseReport, ExecutiveSummary, ReportScope, Methodology,
-        Finding, AnalysisSection, Recommendation, Swot, SwotEntry,
-    )
-    from src.schemas.scenarios.s1 import S1FeatureIterationPayload
+    from src.schemas.report import BaseReport, Swot, Appendix
 
-    return BaseReport(
+    return BaseReport.model_construct(
         metadata=_make_minimal_metadata("S1"),
         title="竞品分析报告占位版本",
         at_a_glance=["占位要点一", "占位要点二", "占位要点三"],
-        executive_summary=ExecutiveSummary(
-            context="本报告对相关竞品进行了分析，覆盖了多个维度，旨在提供全面的竞争情报支持。" * 2,
-            core_thesis="通过对比分析发现各竞品在功能和定位上存在差异，需要进一步深入调研以形成明确结论。",
-            key_findings_brief=["竞品功能丰富", "市场格局复杂", "用户需求多样"],
-            implications="综合以上分析，建议团队持续关注竞品动态，结合自身优势制定差异化策略，以在竞争中占据有利位置。" * 2,
-            path_forward=["持续关注竞品动态", "加强产品差异化建设"],
-        ),
-        background="本报告旨在分析相关竞品的竞争态势，通过多维度对比为产品决策提供参考依据。" * 5,
-        scope=ReportScope(competitors=["竞品A", "竞品B"], time_window="2025-2026"),
-        methodology=Methodology(
-            data_collection_approach="通过公开渠道收集竞品信息，包括官方网站、行业报告、用户评价等多维度数据源。" * 5,
-            evaluation_criteria=["功能完整度", "用户体验", "市场表现"],
-            limitations=["数据来源有限", "可能存在时效性偏差"],
-            sample_size_note="本次分析覆盖了多个竞品的核心功能模块和用户反馈数据，样本量满足基本分析需求。",
-        ),
+        executive_summary=_make_exec_summary(),
+        background="本报告旨在分析相关竞品的竞争态势。",
+        scope=_make_scope(["竞品A", "竞品B"]),
+        methodology=_make_methodology(),
         key_findings=[
-            Finding(
-                statement="竞品在核心功能上各有侧重，整体竞争格局较为分散",
-                evidence="通过对比分析发现各竞品在功能覆盖度和用户评价方面表现不一",
-                implication="建议根据目标用户需求选择差异化功能方向进行重点投入",
-            ),
-            Finding(
-                statement="市场价格区间跨度较大，定价策略差异明显",
-                evidence="各竞品定价从免费到企业版不等，反映了不同的商业模式选择",
-                implication="定价策略需结合目标市场和产品定位综合考量",
-            ),
-            Finding(
-                statement="用户对产品易用性和稳定性要求较高",
-                evidence="从用户评价数据中可以观察到对核心体验的重视",
-                implication="产品打磨应聚焦核心场景的流畅度和可靠性",
-            ),
+            _make_finding("竞品在核心功能上各有侧重", "通过对比分析发现各竞品表现不一", "建议选择差异化功能方向"),
+            _make_finding("市场价格区间跨度较大", "各竞品定价从免费到企业版不等", "定价策略需综合考量"),
+            _make_finding("用户对产品易用性和稳定性要求较高", "从用户评价数据中可以观察到", "产品打磨应聚焦核心场景"),
         ],
         analysis_sections=[
-            AnalysisSection(
-                section_id="overview",
-                heading="市场概览分析",
-                narrative="本章节对市场整体竞争态势进行了全面分析。从市场规模来看，行业整体呈增长趋势，各竞品在不同细分领域各有优势。综合来看，市场仍存在较大的创新空间和机会。" * 3,
-                section_type="overview",
-            ),
-            AnalysisSection(
-                section_id="feature",
-                heading="功能对比分析",
-                narrative="在功能维度上，各竞品覆盖了基础功能模块，但在深度和广度上存在差异。部分竞品在特定功能上表现突出，而整体功能完整度参差不齐。" * 3,
-                section_type="feature_matrix_analysis",
-            ),
-            AnalysisSection(
-                section_id="vendor",
-                heading="竞品画像分析",
-                narrative="各竞品在目标用户定位、核心场景和价值主张上呈现出不同策略。头部竞品注重品牌和生态建设，新兴竞品则聚焦细分场景的深度打磨。" * 3,
-                section_type="vendor_profile_analysis",
-            ),
-            AnalysisSection(
-                section_id="conclusions",
-                heading="综合结论",
-                narrative="综合以上分析，市场呈现多元化竞争态势。各竞品在不同维度上各有优势，建议结合自身资源和目标市场特点制定差异化竞争策略。" * 3,
-                section_type="conclusions_summary",
-            ),
+            _make_section("overview", "市场概览分析", "本章节对市场整体竞争态势进行了全面分析。行业整体呈增长趋势，各竞品在不同细分领域各有优势。市场仍存在较大的创新空间和机会。综合来看，市场格局较为分散。", "overview"),
+            _make_section("feature", "功能对比分析", "在功能维度上，各竞品覆盖了基础功能模块，但在深度和广度上存在差异。部分竞品在特定功能上表现突出，而整体功能完整度参差不齐。", "feature_matrix_analysis"),
+            _make_section("vendor", "竞品画像分析", "各竞品在目标用户定位、核心场景和价值主张上呈现出不同策略。头部竞品注重品牌和生态建设，新兴竞品则聚焦细分场景的深度打磨。", "vendor_profile_analysis"),
+            _make_section("conclusions", "综合结论", "综合以上分析，市场呈现多元化竞争态势。各竞品在不同维度上各有优势，建议结合自身资源和目标市场特点制定差异化竞争策略。", "conclusions_summary"),
         ],
-        swot=Swot(
-            strengths=[SwotEntry(point="产品功能覆盖较全面", evidence="在核心功能模块上具备基本竞争力", dimension="feature")],
-            weaknesses=[SwotEntry(point="品牌知名度有待提升", evidence="市场认知度相对有限", dimension="marketing")],
-            opportunities=[SwotEntry(point="市场增长空间较大", evidence="行业整体呈上升趋势", dimension="market")],
-            threats=[SwotEntry(point="竞品持续迭代升级", evidence="头部竞品不断推出新功能", dimension="competitive")],
+        swot=Swot.model_construct(
+            strengths=[_make_swot_entry("产品功能覆盖较全面", "在核心功能模块上具备基本竞争力")],
+            weaknesses=[_make_swot_entry("品牌知名度有待提升", "市场认知度相对有限")],
+            opportunities=[_make_swot_entry("市场增长空间较大", "行业整体呈上升趋势")],
+            threats=[_make_swot_entry("竞品持续迭代升级", "头部竞品不断推出新功能")],
         ),
-        conclusions="综合以上多维度分析，市场呈现多元化竞争格局。建议团队结合自身优势和市场机会，制定差异化的产品和市场策略。" * 3,
+        conclusions="综合以上多维度分析，市场呈现多元化竞争格局。建议团队结合自身优势和市场机会，制定差异化的产品和市场策略。",
         recommendations=[
-            Recommendation(action="加强核心功能打磨，提升用户体验", target_role="产品经理", priority="important", timeline="short_term", rationale="核心功能是用户留存的关键因素"),
-            Recommendation(action="拓展市场渠道，提升品牌认知", target_role="市场负责人", priority="important", timeline="short_term", rationale="品牌建设需要持续投入"),
-            Recommendation(action="关注竞品动态，及时调整策略", target_role="战略负责人", priority="consider", timeline="long_term", rationale="市场变化需要持续跟踪"),
+            _make_recommendation("加强核心功能打磨", "产品经理", "important", "short_term", "核心功能是用户留存的关键"),
+            _make_recommendation("拓展市场渠道", "市场负责人", "important", "short_term", "品牌建设需要持续投入"),
+            _make_recommendation("关注竞品动态", "战略负责人", "consider", "long_term", "市场变化需要持续跟踪"),
         ],
-        scenario_payload=S1FeatureIterationPayload(
-            vendor_profiles=[],
-            feature_matrix=[],
-            radar_scores=[],
-            job_to_be_done={"jobs": [], "summary": "占位"},
-            roadmap=[],
-        ),
+        scenario_payload=type("MockPayload", (), {"scenario_type": "S1", "vendor_profiles": [], "model_dump": lambda self: {"scenario_type": "S1", "vendor_profiles": []}})(),
     )
 
 
@@ -179,19 +175,13 @@ def make_report_swot_self_contradiction():
 def make_report_vague_recommendations():
     """所有 recommendation 是套话 — 期望 actionability ≤ 1。"""
     report = make_report_all_placeholder()
-    report.recommendations = [
-        type(rec)(**{**rec.model_dump(), "action": "加强 AI 能力建设", "rationale": "AI 是趋势"})
-        for rec in report.recommendations
-    ]
-    # 简化所有 action 和 rationale
     vague = [
         ("加强 AI 能力建设", "AI 是未来方向"),
         ("持续关注市场动态", "市场变化快"),
         ("优化产品体验", "体验是核心竞争力"),
     ]
-    from src.schemas.report import Recommendation
     report.recommendations = [
-        Recommendation(action=a, target_role="团队", priority="consider", timeline="long_term", rationale=r)
+        _make_recommendation(a, "团队", "consider", "long_term", r)
         for a, r in vague
     ]
     return report

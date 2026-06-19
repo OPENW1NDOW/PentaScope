@@ -1,8 +1,8 @@
-# LLM-as-Critic 评分系统设计 v3
+# LLM-as-Critic 评分系统设计 v4
 
-> **v3 状态**：v1 → v2 已合 33 条审查反馈中的 26 条 actionable；v2 经 cycle 2
-> Codex 审查再发现 22 条问题（4 critical / 12 major / 6 minor），其中 20 条
-> actionable 在本 v3 版本中合入。修订日志见文末。
+> **v4 状态**：spec 经 3 轮 Codex doubt-driven 审查（v1→v2→v3→v4）。三轮总共发现
+> 75 条问题，v4 是消化 cycle 3 的 5 critical 后的"够用版本"——剩 10 major + 5 minor
+> 留到 plan 阶段细化（已记入文末"待 plan 阶段消化"清单）。修订日志见文末。
 
 > 落实 OPEN_QUESTIONS Q-2026-06-17-字数约束的代理失效 的核心修法。
 > 不再用字数 schema 代理"内容质量"，改用语义级 LLM critic 给报告打分。
@@ -78,12 +78,17 @@ inspect(report):
       prog_issues 该字段填 "programmatic"
 
   Step 4: quality_score 计算
+    # v4 修订（cycle3/C2）：明确 quality_score 是 semantic（语义）分，
+    # programmatic 硬查的 critical/major 不直接降低分数，而是通过 passed 阻断
+    # （写入 calculation_note 让 trace 读者识别）
     - weighted_raw_score = 0.30*ev + 0.30*sp + 0.20*co + 0.20*ac  # 1-4 区间
     - quality_score = clamp((weighted_raw_score - 1) / 3, 0.0, 1.0)  # 归一化到 [0, 1]
     - 写入 metadata.quality_score（永远非空，clamp 保证 ∈ [0,1]）
     - 写入 metadata.score_source = "critic" 或 "fallback"
     - 写入 metadata.critic_scores = CriticScores（fallback 时 None）
-    - 写入 metadata.quality_score_calculation_note（已有字段，复用）
+    - 写入 metadata.quality_score_calculation_note：
+        f"{CRITIC_PROMPT_VERSION} | ev={ev} sp={sp} co={co} ac={ac} → raw={raw:.2f} → norm={quality_score:.3f} | prog_issues={N_critical} critical / {N_major} major"
+        # prog_issues 计数让 trace 读者一眼看出"虽然 critic 给 0.9 但有 3 个 prog critical"
 
   Step 5: passed 判定
     # v3 修订（cycle2/M2）：改成显式判定，避免 all([]) == True 隐式语义
@@ -123,7 +128,7 @@ inspect(report):
 | `src/schemas/feedback.py` | `CriticScores`（新 BaseModel） | 持久化 4 维分到 metadata |
 | `src/schemas/feedback.py` | `FeedbackIssue.dimension`（新字段，Optional[str]） | 区分 critic 维度 vs programmatic |
 | `src/schemas/report.py` | `ReportMetadata.critic_scores: Optional[CriticScores]` | metadata 字段扩展 |
-| `src/schemas/report.py` | `ReportMetadata.score_source: Literal["critic", "fallback"]` | 区分 critic 真实分 vs 失败降级分 |
+| `src/schemas/report.py` | `ReportMetadata.score_source: Optional[Literal["critic", "fallback"]] = None` | 区分 critic 真实分 vs 失败降级分；v3 修订（cycle2/C2）：必须 Optional 默认 None，避免旧 trace 反序列化时被填 "critic" 污染 provenance |
 | `src/schemas/report.py` | `ReportMetadata.critic_version: Optional[str]` | 持久化 prompt 版本供历史追溯 |
 
 ### Schema 兼容（v2 修订 - C1）
@@ -179,12 +184,18 @@ URL 相关性，但当前架构不支持：
 
 1. `src/graph/state.py::AnalysisState` 新增字段：
    ```python
-   discovered_sources: list[dict] | None  # [{"url": str, "title": str, "snippet": str}]
+   discovered_sources: list[dict]  # [{"url": str, "title": str, "snippet": str}]
+   # v4 修订（cycle3/C3）：TypedDict 字段为 list[dict]，默认值在 builder
+   # collector_node 里强制 populate（即使 collector 失败也写空 list []）
    ```
 2. `src/agents/collector.py` 在搜索阶段把 Tavily 返回的 `content` 字段（snippet）也保存
 3. `src/graph/builder.py::collector_node` 把 discovered_sources 写入 state
-4. `src/graph/builder.py::inspector_node` 调 `inspector.inspect(report, discovered_sources=state['discovered_sources'])`
-5. `inspector.inspect()` 签名扩展含 `discovered_sources` 参数（保持 Optional 默认 None 向后兼容）
+   **v4 修订（cycle3/C3）**：collector_node 必须保证 discovered_sources 总是 list（即使 0 条），不能让字段缺失
+4. `src/graph/builder.py::inspector_node` 调
+   `inspector.inspect(report, discovered_sources=state.get("discovered_sources") or [])`
+   **v4 修订（cycle3/C3）**：用 `state.get(..., None) or []` 而非 `state['key']`，
+   保证旧 trace replay / collector 早退 / 测试 fixture 缺字段时不抛 KeyError
+5. `inspector.inspect()` 签名扩展含 `discovered_sources: list[dict] = None` 参数（默认 None / 内部 `or []` 兜底兼容）
 
 **降级策略**（cycle2/M4）：
 - 如果 collector 没成功抓到 snippet（旧 trace / Tavily 失败），`discovered_sources[i]["snippet"]` 设 `""` 空字符串
@@ -487,8 +498,12 @@ report.metadata.score_source = "critic"
 report.metadata.critic_scores = critic_scores
 report.metadata.critic_prompt_version = CRITIC_PROMPT_VERSION     # 如 "critic-prompt-v1.0.0"
 # v3 修订（cycle2/m2）：消除 "critic v{CRITIC_VERSION}" 的双 v 笔误
+# v4 修订（cycle3/C2）：calc note 含 prog_issues 计数，让 trace 读者识别
+# "高 quality_score 但有 prog critical" 的情况
+prog_critical = sum(1 for i in prog_issues if i.severity == "critical")
+prog_major = sum(1 for i in prog_issues if i.severity == "major")
 report.metadata.quality_score_calculation_note =
-    f"{CRITIC_PROMPT_VERSION} | ev={ev} sp={sp} co={co} ac={ac} → raw={raw:.2f} → norm={quality_score:.3f}"
+    f"{CRITIC_PROMPT_VERSION} | ev={ev} sp={sp} co={co} ac={ac} → raw={raw:.2f} → norm={quality_score:.3f} | prog_issues={prog_critical} critical / {prog_major} major"
   ↓
 RejectionFeedback(passed, issues, ...)
 ```
@@ -532,21 +547,72 @@ attempt 1（仅当 finish_reason != "length" 时执行）:
   │     # error_code 枚举: llm_timeout / json_parse_error / score_out_of_range /
   │     #                  field_missing / max_tokens_length / build_inputs_error /
   │     #                  unexpected_error
-  ├─ 强制生成 1 条 FeedbackIssue（v3 修订 - cycle2/C1）：
-  │     # builder.py:436 用 issue.agent 直接路由 graph 节点
-  │     # graph 节点只有 recommender/collector/analyzer/writer/inspector
-  │     # 用 agent="inspector" 会形成循环 → 必须用现有合法 retry target
+  ├─ 强制生成 1 条 FeedbackIssue：
+  │     # v4 修订（cycle3/C5）：critic_failed 是系统故障（LLM timeout / JSON 错 /
+  │     # input builder 异常），让 writer 重写不能解决——重写好报告也可能再触发同一故障，
+  │     # 浪费 max_retries 预算。改用 "terminal" 路由策略：
+  │     #   1. severity = "critical"（不是 major），让 passed=False
+  │     #   2. issue.agent = "end"（特殊路由值，不是 writer/collector）
+  │     #   3. builder.py 反馈路由识别 agent="end" → 直接 terminate（不 retry）
+  │     #
+  │     # 这要求 builder.py:_should_continue 增加 "end" 特判：
+  │     #   if any(i.agent == "end" for i in feedback.issues):
+  │     #       return "end"  # 不消耗 retry_count
   │     FeedbackIssue(
-  │         agent="writer",  # critic 失败语义上是"质量未确认"，让 writer 重写一次
+  │         agent="end",  # 特殊路由值，触发 graph terminate
   │         field="critic_check",
-  │         severity="major",  # 强制 major，让 passed=False 触发反馈
-  │         reason=f"critic 评分失败：{error_code}",
-  │         suggestion="人工 review 或重跑分析；如重试仍 critic 失败则 max_retries 终止",
+  │         severity="critical",
+  │         reason=f"critic 系统故障：{error_code}（非报告内容问题）",
+  │         suggestion="检查 critic LLM 配置 / 重新跑整个分析；不要让 writer 重写",
   │         dimension="critic_failed",
-  │         issue_type="critic_failed",  # cycle2/M3：枚举里加这条
+  │         issue_type="critic_failed",
   │     )
+  │
+  │     # builder.py 配套改动（plan 阶段实现）：
+  │     #   _should_continue 加 agent="end" 特判，在 max_retries 检查之前判定
+  │     #   logger.warning("[graph] critic 系统故障 → terminate（不消耗 retry）")
+  │     #   node_trace.append("reject->end (critic_failed)")
   └─ logger.error("[critic] LLM 失败重试后仍失败，降级 score_source=fallback")
 ```
+
+**v4 新增（cycle3/C4）**：二次兜底协议（fallback 内部又抛错时的"绝对安全"返回）
+
+```
+# 失败安全的最终兜底——所有上面 fallback 路径都失败时的"硬保底"
+def _safe_minimal_fallback() -> tuple[None, list[FeedbackIssue]]:
+    """绝对不会抛异常的最小返回。
+
+    用纯 Python literal 构造，不依赖任何 report state / metadata 访问。
+    如果连这个都抛错，让 inspector_node 整体 try/except 兜底（让 graph
+    走到正常 reject 路径，避免无限循环）。
+    """
+    return None, [
+        FeedbackIssue(
+            agent="writer",                    # 路由占位（v4/C5 会再细化）
+            field="critic_check",
+            severity="major",
+            reason="critic 评分系统失败（最终兜底）",
+            suggestion="人工 review 或排查 inspector 日志",
+            dimension="critic_failed",
+            issue_type="critic_failed",
+        )
+    ]
+
+# 调用结构：
+# def _critic_check(report, discovered_sources):
+#     try:
+#         # 正常 LLM 调用 + retry
+#     except Exception as critic_err:
+#         try:
+#             # 上面"降级路径"的代码块（写 metadata / 构 issue 等）
+#         except Exception as fallback_err:
+#             logger.error("[critic] 二次兜底触发：%s / %s", critic_err, fallback_err)
+#             return _safe_minimal_fallback()  # 永不抛
+```
+
+**关键约束**：`_safe_minimal_fallback` 必须**不访问任何外部 state**——只用纯 literal 构造。
+这保证即使 report.metadata 是 None / FeedbackIssue 字段被改了导致旧 fallback 构造失败，
+都还能返回最小合规结果。
 
 ### Severity 映射规则（D' 阈值，v2 修订 - M2）
 
@@ -652,7 +718,8 @@ class ReportMetadata(BaseModel):
 1. **旧 trace 反序列化测试**：
    - fixture：`runs/20260618-095358-c5ab5c/03_report.json`（v1 schema 落盘的报告）
    - 测试：`BaseReport.model_validate_json(<fixture content>)` 不抛异常
-   - 期望：所有 v2 新增字段填默认值（critic_scores=None, score_source="critic", critic_version=None）
+   - 期望：所有 v3 新增字段填默认值（critic_scores=None, score_source=None, critic_prompt_version=None）
+   - v4 修订（cycle3/C1）：score_source 期望统一为 None（不是 "critic"）——既然 score_source 字段是 Optional 默认 None，旧 trace 反序列化时不会被填 critic，不应该期望 critic
 
 2. **critic 失败降级测试**（独立的 v2 行为验证）：
    - fixture：v2 schema 的 BaseReport
@@ -831,6 +898,50 @@ bullet list ≤10 条 × 80 字 ≈ 800 字符上限/维 × 4 维 = ≤3.2KB 单
 
 9. **手动 critic eval**：跑 `pytest tests/eval/ -m eval` 至少 1 次，确认 5 条反例集 fixture 期望符合
 10. **手动 S5 真跑**：至少 1 次端到端，人工对比 critic 4 维评分 + reasoning bullets vs 直觉是否大致符合
+
+## v4 修订日志 + 待 plan 阶段消化清单
+
+### v4 消化（cycle 3 的 5 critical）
+
+v3 经 Codex cycle 3 跨模型审查（2026-06-19）发现 20 条问题（5 critical / 10 major / 5 minor）。
+v4 仅消化 5 critical（plan 阶段已能动手），剩余留 plan 阶段细化：
+
+**Critical 5 条（全部消化）**：
+- cycle3/C1 → 旧 trace 反序列化期望统一为 `score_source=None`（删除 v3 残留的 `="critic"`）
+- cycle3/C2 → quality_score 明确语义为 "semantic"，calculation_note 加 prog_issues 计数
+- cycle3/C3 → discovered_sources 用 `state.get(..., None) or []` 兼容旧 trace / 缺字段
+- cycle3/C4 → fallback 加 `_safe_minimal_fallback()` 二次兜底协议（纯 literal 构造，永不抛）
+- cycle3/C5 → critic_failed 路由改 `agent="end"` 特殊值，builder.py 加 terminal 特判，
+                不消耗 max_retries（critic 系统故障让 writer 重写无效）
+
+### 待 plan 阶段细化（10 major + 5 minor）
+
+cycle 3 还有 15 条 minor/major 没在 spec 层修——大多是细节合理性 / 命名一致 / 验收命令准确度，
+plan 阶段写实现代码时会自然碰到，无需在 spec 层超前优化。清单存档：
+
+**Major（10 条）**：
+- cycle3/M1 critic_prompt_version / critic_version / CRITIC_VERSION 命名仍不一致 → plan 阶段统一
+- cycle3/M2 discovered_urls 残留命名 → plan 阶段全文搜索改 discovered_sources
+- cycle3/M3 source_mismatch 归因规则细化（v3 已拆 collector / writer，但仍有边界模糊）
+- cycle3/M4 evidence support rate 分母"总论断数"如何精确计算 → plan 阶段定 deterministic 算法
+- cycle3/M5 coherence "0 可用 pair → score=4" 会奖励缺字段 → plan 阶段考虑改 None / programmatic issue
+- cycle3/M6 calc_critic_score 对 dict 输入的失败策略未定义 → plan 阶段加 defensive 处理
+- cycle3/M7 reasoning ≤80 字符只是 prompt soft constraint，没代码裁剪 → plan 阶段加 trim
+- cycle3/M8 影响面 grep 验收命令不可靠（grep 跨平台差异）→ plan 阶段写 Python verify 脚本
+- cycle3/M9 AnalysisState.discovered_sources schema 太松（应该是 TypedDict）→ plan 阶段定义子类型
+- cycle3/M10 source_coverage 删除后没有替代 deterministic guard → plan 阶段考虑 prog_issue 兜底
+
+**Minor（5 条）**：
+- cycle3/m1 FeedbackIssue.agent 注释列出 inspector 但 fallback 禁用 → 文档清理
+- cycle3/m2 issue_type 枚举文档漏掉新增项 → 文档同步
+- cycle3/m3 "CI required" / "Manual pre-release" 门禁语义不清 → 验收文档加注释
+- cycle3/m4 max_tokens=8192 只限输出不解决输入超预算 → 加 input token 估算 guard
+- cycle3/m5 report_brief 只截 narrative，其他长字段未截 → plan 阶段定全字段截断协议
+
+**为什么不在 spec v4 修这 15 条**：
+- 都是实施细节级别，plan 阶段写代码时自然碰到 → 边写边改更高效
+- spec 层 patch 的边际收益递减（cycle 3 verify 表明）
+- 接受 spec 不完美，让 plan + code review 接力
 
 ## v3 修订日志
 

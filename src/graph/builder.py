@@ -239,6 +239,32 @@ def build_graph(llm, http, parser, trace_writer=None):
         logger.info("[graph] → collector")
         node_trace.append("collector")
         ui = state["user_input"]
+
+        # 检测是否为 evidence 反馈打回的增量补采模式
+        feedback = state.get("feedback")
+        existing_profiles = state.get("profiles")
+        if feedback and not feedback.passed and existing_profiles:
+            ev_issues = [i for i in feedback.issues
+                         if getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES]
+            if ev_issues:
+                logger.info("[graph] collector 进入增量补采模式")
+                new_profiles, new_sources = await collector.supplement_collect(
+                    competitors=ui.competitors,
+                    feedback_issues=ev_issues,
+                    scenario=ui.scenario,
+                    existing_profiles=existing_profiles,
+                )
+                if new_sources:
+                    existing_ds = state.get("discovered_sources") or []
+                    return {
+                        "profiles": new_profiles,
+                        "discovered_sources": existing_ds + new_sources,
+                        "current_node": "collector",
+                    }
+                else:
+                    logger.warning("[graph] collector 补采无新数据，跳过")
+                    return {"current_node": "collector"}
+
         rec = state.get("competitor_recommendations")
         if rec is not None and rec.recommended_competitors:
             existing_names = {c.name for c in ui.competitors}

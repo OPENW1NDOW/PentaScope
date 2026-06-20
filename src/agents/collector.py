@@ -8,9 +8,7 @@ from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM,
 
 logger = logging.getLogger(__name__)
 
-# 喂给 LLM 的 labeled_text 字符上限：100K 字符 ≈ 70K-100K Doubao token，
-# Doubao-Seed-2.0-lite 输入上限 224K token，留 50%+ 安全垫防中文 BPE 计数偏差。
-# 飞书 trace 实测 raw_content 拼起来 >150K 字符会触发 400 错误。
+# 喂给 LLM 的 labeled_text 字符上限（适配 1M 上下文模型，留安全垫防 BPE 计数偏差）
 _EXTRACT_TEXT_MAX_CHARS = 300_000
 
 
@@ -92,7 +90,7 @@ class CollectorAgent:
                                sources: list[str], pipeline_trace: list[dict]) -> CompetitorProfile:
         """从带来源标记的文本中抽取结构化竞品画像。
 
-        labeled_text 超 _EXTRACT_TEXT_MAX_CHARS 时硬截断（保头部），防 Doubao 输入超限。
+        labeled_text 超 _EXTRACT_TEXT_MAX_CHARS 时硬截断（保头部），防 LLM 输入超限。
         """
         if len(text) > _EXTRACT_TEXT_MAX_CHARS:
             logger.warning(

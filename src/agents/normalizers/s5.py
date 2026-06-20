@@ -3,23 +3,18 @@
 ═══════════════════════════════════════════════════════════════════════════════
 [LLM-CAPABILITY-WORKAROUND - 2026-06-10]
 
-本文件中带 [fix20] 标记的「占位补齐」逻辑是**针对 Doubao-Seed-2.0-lite 服从性
-不足**的代码层兜底，不是项目正确性需求。
+本文件中带 [fix20] 标记的「占位补齐」逻辑是针对**弱模型服从性不足**的代码层
+兜底，不是项目正确性需求。
 
 S5 场景下 LLM 反复在以下三处违反 schema（即使 prompt 已显式列出约束）：
-1. vendor_profiles[*].strengths 少于 schema 要求的 2 条（多 vendor 时尾部 vendor 缩水）
-2. perceptual_map 4 个轴标签写成单字（"低""高"），不够 schema 要求的 ≥2 字符
+1. vendor_profiles[*].strengths 少于 schema 要求条数（多 vendor 时尾部 vendor 缩水）
+2. perceptual_map 轴标签写成单字
 3. category_strategy 给空 dict {} 占位，子字段全 missing
 
-实测两次完整 S5 trace（20260609-234227 + 20260610-000505）反馈闭环 max_retries 用尽
-仍无法产出合规报告。代码兜底是务实之选，但**会留下水印文本（"补充条目"、
-"normalizer 占位 LLM 未提供" 等）**，inspector 仍可能识别为 minor issue 扣分。
-
 【后续迭代提示】
-更换更强的 LLM（Doubao-Seed-2.0-pro / GPT-4o / Claude Sonnet）后，这部分代码
-应**优先撤回**——LLM 服从性提升后兜底只会污染报告。撤回前请先在新模型上
-跑 S5 端到端验证若干次，确认 LLM 能稳定满足 strengths/labels/category_strategy
-的密集约束，再删除标 [fix20] 的代码块及测试。
+切换到更强的模型后，这部分代码应**优先撤回**——LLM 服从性提升后兜底只会
+污染报告。撤回前请先在新模型上跑 S5 端到端验证若干次，确认 LLM 能稳定满足
+约束，再删除标 [fix20] 的代码块及测试。
 ═══════════════════════════════════════════════════════════════════════════════
 """
 from src.agents.normalizers._common import (

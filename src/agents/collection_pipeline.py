@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 # scenario → query 模板列表（每个 scenario 1 条聚合 query）
 # 每条 query 用 {name} 占位，运行时替换为竞品名
-# 06-09 收敛：单 query × Tavily SEARCH_TOP_N=5 已能覆盖核心信息；
-# 多 query × 5 会让 raw_content 总量翻倍超 Doubao 224K token 输入上限（飞书 trace 实测）
+# 每场景 3 条 query 并发搜索，覆盖不同角度（产品对比/官网/评价）
+# 输入量由 _EXTRACT_TEXT_MAX_CHARS 截断兜底，不受 LLM 上下文窗口限制
 _SCENARIO_QUERIES = {
     "S1": [  # 功能迭代：功能矩阵 + 对比评测 + 用户评价
         "{name} 产品功能 特性 核心能力",

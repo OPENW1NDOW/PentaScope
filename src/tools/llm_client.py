@@ -56,12 +56,12 @@ def _fix_unescaped_quotes_in_values(text: str) -> str:
 
 
 class LLMClient:
-    """Doubao LLM 客户端（OpenAI 兼容格式）"""
+    """LLM 客户端（OpenAI 兼容格式，支持任意 OpenAI API 兼容端点）"""
 
     def __init__(self, api_key: str = "", base_url: str = "", model_ep: str = ""):
-        self.api_key = api_key or settings.DOUBAO_API_KEY
-        self.base_url = base_url or settings.DOUBAO_BASE_URL
-        self.model_ep = model_ep or settings.DOUBAO_MODEL_EP
+        self.api_key = api_key or settings.LLM_API_KEY
+        self.base_url = base_url or settings.LLM_BASE_URL
+        self.model_ep = model_ep or settings.LLM_MODEL
         self.client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,

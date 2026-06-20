@@ -38,7 +38,7 @@ class Methodology(BaseModel):
     limitations: list[str] = Field(min_length=1)
     sample_size_note: str = ""
     analyst_disclosure: str = Field(
-        default="本报告由 AI 多 Agent 协作系统生成，分析模型 Doubao-Seed-2.0-lite"
+        default="本报告由 AI 多 Agent 协作系统自动生成"
     )
 
 

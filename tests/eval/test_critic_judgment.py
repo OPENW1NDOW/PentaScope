@@ -7,7 +7,7 @@ CI 默认跳过（pyproject.toml @ eval marker），手动跑：
 LLM 抽风时输出可能不稳定——eval 失败 = 提示人工检查 prompt 是否需要调整。
 
 运行需要：
-- 真实 LLM API key（.env DOUBAO_API_KEY 等）
+- 真实 LLM API key（.env LLM_API_KEY 或旧 DOUBAO_API_KEY）
 - 网络访问
 
 不在 CI 跑的原因：spec v4 cycle3/C6 — record/replay 实际不测 critic 判断力，
@@ -24,8 +24,8 @@ pytestmark = pytest.mark.eval
 @pytest.fixture
 def real_inspector():
     """真实 LLM-backed inspector（不 mock）。"""
-    if not os.environ.get("DOUBAO_API_KEY"):
-        pytest.skip("DOUBAO_API_KEY 未配置，跳过真 LLM 测试")
+    if not (os.environ.get("LLM_API_KEY") or os.environ.get("DOUBAO_API_KEY")):
+        pytest.skip("LLM_API_KEY 未配置，跳过真 LLM 测试")
     from src.agents.inspector import InspectorAgent
     from src.tools.llm_client import LLMClient
     return InspectorAgent(llm=LLMClient())

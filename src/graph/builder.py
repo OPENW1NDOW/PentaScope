@@ -123,6 +123,53 @@ def _route_entry(state: AnalysisState) -> str:
     return "recommender" if ui.scenario == "S2" else "collector"
 
 
+from src.utils.url_normalize import normalize_url as _normalize_url
+from src.agents.writer_orchestrator import _collect_source_refs_recursive
+
+_EVIDENCE_ISSUE_TYPES = frozenset({"url_not_discovered", "source_mismatch", "source_irrelevant"})
+
+
+def _extract_used_urls(report) -> set[str]:
+    """从报告递归收集所有 source_refs 里的 url。"""
+    if report is None:
+        return set()
+    dump = report.model_dump()
+    refs, bare = _collect_source_refs_recursive(dump)
+    urls = {r["url"] for r in refs if r.get("url")}
+    urls |= bare
+    return urls
+
+
+def _route_evidence_issue(state: dict) -> str | None:
+    """evidence 类 issue 的智能路由。返回 None 表示走原有映射。"""
+    discovered = state.get("discovered_sources", [])
+    if not discovered:
+        return None
+
+    discovered_urls = {_normalize_url(d["url"]) for d in discovered
+                       if isinstance(d, dict) and d.get("url")}
+    if not discovered_urls:
+        return None
+
+    report = state.get("report")
+    if report is None:
+        return None
+
+    used_urls = {_normalize_url(u) for u in _extract_used_urls(report)}
+    coverage = len(used_urls & discovered_urls) / len(discovered_urls)
+
+    prev_coverage = state.get("_prev_evidence_coverage")
+    if prev_coverage is not None and coverage >= prev_coverage - 0.05:
+        return "end"
+
+    if len(discovered_urls) >= 8 and coverage < 0.5:
+        return "writer"
+    elif len(discovered_urls) < 5:
+        return "collector"
+    else:
+        return "writer"
+
+
 def build_graph(llm, http, parser, trace_writer=None):
     """构建 LangGraph 状态图，返回 (compiled_graph, node_trace)。
 

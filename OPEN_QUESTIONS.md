@@ -82,3 +82,37 @@ inspector LLM 返回的 issue list 部分条目自身违反 `FeedbackIssue` sche
 已采用方案 (a)+(b)：每场景 3 条产品实操语言 query（commit 9e66079），覆盖产品对比/官网/用户评价等不同角度。待下次端到端跑验证有效率提升。
 
 ---
+
+## Q-2026-06-20-内部重试应带纠正反馈
+
+**状态**：未决
+
+collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑相同 prompt，不带任何纠正信息。LLM 大概率犯同样的错——重试只是"赌概率"而非"定向修正"。
+
+writer phase 1/2 已经做对了（`【上次校验失败，请逐条修复】\n{错误摘要}`），其他 agent 应该对齐。
+
+待做：
+- collector extract：ValidationError 时告诉 LLM "哪个字段超长/缺失，请精简/补全"
+- analyzer：ValidationError 时告诉 LLM "哪个字段违规，请修正"
+- phase 3 narrative：ValidationError 时告诉 LLM "section_id/narrative 哪里不合规"
+
+---
+
+## Q-2026-06-20-collector-打回无效重跑
+
+**状态**：未决
+
+inspector 打回 collector 时只是用相同 query 重新搜索——结果几乎不变，纯浪费时间。应该把 feedback issues 转化为针对性补充搜索 query。
+
+问题本质：collector 打回 ≠ "再搜一遍"，应该 = "针对缺什么补搜什么"。
+
+候选方向：
+- (a) 从 feedback issues 中提取 `field` + `reason`，让 LLM 生成 1-2 条补充 query（如"金山文档 AI 写作功能 评测"）
+- (b) collector 收到 feedback_issues 后只补搜缺来源的竞品，不重跑全部
+- (c) 如果 issues 全指向 collector 但搜索结果确实无法改善（如竞品本身公开信息少），跳过重跑直接 pass
+
+关联：搜索策略优化课题族（Q-2026-06-19-scenario-query + 本条）
+
+实证：S1 trace `20260620-124505` 第一轮 collector 打回后重跑，搜索结果与首次完全相同
+
+---

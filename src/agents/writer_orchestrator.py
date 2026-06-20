@@ -1164,6 +1164,7 @@ class WriterOrchestrator:
         scenario_input: ScenarioInput,
         discovered_urls: list[str],
         evidence_feedback: Any = None,
+        retry_error_hint: str | None = None,
     ) -> AnalysisSection:
         """[v3-R18] Semaphore 限速；[v3-R04] 走 _llm_call_with_quota 不绕熔断。
 
@@ -1235,6 +1236,9 @@ class WriterOrchestrator:
                 f"如果某段确实无法关联上述 URL，source_refs 留空 [] 即可。"
             )
 
+        if retry_error_hint:
+            system_prompt += f"\n\n【上次生成失败，请修复】\n{retry_error_hint}"
+
         user_prompt = "请基于上述上下文生成本节 JSON。"
 
         # 仅 LLM 调用进 semaphore，CPU 序列化在外面
@@ -1294,6 +1298,8 @@ class WriterOrchestrator:
         # 逐个重试失败的 section（串行，避免再次并发压力）
         for i in retry_indices:
             st = section_types[i]
+            first_err = first_pass_results[i]
+            error_hint = f"{type(first_err).__name__}: {str(first_err)[:500]}" if isinstance(first_err, Exception) else None
             try:
                 retry_result = await self._phase3_one_section(
                     scenario=scenario,
@@ -1304,6 +1310,7 @@ class WriterOrchestrator:
                     scenario_input=scenario_input,
                     discovered_urls=discovered_urls,
                     evidence_feedback=evidence_feedback,
+                    retry_error_hint=error_hint,
                 )
                 first_pass_results[i] = retry_result
                 logger.info("[writer] phase 3 section %s 重试成功", st)

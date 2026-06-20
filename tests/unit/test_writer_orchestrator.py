@@ -2012,3 +2012,57 @@ async def test_phase3_evidence_feedback_injects_urls():
         system_prompt = call[0][0]
         assert "https://example.com/a" in system_prompt
         assert "key_findings[0].source_refs" in system_prompt
+
+
+# ---------- 测试：phase 3 重试带纠正反馈 ----------
+
+@pytest.mark.asyncio
+async def test_phase3_retry_includes_error_hint_in_prompt():
+    """phase 3 section 首次失败后重试时，system_prompt 应包含错误信息。"""
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    phase1_outline = _make_valid_outline_dict("测试")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis", "roadmap_analysis"]
+
+    # 第一个 section 第一次抛 ValidationError，其余成功
+    # side_effects: phase1, phase2, overview(fail), vpa, fma, jtbd, ra, overview_retry(success)
+    from pydantic import ValidationError as PydanticValidationError
+
+    def make_failing_call():
+        raise PydanticValidationError.from_exception_data("AnalysisSection", [
+            {"type": "missing", "loc": ("narrative",), "msg": "Field required", "input": {}}
+        ])
+
+    good_narratives = [_make_valid_narrative_json(t) for t in s1_types]
+    side_effects = [
+        phase1_outline,       # phase 1
+        phase2_payload,       # phase 2
+        PydanticValidationError.from_exception_data("AnalysisSection", [
+            {"type": "missing", "loc": ("narrative",), "msg": "Field required", "input": {}}
+        ]),                    # overview first attempt fails
+        good_narratives[1],   # vpa success
+        good_narratives[2],   # fma success
+        good_narratives[3],   # jtbd success
+        good_narratives[4],   # ra success
+        good_narratives[0],   # overview retry success
+    ]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    try:
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+        )
+    except Exception:
+        pass  # phase 4 可能报错
+
+    # 重试调用是最后一次（index 7）
+    retry_call = mock_llm.call_json.call_args_list[7]
+    retry_system_prompt = retry_call[0][0]
+    # 应包含纠正反馈标识（不能仅靠模板中本来就有的词）
+    assert "上次生成失败" in retry_system_prompt or "请修复" in retry_system_prompt or "Field required" in retry_system_prompt

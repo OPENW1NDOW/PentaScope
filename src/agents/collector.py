@@ -163,3 +163,70 @@ class CollectorAgent:
                 if isinstance(url, str) and url:
                     all_sources.append({"url": url, "title": "", "snippet": ""})
         return profiles, goal, all_sources
+
+    _SUPPLEMENT_QUERY_SYSTEM = (
+        "你是搜索 query 生成器。根据质检反馈中缺失的信息，为指定竞品生成 2-3 条针对性搜索 query。"
+        "输出 JSON: {\"queries\": [\"query1\", \"query2\"]}"
+    )
+
+    async def supplement_collect(
+        self,
+        competitors: list[CompetitorBasic],
+        feedback_issues: list,
+        scenario: str,
+        existing_profiles: list[CompetitorProfile],
+    ) -> tuple[list[CompetitorProfile], list[dict]]:
+        """定向补采：LLM 生成 query → 增量搜索 → 追加正文+URL 到 profiles。"""
+        from src.tools.quality_gate import is_low_quality
+        from src.utils.url_normalize import normalize_url
+
+        comp_names = [c.name for c in competitors]
+        issue_summary = "; ".join(f"{i.field}: {i.reason}" for i in feedback_issues[:5])
+        prompt = f"竞品: {comp_names}\n场景: {scenario}\n缺失信息: {issue_summary}"
+
+        try:
+            result = await self.llm.call_json(self._SUPPLEMENT_QUERY_SYSTEM, prompt)
+            queries = result.get("queries", [])[:3]
+        except Exception:
+            queries = [f"{comp_names[0]} 最新信息 评测" if comp_names else "竞品 信息"]
+
+        if not queries:
+            return existing_profiles, []
+
+        if not self.pipeline.search_source.available():
+            return existing_profiles, []
+
+        search_results = await asyncio.gather(
+            *[self.pipeline.search_source.search(q) for q in queries],
+            return_exceptions=True,
+        )
+
+        existing_urls = set()
+        for p in existing_profiles:
+            existing_urls.update(normalize_url(u) for u in (p.metadata.data_sources or []))
+
+        new_sources: list[dict] = []
+        for results in search_results:
+            if isinstance(results, Exception):
+                continue
+            for r in results:
+                if not r.url or is_low_quality(r.text):
+                    continue
+                if normalize_url(r.url) in existing_urls:
+                    continue
+                existing_urls.add(normalize_url(r.url))
+                new_sources.append({"url": r.url, "title": r.title or "", "snippet": (r.text or "")[:200]})
+
+        if not new_sources:
+            return existing_profiles, []
+
+        updated_profiles = []
+        for p in existing_profiles:
+            new_urls_for_comp = [s["url"] for s in new_sources]
+            updated_ds = list(p.metadata.data_sources or []) + new_urls_for_comp
+            updated_profile = p.model_copy(update={
+                "metadata": p.metadata.model_copy(update={"data_sources": updated_ds})
+            })
+            updated_profiles.append(updated_profile)
+
+        return updated_profiles, new_sources

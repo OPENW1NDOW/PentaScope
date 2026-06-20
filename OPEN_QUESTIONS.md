@@ -49,29 +49,17 @@ PentaScope 项目里**已发现但未决定如何应对**的深层问题。与 P
 
 ## Q-2026-06-18-llm-反馈修一退一
 
-**状态**：未决（等 critic）
+**状态**：已消解（2026-06-20）
 
-writer / outline ValidationError 重试时 LLM 没有"上次这条对了别动它"的记忆 → 常见"修一退一"：attempt 0 错 A → attempt 1 修 A 但反退 B → attempt 2 修 B 但反退 C，max_retries=2 预算紧。
-
-候选：(a) 增量编辑 patch / (b) prompt 提醒"上次合规字段保留" / (c) 字段级独立校验 + 重试 / (d) critic 替代字数 schema 约束
-
-**等 critic 决策原因**：错误大半是字数约束触发的，critic + 字数退役后"修一退一"频率会自然下降。(a)/(b)/(c) 都是工程上很重的方案，先看 critic 后还剩多少。
-
-实证：`runs/20260618-095358-c5ab5c/run.log` —— phase 2a / phase 2b 的"修一退一"完整时序
+字符 min_length 全部退役后触发根因不存在了。S1-S4 实跑未再观察到"修一退一"现象。
 
 ---
 
 ## Q-2026-06-18-inspector-llm-issue-丢失
 
-**状态**：未决（等 critic）
+**状态**：已消解（2026-06-20）
 
-inspector LLM 返回的 issue list 部分条目自身违反 `FeedbackIssue` schema（severity 缺失等）→ `_parse_llm_issues` 直接丢弃 → 反馈信号容量被自身鲁棒性问题压低（trace 实证 8 条 LLM 给的 issue 丢了 2 条）。
-
-候选：(a) inspector LLM issue 也做错误反馈重试 / (b) FeedbackIssue 字段宽容化 / (c) inspector 改用 LLM-as-critic rubric 输出
-
-**等 critic 决策原因**：critic 落地后 inspector 角色可能整体重构，(c) 跟 critic 整体设计同方向。先观察 inspector LLM issue 丢失率，critic 落地后再看是否还需要单独修。
-
-实证：`runs/20260618-095358-c5ab5c/run.log` —— inspector LLM issue 解析失败 2 次
+critic v1.2.1 重写 inspector 后，S1-S5 五次实跑均未观察到 issue 丢失。`_extract_critic_issues` 逐条 try/except 容错已覆盖。
 
 ---
 

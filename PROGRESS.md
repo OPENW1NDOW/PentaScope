@@ -54,9 +54,10 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
   - **OPEN_QUESTIONS 清理**：7 条关闭/并入 5 条，仅剩 2 条（inspector issue 丢失观察中 + query 已修待验证）
 - 进行中：无
 - 下一步（TODO，按优先级）：
-  1. **多场景端到端验证**：S1-S5 各跑一次确认搜索优化 + 字符约束退役 + max_tokens 扩充三者协同效果
-  2. **分层模型调用**（06-17 待办）：collector/analyzer 用快模型，writer narrative 用强模型
-  3. **analyzer 并行拆分**（06-17 待办）：4 竞品拆 2×2 并发
+  1. **反馈闭环路由修正**（Q-2026-06-20-evidence-issue-路由错误）：evidence issues 区分"writer 没用已有 URL"vs"URL 真不存在"，前者打回 writer 不打回 collector
+  2. **collector 打回定向补采**（Q-2026-06-20-collector-打回无效重跑）：打回 collector 时从 feedback issues 提取缺什么 → 生成针对性补充 query
+  3. **内部重试带纠正反馈**（Q-2026-06-20-内部重试应带纠正反馈）：collector/analyzer/narrative 内部 ValidationError 重试时注入错误摘要
+  4. **前端输入一致性 warning**（方案 C，Cooper 拍板）：分析意图 vs 结构化字段冲突时弹 warning 不阻断
 - 阻塞：无
 - 安全提醒：无新增 key
 

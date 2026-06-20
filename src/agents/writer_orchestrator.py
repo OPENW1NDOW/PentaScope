@@ -1221,7 +1221,7 @@ class WriterOrchestrator:
         # 仅 LLM 调用进 semaphore，CPU 序列化在外面
         async with self._narrative_sem:
             raw = await self._llm_call_with_quota(
-                system_prompt, user_prompt, max_tokens=8192
+                system_prompt, user_prompt, max_tokens=12288
             )
         return AnalysisSection(**raw)
 

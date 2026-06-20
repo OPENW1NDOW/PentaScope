@@ -142,3 +142,40 @@ inspector 打回 collector 时只是用相同 query 重新搜索——结果几�
 推荐 (a)：改动集中在 routes.py + app.py，不动 graph 核心逻辑。
 
 ---
+
+## Q-2026-06-20-evidence-反馈闭环路由需重新设计
+
+**状态**：未决
+
+当前 `_route_evidence_issue` + EvidenceFeedback 的设计基于错误假设——认为 evidence 评分低是因为"URL 引用不足"，实际数据表明 97% 的问题是"引用错误"（张冠李戴 + 证据不相关），不是"引用不足"。
+
+### 实证数据（36 条历史 evidence issues）
+
+| issue_type | 数量 | 占比 | 本质 |
+|------------|------|------|------|
+| source_mismatch | 28 | 78% | A 竞品的 URL 被引到 B 竞品的段落 |
+| source_irrelevant | 7 | 19% | URL 正确但内容与论断无逻辑关系 |
+| url_not_discovered | 1 | 3% | 幻觉 URL（不在 discovered 中） |
+
+### 当前设计的问题
+
+1. **路由判断用错指标**：用 coverage（引用率）区分 writer/collector，但 source_mismatch 跟覆盖率无关。应该直接根据 issue_type 路由——`source_mismatch` 和 `source_irrelevant` 都是 writer 的问题。
+2. **反馈内容答非所问**：传给 writer 的是"覆盖率低 + URL 列表 + 多引用"，但真正的问题是"你把 A 的 URL 引到 B 的段落了"。Inspector 已经给出了精确的 reason 和 suggestion，但没有被传递。
+3. **`_ISSUE_TYPE_TO_AGENT` 映射错误**：`source_mismatch` 映射到 collector（原始设计），但这明显是 writer 的写作错误。
+4. **缺少第 4 类 issue**：当前只检测"引错了"，不检测"该引没引"（source_insufficient）。42 个 URL 只用 10 个，大量段落无溯源但 inspector 检测不到。
+
+### 需要验证的前置假设
+
+- **critic 判断的可靠性**：LLM critic 说"source_mismatch"时是否真的对？需要人工抽样验证。如果 critic 误判率高，修路由也没用。
+
+### 重新设计方向
+
+1. **修正路由映射**（最小改动）：`source_mismatch` → writer，删掉 `_route_evidence_issue` 的 coverage 判断逻辑
+2. **修正反馈内容**：打回 writer 时直接传 inspector 的 issue reason + suggestion 原文（精确告诉 writer 哪里错了）
+3. **按竞品分组传 URL**：`{竞品名: [对应 URLs]}` 让 writer 知道哪个 URL 该用在哪
+4. **新增 source_insufficient 检测**：代码层扫描无 source_refs 的段落，作为第 4 类 evidence issue
+5. **critic 可靠性验证**：人工抽样 10-20 条 source_mismatch issue，确认误判率
+
+关联：本条替代已关闭的 Q-2026-06-20-evidence-issue-路由错误 和 Q-2026-06-20-collector-打回无效重跑
+
+---

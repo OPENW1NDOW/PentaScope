@@ -500,6 +500,15 @@ def build_graph(llm, http, parser, trace_writer=None):
             node_trace.append(f"reject->end(retry={retry_count})")
             return "end"
 
+        # evidence issues 优先扫描
+        for issue in feedback.issues:
+            if issue.severity in ("critical", "major") and getattr(issue, "issue_type", None) in _EVIDENCE_ISSUE_TYPES:
+                evidence_route = _route_evidence_issue(state)
+                if evidence_route is not None:
+                    node_trace.append(f"reject->{evidence_route} (evidence_route)")
+                    return evidence_route
+                break
+
         # 取第一条 critical/major issue 的 agent 决定回边
         for issue in feedback.issues:
             if issue.severity in ("critical", "major"):

@@ -128,8 +128,6 @@ if st.button("开始分析", type="primary"):
         st.error(f"{scenario} 场景必须至少填一个竞品")
     elif scenario != "S2" and not our_product_name.strip():
         st.error(f"{scenario} 场景必须填写我方产品名称")
-    elif _scenario_mismatch:
-        st.error(f"场景选择与 AI 推断不一致（推荐 {_picked}），请先调整场景或重新点「AI 帮我选场景」确认。")
     else:
         body = {
             "scenario": scenario,

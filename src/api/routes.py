@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import json
@@ -27,11 +28,15 @@ from src.utils.paths import runs_dir
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _BEIJING = timezone(timedelta(hours=8))
+_analyze_lock = asyncio.Lock()
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze(request: AnalysisRequest):
     """执行竞品分析"""
+    if _analyze_lock.locked():
+        raise HTTPException(status_code=429, detail="已有分析任务正在运行，请等待完成后再提交")
+
     trace_id = TraceWriter.new_trace_id(base_dir=runs_dir())
     tw = TraceWriter(trace_id, base_dir=runs_dir())
     logger.info("[api] 收到分析请求, trace_id=%s, competitors=%s",
@@ -67,46 +72,47 @@ async def analyze(request: AnalysisRequest):
 
     http = HttpClient()
     node_trace: list = []
-    try:
-        user_input = request.to_scenario_input()
-        llm = LLMClient()
-        parser = HtmlParser()
-        graph, node_trace = build_graph(llm=llm, http=http, parser=parser, trace_writer=tw)
-        result = await graph.ainvoke({
-            "user_input": user_input, "retry_count": 0, "max_retries": 2, "trace_id": trace_id,
-        })
-        report = result.get("report")
-        tw.save_meta({
-            "trace_id": trace_id, "status": "completed",
-            "started_at": started, "ended_at": datetime.now(_BEIJING).isoformat(),
-            "retry_count": result.get("retry_count", 0),
-            "node_trace": node_trace,
-            "input": {
-                "scenario": request.scenario,
-                "competitors": [c.model_dump() for c in request.competitors],
-                "industry": request.industry,
-                "analysis_context": request.analysis_context,
-                "our_product_name": request.our_product_name,
-                "prior_trace_id": request.prior_trace_id,
-            },
-        })
-        return AnalysisResponse(
-            trace_id=trace_id, status="completed",
-            report=report.model_dump() if report else None,
-        )
-    except Exception as e:
-        logger.error("[api] 分析失败: %s", e, exc_info=True)
-        tw.save_meta({
-            "trace_id": trace_id, "status": "failed",
-            "started_at": started, "ended_at": datetime.now(_BEIJING).isoformat(),
-            "node_trace": node_trace, "error": str(e),
-        })
-        return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
-    finally:
-        if run_handler is not None:
-            logging.getLogger().removeHandler(run_handler)
-            run_handler.close()
-        await http.close()
+    async with _analyze_lock:
+        try:
+            user_input = request.to_scenario_input()
+            llm = LLMClient()
+            parser = HtmlParser()
+            graph, node_trace = build_graph(llm=llm, http=http, parser=parser, trace_writer=tw)
+            result = await graph.ainvoke({
+                "user_input": user_input, "retry_count": 0, "max_retries": 2, "trace_id": trace_id,
+            })
+            report = result.get("report")
+            tw.save_meta({
+                "trace_id": trace_id, "status": "completed",
+                "started_at": started, "ended_at": datetime.now(_BEIJING).isoformat(),
+                "retry_count": result.get("retry_count", 0),
+                "node_trace": node_trace,
+                "input": {
+                    "scenario": request.scenario,
+                    "competitors": [c.model_dump() for c in request.competitors],
+                    "industry": request.industry,
+                    "analysis_context": request.analysis_context,
+                    "our_product_name": request.our_product_name,
+                    "prior_trace_id": request.prior_trace_id,
+                },
+            })
+            return AnalysisResponse(
+                trace_id=trace_id, status="completed",
+                report=report.model_dump() if report else None,
+            )
+        except Exception as e:
+            logger.error("[api] 分析失败: %s", e, exc_info=True)
+            tw.save_meta({
+                "trace_id": trace_id, "status": "failed",
+                "started_at": started, "ended_at": datetime.now(_BEIJING).isoformat(),
+                "node_trace": node_trace, "error": str(e),
+            })
+            return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
+        finally:
+            if run_handler is not None:
+                logging.getLogger().removeHandler(run_handler)
+                run_handler.close()
+            await http.close()
 
 
 @router.post("/pick-scenario", response_model=PickScenarioResponse)

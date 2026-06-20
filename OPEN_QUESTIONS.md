@@ -73,7 +73,7 @@ critic v1.2.1 重写 inspector 后，S1-S5 五次实跑均未观察到 issue 丢
 
 ## Q-2026-06-20-内部重试应带纠正反馈
 
-**状态**：未决（等 S1-S4 跑完看新 ValidationError 频率再决定优先级）
+**状态**：已解决（2026-06-20 collector/analyzer/narrative 均已实施纠正反馈重试）
 
 collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑相同 prompt，不带纠正信息。从实测看部分失败是**系统性**的（LLM 写太长/枚举值错），不是随机抖动——纯重试靠运气，加反馈修复率更高。
 

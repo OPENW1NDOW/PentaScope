@@ -16,6 +16,23 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-20（内部重试纠正反馈 + 前端输入一致性 warning）
+- 完成：
+  - **内部重试带纠正反馈**：
+    - collector `_extract_profile`：ValidationError 序列化后追加到 retry prompt
+    - analyzer `analyze`：同上模式
+    - writer phase 3 narrative：重试时注入 `retry_error_hint` 到 system_prompt
+    - 参照 writer `_call_with_validation` 成熟模式统一实施
+  - **前端输入一致性 warning**：
+    - 用户点"AI 帮我选"后手选了不同场景 → 提交时弹 warning + 两按钮（继续/切换）
+    - 用户没点"AI 帮我选"→ 提交时静默调 pick-scenario 对比，不一致且 confidence≠low 时弹 warning
+    - 一致时或 confidence=low 时不干扰，不阻断提交
+- 下一步：
+  1. **端到端验证**：跑 S1/S4 验证反馈闭环新路由 + 纠正反馈实际效果
+- 阻塞：无
+
+---
+
 ## 2026-06-20（反馈闭环路由改进实施）
 - 完成：
   - **反馈闭环路由 9 task 全部完成**：

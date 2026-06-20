@@ -357,7 +357,7 @@ def build_graph(llm, http, parser, trace_writer=None):
             if ev_issues:
                 from src.schemas.feedback import EvidenceFeedback
                 ds = state.get("discovered_sources") or []
-                urls = sorted({d["url"] for d in ds if isinstance(d, dict) and d.get("url")})[:10]
+                urls = sorted({d["url"] for d in ds if isinstance(d, dict) and d.get("url")})
                 evidence_feedback = EvidenceFeedback(
                     available_urls=urls,
                     weak_fields=[i.field for i in ev_issues],

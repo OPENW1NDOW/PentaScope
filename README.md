@@ -4,7 +4,7 @@
 
 > Penta = 5 场景 · Scope = 全景视角。基于 LangGraph 的多 Agent 编排，从公开信息采集到 5 场景咨询级竞品报告的全链路自动化。
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange) ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-green) ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red) ![Tests](https://img.shields.io/badge/tests-445%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange) ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-green) ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red) ![Tests](https://img.shields.io/badge/tests-478%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
 
@@ -12,7 +12,7 @@
 
 - **效率**：端到端 10 分钟以内产出 7000-8000 字咨询级报告（vs 人工 2-3 天）
 - **专业度**：5 个分析场景按业界标杆框架组织（Forrester Wave / Gartner Magic Quadrant / Porter 五力 / GBB / Blue Ocean ERRC）
-- **可信度**：每条结论绑定原始 URL，全链路可溯源，质检 Agent 三项加权评分
+- **可信度**：每条结论绑定原始 URL，全链路可溯源，LLM-as-critic 4 维 rubric 质检评分
 - **可靠性**：LangGraph 状态机 + 质检反馈闭环，问题自动打回上游 Agent 修复
 
 ---
@@ -66,10 +66,10 @@
 - **Plotly 交互图表**：S1 5 维多边形雷达 / S2 Porter 五力蜘蛛网 / S5 Perceptual Map + Magic Quadrant + Strategy Canvas 折线
 - **Schema 强约束反幻觉**：S2 `MarketValue` 必填 `value_basis`、S3 GBB 强制 1 个 `is_recommended`、S4 首次模式强制 `is_baseline=True`、S5 `competitors_implied` 必须是 vendor_profiles 子集
 
-### 3. 全链路信息溯源 + 质量评分
+### 3. 全链路信息溯源 + LLM-as-critic 质量评分
 
 - **4 道防线确保溯源不断链**：collector 抽取时绑定 fact-URL → analyzer prompt 各维度 source_urls 输出槽 → writer 机械透传 + 按 dimension 下沉 source_refs → inspector 程序化硬查
-- **三项加权 quality_score**：`source_coverage`（条目带 source_refs 占比）+ `confidence_avg`（数据源 confidence 数值化均值）+ `inspector_pass_rate`（按 issue 严重度倒推），placeholder warnings 强制 cap 至 0.5
+- **LLM-as-critic 4 维 rubric 评分**：evidence（证据可溯）+ specificity（内容具体）+ coherence（内部一致，含场景特有 pair）+ actionability（可行动性），加权归一化为 quality_score
 - **TraceWriter 中间产物追溯**：每次分析的 4 阶段产物（profile / analysis / report / feedback）+ meta + run.log 落盘到 `runs/<trace_id>/`，反馈闭环重试时旧产物存 `_vN` 快照
 - **trace_id 串联全链路**：北京时间格式 `YYYYMMDD-HHMMSS-<6hex>`，前后端 + 日志统一引用
 
@@ -86,14 +86,15 @@
 
 | 层 | 技术 | 职责 |
 |---|---|---|
-| LLM | Doubao-Seed-2.0-lite（OpenAI SDK 调火山方舟）| 全链路推理 |
+| LLM | 任意 OpenAI API 兼容模型（支持分层：fast + pro） | 全链路推理 |
 | Agent 编排 | LangGraph StateGraph | 5 节点 DAG + 条件分支 + 环路 |
 | 后端 | FastAPI + uvicorn | REST API |
 | 前端 | Streamlit + Plotly | 交互式 UI + 图表 |
 | 数据校验 | Pydantic v2 | 全链路 Schema 契约 |
-| 数据采集 | Tavily API + httpx + BeautifulSoup4 | 一次调用直返带正文 |
+| 数据采集 | Tavily API + httpx + BeautifulSoup4 | 多 query 并发搜索 |
 | 报告导出 | markdown + Jinja2 + nh3 | Markdown / HTML 双格式 |
-| 测试 | pytest + pytest-asyncio + ruff | 445 passed / ruff clean |
+| 质量评分 | LLM-as-critic 4 维 rubric | evidence / specificity / coherence / actionability |
+| 测试 | pytest + pytest-asyncio + ruff | 478 passed / ruff clean |
 
 ---
 
@@ -120,8 +121,12 @@ pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # 编辑 .env 填入：
-# - DOUBAO_API_KEY    必填（火山方舟 Ark 端点 key）
-# - TAVILY_API_KEY    选填（S2 场景需要；缺 key 时 S2 走占位降级）
+# - LLM_API_KEY       必填（OpenAI API 兼容端点的 key）
+# - LLM_BASE_URL      必填（API 基地址）
+# - LLM_MODEL         必填（模型标识 / endpoint ID）
+# - TAVILY_API_KEY    选填（搜索源；缺 key 时跳过搜索走占位降级）
+# - MODEL_FAST        选填（分层模型-轻任务；不配则用 LLM_MODEL）
+# - MODEL_PRO         选填（分层模型-强推理；不配则用 LLM_MODEL）
 ```
 
 ### 启动
@@ -185,9 +190,10 @@ ruff check src tests            # lint
 
 ## 测试与质量
 
-- 445 个单元测试 + 集成测试全过
+- 478 个单元测试 + 集成测试全过
 - ruff lint 全清
-- 5 场景端到端 happy path 验证（含 S2 真跑 quality_score=0.800、S3 quality_score=0.836）
+- 5 场景端到端 happy path 验证（S5 最新 quality_score=0.900、S2 quality_score=0.800）
+- LLM-as-critic eval 反例集（9 个 fixture 验证 4 维评分判断力）
 - 安全：路径穿越白名单（`^[a-f0-9-]+$` + 长度 ≤64）、HTML XSS sanitize、API key URL/异常双重脱敏
 
 ---

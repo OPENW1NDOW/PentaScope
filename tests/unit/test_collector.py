@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
+from src.schemas.input import CompetitorInput, CompetitorBasic
 from src.schemas.profile import CompetitorProfile
 from src.agents.collector import CollectorAgent
 
@@ -20,22 +20,10 @@ class TestCollectorAgent:
         assert goal.focus_area == "支付"
 
     @pytest.mark.asyncio
-    async def test_classify_competitor_returns_type(self):
-        mock_llm = MagicMock()
-        mock_llm.call_json = AsyncMock(return_value={
-            "competitor_type": "核心竞品", "reason": "目标用户相同"
-        })
-
-        agent = CollectorAgent(llm=mock_llm, pipeline=MagicMock())
-        result = await agent.classify_competitor("支付宝", AnalysisGoal())
-        assert result["competitor_type"] == "核心竞品"
-
-    @pytest.mark.asyncio
     async def test_collect_returns_profiles(self, sample_competitor_profile):
         mock_llm = MagicMock()
         mock_llm.call_json = AsyncMock(side_effect=[
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
-            {"competitor_type": "核心竞品", "reason": "test"},
             {k: v for k, v in sample_competitor_profile.items() if k not in ("classification", "metadata")},
         ])
         mock_pipeline = MagicMock()
@@ -124,8 +112,7 @@ class TestCollectorAgent:
         mock_llm = MagicMock()
         mock_llm.call_json = AsyncMock(side_effect=[
             {"goal_type": "competitive_monitoring", "product_stage": "growing", "focus_area": "", "output_expectation": "action"},
-            {"competitor_type": "核心竞品", "reason": "ok"},
-        ])  # only parse_goal + classify, NO extract
+        ])  # only parse_goal, NO extract (classify removed)
         mock_pipeline = MagicMock()
         mock_pipeline.collect = AsyncMock(return_value=("", [], [{"step": "all_empty"}], ""))  # empty
         agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
@@ -136,7 +123,7 @@ class TestCollectorAgent:
         )
         profiles, _, _ = await agent.collect(user_input)
         assert profiles[0].metadata.completeness_score == 0.0
-        assert mock_llm.call_json.call_count == 2  # extract NOT called (else side_effect StopIteration)
+        assert mock_llm.call_json.call_count == 1  # only parse_goal, extract NOT called
 
 
 @pytest.mark.asyncio

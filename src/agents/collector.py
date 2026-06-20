@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 from src.schemas.input import CompetitorInput, CompetitorBasic, AnalysisGoal
 from src.schemas.profile import CompetitorProfile, Classification, BasicInfo, ProfileMetadata
-from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_CLASSIFY_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
+from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -53,19 +53,7 @@ class CollectorAgent:
                 logger.error("[collector] parse_goal 重试后仍然失败: %s, raw=%s", e2, result)
                 raise ValueError(f"Collector parse_goal validation failed after retry: {e2}") from e2
 
-    async def classify_competitor(self, name: str, goal: AnalysisGoal) -> dict:
-        """判断竞品类型"""
-        prompt = f"竞品名称：{name}\n分析目标：{goal.goal_type}，关注领域：{goal.focus_area or '未指定'}"
-        result = await self.llm.call_json(COLLECTOR_CLASSIFY_SYSTEM, prompt)
-        # 校验必要字段
-        if "competitor_type" not in result or "reason" not in result:
-            logger.warning("[collector] classify_competitor 返回缺少字段, 重试: %s", result)
-            result = await self.llm.call_json(COLLECTOR_CLASSIFY_SYSTEM, prompt)
-            if "competitor_type" not in result or "reason" not in result:
-                logger.error("[collector] classify_competitor 重试后仍缺少字段: %s", result)
-                result.setdefault("competitor_type", "核心竞品")
-                result.setdefault("reason", "无法判断，默认归类")
-        return result
+    _DEFAULT_CLASSIFICATION = {"competitor_type": "核心竞品", "reason": "默认分类（专源路由已移除）"}
 
     @staticmethod
     def _normalize_raw(raw: dict, classification: dict, sources: list[str], pipeline_trace: list[dict]) -> dict:
@@ -130,8 +118,8 @@ class CollectorAgent:
     async def _collect_single(
         self, comp: CompetitorBasic, goal: AnalysisGoal, scenario: str | None = None,
     ) -> CompetitorProfile:
-        """采集单个竞品：分类 → 类别路由 → scenario 化管线采集 → 抽取/占位。"""
-        classification = await self.classify_competitor(comp.name, goal)
+        """采集单个竞品：scenario 化管线搜索 → LLM 抽取结构化 profile → 占位兜底。"""
+        classification = self._DEFAULT_CLASSIFICATION
         merged_text, sources, trace, labeled_text = await self.pipeline.collect(
             comp.name, scenario=scenario,
         )

@@ -125,3 +125,20 @@ inspector 打回 collector 时只是用相同 query 重新搜索——结果几�
 实证：S1 trace `20260620-124505` 第一轮 collector 打回后重跑，搜索结果与首次完全相同
 
 ---
+
+## Q-2026-06-20-graph-执行依赖前端连接
+
+**状态**：未决
+
+`/api/v1/analyze` 是同步 HTTP 请求——graph 全链路（10-30 分钟）在一个 request 生命周期内执行。前端断连（息屏 / 浏览器超时 / Streamlit WebSocket 断）→ uvicorn cancel async task → graph 中断，已落盘的中间产物保留但流水线不完整。
+
+实证：S4 trace `20260620-181013-ac50bf` 在 inspector 完成后前端断连，should_continue 回边未执行。
+
+修复方向：
+- (a) **后台任务模式**：POST `/analyze` 立即返回 `{trace_id, status: "running"}`，graph 用 `asyncio.create_task` 后台执行；新增 `GET /status/{trace_id}` 轮询状态（pending/running/completed/failed）；前端改为提交后轮询 + 进度条
+- (b) 前端改为 SSE 流式推送（复杂度高，Streamlit 支持差）
+- (c) 仅加 keep-alive 心跳延长连接存活（治标不治本）
+
+推荐 (a)：改动集中在 routes.py + app.py，不动 graph 核心逻辑。
+
+---

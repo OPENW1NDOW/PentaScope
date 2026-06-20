@@ -158,7 +158,8 @@ def _route_evidence_issue(state: dict) -> str | None:
     coverage = len(used_urls & discovered_urls) / len(discovered_urls)
 
     prev_coverage = state.get("_prev_evidence_coverage")
-    if prev_coverage is not None and coverage >= prev_coverage - 0.05:
+    retry_count = state.get("retry_count", 0)
+    if retry_count >= 1 and prev_coverage is not None and coverage >= prev_coverage - 0.05:
         return "end"
 
     if len(discovered_urls) >= 8 and coverage < 0.5:

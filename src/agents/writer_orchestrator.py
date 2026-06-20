@@ -358,6 +358,7 @@ class WriterOrchestrator:
         competitor_recommendations: Any = None,
         prior_report_data: Optional[dict] = None,
         trace_id: str = "",
+        evidence_feedback: Any = None,
     ) -> BaseReport:
         """4 阶段编排入口。C1 在 phase 1 完成后 raise NotImplementedError。"""
         self._call_counter = 0
@@ -425,6 +426,7 @@ class WriterOrchestrator:
             analysis=analysis,
             discovered_urls=discovered_urls,
             warnings=warnings,
+            evidence_feedback=evidence_feedback,
         )
         logger.info("[writer] phase 3 完成, 进入 phase 4")
 
@@ -1161,6 +1163,7 @@ class WriterOrchestrator:
         analysis: Any,
         scenario_input: ScenarioInput,
         discovered_urls: list[str],
+        evidence_feedback: Any = None,
     ) -> AnalysisSection:
         """[v3-R18] Semaphore 限速；[v3-R04] 走 _llm_call_with_quota 不绕熔断。
 
@@ -1170,7 +1173,7 @@ class WriterOrchestrator:
         [C5 carry-over] Semaphore scope 仅包裹 LLM 调用本身——ctx 收集 / JSON 序列化 / format prompt
         都是纯 CPU 工作，不应占用并发名额（否则 N>concurrency 时纯 CPU 也被串行化）。
         """
-        _ = discovered_urls  # prompt 已在 phase 1/2 里灌过；本阶段 schema 校验靠 SourceRef.url 约束
+        _ = discovered_urls
 
         # 按 [v3-R20] SECTION_CONTEXT_MAP 取本 section 应吃的字段（CPU 工作，semaphore 外）
         ctx = {
@@ -1216,6 +1219,22 @@ class WriterOrchestrator:
             section_id_hint=section_id_hint,
             context_payload=ctx_json,
         )
+        if evidence_feedback and getattr(evidence_feedback, "available_urls", None):
+            url_list = "\n".join(f"   - {u}" for u in evidence_feedback.available_urls)
+            weak_list = (
+                "\n".join(f"   - {f}" for f in evidence_feedback.weak_fields)
+                if evidence_feedback.weak_fields
+                else "   （未指定具体字段）"
+            )
+            system_prompt += (
+                f"\n\n【质检反馈：溯源引用不足】\n"
+                f"上一轮 evidence 覆盖率 {evidence_feedback.coverage_pct:.0%}，以下字段引用不足：\n{weak_list}\n\n"
+                f"本次重写请确保上述字段对应段落至少引用 1 个 source_ref URL。\n"
+                f"可用的溯源 URL 列表（优先使用）：\n{url_list}\n"
+                f"在 source_refs 数组中以 {{\"url\": \"...\", \"title\": \"相关描述\"}} 格式引用。\n"
+                f"如果某段确实无法关联上述 URL，source_refs 留空 [] 即可。"
+            )
+
         user_prompt = "请基于上述上下文生成本节 JSON。"
 
         # 仅 LLM 调用进 semaphore，CPU 序列化在外面
@@ -1235,6 +1254,7 @@ class WriterOrchestrator:
         analysis: Any,
         discovered_urls: list[str],
         warnings: list[str],
+        evidence_feedback: Any = None,
     ) -> tuple[list[AnalysisSection], list[str]]:
         """[v3-R05] [v3-R12] [v3-R18] 并行 narrative + 占位降级 + 半数闸门。
 
@@ -1255,6 +1275,7 @@ class WriterOrchestrator:
                     analysis=analysis,
                     scenario_input=scenario_input,
                     discovered_urls=discovered_urls,
+                    evidence_feedback=evidence_feedback,
                 )
                 for st in section_types
             ),
@@ -1282,6 +1303,7 @@ class WriterOrchestrator:
                     analysis=analysis,
                     scenario_input=scenario_input,
                     discovered_urls=discovered_urls,
+                    evidence_feedback=evidence_feedback,
                 )
                 first_pass_results[i] = retry_result
                 logger.info("[writer] phase 3 section %s 重试成功", st)

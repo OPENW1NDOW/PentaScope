@@ -1969,3 +1969,46 @@ async def test_phase3_retry_once_then_still_fail_uses_placeholder():
 
     # 总调用 = 2 + 5 + 1 = 8
     assert mock_llm.call_json.call_count == 8
+
+
+# ---------- 测试：evidence_feedback 注入 phase 3 prompt ----------
+
+@pytest.mark.asyncio
+async def test_phase3_evidence_feedback_injects_urls():
+    """evidence_feedback 非空时 phase 3 prompt 包含 URL 列表和 weak_fields。"""
+    from src.schemas.feedback import EvidenceFeedback
+
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    ef = EvidenceFeedback(
+        available_urls=["https://example.com/a", "https://example.com/b"],
+        weak_fields=["key_findings[0].source_refs"],
+        coverage_pct=0.3,
+    )
+
+    phase1_outline = _make_valid_outline_dict("测试")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis", "roadmap_analysis"]
+    side_effects = [phase1_outline, phase2_payload] + [_make_valid_narrative_json(t) for t in s1_types]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    try:
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+            evidence_feedback=ef,
+        )
+    except Exception:
+        pass  # phase 4 可能因 fixture 不完整报错
+
+    # 验证 phase 3 LLM 调用的 system_prompt 包含 URL 和 weak_fields
+    narrative_calls = mock_llm.call_json.call_args_list[2:]  # 跳过 phase1 + phase2
+    assert len(narrative_calls) >= 1
+    for call in narrative_calls:
+        system_prompt = call[0][0]
+        assert "https://example.com/a" in system_prompt
+        assert "key_findings[0].source_refs" in system_prompt

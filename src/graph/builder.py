@@ -323,6 +323,21 @@ def build_graph(llm, http, parser, trace_writer=None):
         if ui.scenario == "S4" and ui.prior_trace_id:
             prior_data = _load_prior_report_data(ui.prior_trace_id)
 
+        # 检测 evidence 反馈
+        evidence_feedback = None
+        feedback = state.get("feedback")
+        if feedback and not feedback.passed:
+            ev_issues = [i for i in feedback.issues if getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES]
+            if ev_issues:
+                from src.schemas.feedback import EvidenceFeedback
+                ds = state.get("discovered_sources") or []
+                urls = sorted({d["url"] for d in ds if isinstance(d, dict) and d.get("url")})[:10]
+                evidence_feedback = EvidenceFeedback(
+                    available_urls=urls,
+                    weak_fields=[i.field for i in ev_issues],
+                    coverage_pct=state.get("_prev_evidence_coverage", 0.0),
+                )
+
         try:
             report = await writer.write(
                 scenario_input=ui,
@@ -332,6 +347,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 competitor_recommendations=state.get("competitor_recommendations"),
                 prior_report_data=prior_data,
                 trace_id=state.get("trace_id", ""),
+                evidence_feedback=evidence_feedback,
             )
             _save("03_report", report)
             return {"report": report, "current_node": "writer"}

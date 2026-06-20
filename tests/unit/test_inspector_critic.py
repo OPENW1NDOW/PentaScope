@@ -691,3 +691,25 @@ async def test_inspect_v3_r17_cap_removed(make_simple_report):
     await inspector.inspect(report, discovered_sources=[])
 
     assert report.metadata.quality_score == pytest.approx(1.0, abs=0.01)
+
+
+def test_evidence_feedback_model():
+    from src.schemas.feedback import EvidenceFeedback
+
+    ef = EvidenceFeedback(
+        available_urls=["https://a.com", "https://b.com"],
+        weak_fields=["key_findings[0].source_refs", "analysis_sections[2].narrative"],
+        coverage_pct=0.3,
+    )
+    assert len(ef.available_urls) == 2
+    assert ef.coverage_pct == 0.3
+    assert "key_findings" in ef.weak_fields[0]
+
+
+def test_evidence_feedback_defaults():
+    from src.schemas.feedback import EvidenceFeedback
+
+    ef = EvidenceFeedback()
+    assert ef.available_urls == []
+    assert ef.weak_fields == []
+    assert ef.coverage_pct == 0.0

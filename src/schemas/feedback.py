@@ -49,6 +49,13 @@ class RejectionFeedback(BaseModel):
     max_retries: int = Field(ge=0, default=2)
 
 
+class EvidenceFeedback(BaseModel):
+    """evidence 维度打回 writer 时携带的反馈信息。"""
+    available_urls: list[str] = Field(default_factory=list)
+    weak_fields: list[str] = Field(default_factory=list)
+    coverage_pct: float = 0.0
+
+
 class AgentMessage(BaseModel):
     """Agent 间消息"""
     from_agent: str

@@ -472,11 +472,24 @@ def build_graph(llm, http, parser, trace_writer=None):
         next_retry = state.get("retry_count", 0)
         if not feedback.passed:
             next_retry += 1
-        return {
+        result = {
             "feedback": feedback,
             "current_node": "inspector",
             "retry_count": next_retry,
         }
+        # 写入 evidence coverage 供下轮 _route_evidence_issue 判断退出条件
+        if not feedback.passed:
+            has_evidence_issue = any(
+                getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES
+                for i in feedback.issues
+            )
+            if has_evidence_issue and report is not None:
+                ds = state.get("discovered_sources") or []
+                d_urls = {_normalize_url(d["url"]) for d in ds if isinstance(d, dict) and d.get("url")}
+                u_urls = {_normalize_url(u) for u in _extract_used_urls(report)}
+                if d_urls:
+                    result["_prev_evidence_coverage"] = len(u_urls & d_urls) / len(d_urls)
+        return result
 
     def should_continue(state: AnalysisState) -> str:
         """v3 should_continue：按 feedback.issues[*].agent 路由回 collector/analyzer/writer，

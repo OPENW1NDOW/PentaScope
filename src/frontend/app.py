@@ -132,7 +132,7 @@ if st.button("开始分析", type="primary"):
                 response = httpx.post(
                     f"{API_BASE}/analyze",
                     json=body,
-                    timeout=1800,
+                    timeout=3600,
                 )
                 data = response.json()
 

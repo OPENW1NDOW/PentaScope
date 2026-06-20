@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 技术栈
 
-- **LLM**: Doubao-Seed-2.0-lite（通过 OpenAI SDK 调用火山方舟 Ark 端点）
+- **LLM**: 任意 OpenAI API 兼容模型（通过环境变量 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 配置）；支持分层调用（`MODEL_FAST` 轻任务 + `MODEL_PRO` 强推理）
 - **编排框架**: LangGraph（StateGraph）
 - **Agent 构建**: 纯 Python 函数 + LangGraph 节点（手写，不用 LangChain 封装）
 - **后端**: FastAPI + uvicorn
@@ -96,8 +96,11 @@ ruff check --fix src tests               # 自动修复
 ```
 
 运行需在项目根目录配置 `.env`：
-- `DOUBAO_API_KEY` 必填
+- `LLM_API_KEY` 必填（兼容旧名 `DOUBAO_API_KEY`）
+- `LLM_BASE_URL` 必填——OpenAI API 兼容端点地址
+- `LLM_MODEL` 必填——模型标识 / endpoint ID
 - `TAVILY_API_KEY` 选填——搜索主线 Tavily 的鉴权 key；缺 key 则跳过搜索主线、走占位降级（completeness=0.0）
+- `MODEL_FAST` / `MODEL_PRO` 选填——分层模型，不配则统一用 `LLM_MODEL`
 - 其余配置见 `src/utils/config.py` 默认值，writer 相关两项重点：
   - `WRITER_MAX_LLM_CALLS=18` — writer 4 阶段总 LLM 调用熔断阈值
   - `WRITER_NARRATIVE_CONCURRENCY=3` — Phase 3 narrative 并发上限
@@ -135,7 +138,7 @@ ruff check --fix src tests               # 自动修复
   Writer 阶段错误用三类自定义异常路由（避免依赖中文措辞子串匹配）：`WriterRouteToCollector`（回采集）/ `WriterRouteToWriter`（重写）/ `WriterRouteToEnd`（不可恢复终止）。
 
 - **工具**（`src/tools/`）：
-  - `llm_client` — Doubao 纯 prompt 约束 + 代码块剥离，**不**用 `response_format`（06-01 实测端点不支持）；带超时/重试；`call_json` 支持 `max_tokens`
+  - `llm_client` — OpenAI API 兼容客户端，纯 prompt 约束 + 代码块剥离 + JSON 4 层兜底解析；支持分层模型（fast/pro）；带超时/重试；`call_json` 支持 `max_tokens`
   - `http_client` — httpx async，同域名限速 `COLLECT_INTERVAL` + per-domain 锁
   - `sources` — Tavily 搜索源（仅此一家，06-07 弃用 SerpAPI；iTunes 06-06 因同名污染移除）
   - `quality_gate` — 采集质量闸门

@@ -90,7 +90,7 @@ collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑
 
 ## Q-2026-06-20-evidence-issue-路由错误
 
-**状态**：未决
+**状态**：已解决（2026-06-20 反馈闭环路由改进实施）
 
 S4 实测 evidence=2（source_refs 引用率不足）→ critic issues 类型 `url_not_discovered` → `_map_issue_type_to_agent` 映射到 collector → 打回 collector 重搜 → 搜索结果不变 → evidence 仍为 2。
 
@@ -109,7 +109,7 @@ S4 实测 evidence=2（source_refs 引用率不足）→ critic issues 类型 `u
 
 ## Q-2026-06-20-collector-打回无效重跑
 
-**状态**：未决
+**状态**：已解决（2026-06-20 反馈闭环路由改进实施）
 
 inspector 打回 collector 时只是用相同 query 重新搜索——结果几乎不变，纯浪费时间。应该把 feedback issues 转化为针对性补充搜索 query。
 

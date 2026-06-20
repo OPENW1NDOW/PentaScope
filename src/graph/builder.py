@@ -32,6 +32,8 @@ from src.schemas.input import CompetitorBasic
 from src.tools.sources import TavilySource
 from src.utils.config import settings
 from src.utils.paths import runs_dir
+from src.utils.url_normalize import normalize_url as _normalize_url
+from src.agents.writer_orchestrator import _collect_source_refs_recursive
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +124,6 @@ def _route_entry(state: AnalysisState) -> str:
     ui = state["user_input"]
     return "recommender" if ui.scenario == "S2" else "collector"
 
-
-from src.utils.url_normalize import normalize_url as _normalize_url
-from src.agents.writer_orchestrator import _collect_source_refs_recursive
 
 _EVIDENCE_ISSUE_TYPES = frozenset({"url_not_discovered", "source_mismatch", "source_irrelevant"})
 

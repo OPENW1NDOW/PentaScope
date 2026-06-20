@@ -16,6 +16,28 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-20（反馈闭环路由改进实施）
+- 完成：
+  - **反馈闭环路由 9 task 全部完成**：
+    1. URL 归一化函数（`src/utils/url_normalize.py`）
+    2. EvidenceFeedback Pydantic 模型（`src/schemas/feedback.py`）
+    3. `_route_evidence_issue` 路由函数（代码层 coverage 判断）
+    4. `should_continue` 集成 evidence 优先路由
+    5. `inspector_node` 写入 `_prev_evidence_coverage` 供退出判断
+    6. Writer evidence 反馈注入（phase 3 prompt 含 URL 列表 + weak_fields）
+    7. Collector `supplement_collect` 增量补采方法
+    8. `collector_node` 增量补采模式集成
+    9. 全量回归 494 passed + ruff 全通过
+  - **核心改进**：evidence issues 闭环区分"有源不用"（→writer 带 URL 反馈）vs"真缺源"（→collector 定向补采），消除无效盲跑
+  - **退出条件**：`_prev_evidence_coverage` 未提升时自动 end，防无限循环
+- 下一步（TODO，按优先级）：
+  1. **端到端验证**：跑 S1/S4 场景触发 evidence issue 验证新路由实际效果
+  2. **内部重试带纠正反馈**（Q-2026-06-20）：评估 ROI
+  3. **前端输入一致性 warning**（方案 C）
+- 阻塞：无
+
+---
+
 ## 2026-06-19（晚 / critic v1.2 修复 + narrative 轻重试 + max_tokens 调参 + JSON 鲁棒性）
 - 完成：
   - **critic v1.2.1 三问题修复**（commit `0059db5` + `03babf7`）：

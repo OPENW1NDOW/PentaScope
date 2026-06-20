@@ -139,6 +139,25 @@ if st.button("开始分析", type="primary"):
             "prior_trace_id": prior_trace_id or None,
         }
 
+        # 静默一致性检查：用户没点"AI 帮我选"时自动检测
+        if not st.session_state.get("picked_scenario") and analysis_context.strip():
+            try:
+                _check = httpx.post(
+                    f"{API_BASE}/pick-scenario",
+                    json={"user_text": analysis_context},
+                    timeout=15,
+                )
+                if _check.status_code == 200:
+                    _cj = _check.json()
+                    if _cj["scenario"] != scenario and _cj["confidence"] != "low":
+                        st.warning(
+                            f"AI 推断您的需求更适合 **{_cj['scenario']}**"
+                            f"（{_cj.get('rationale', '')}），当前选择为 **{scenario}**。"
+                            f"如需调整请刷新页面重新选择。"
+                        )
+            except Exception:
+                pass
+
         with st.spinner("正在分析中，请稍候..."):
             try:
                 response = httpx.post(

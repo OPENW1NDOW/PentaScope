@@ -75,6 +75,17 @@ scenario = st.selectbox(
     }[s],
 )
 
+# 场景一致性提示：用户手选与 AI 推荐不一致时显示
+_picked = st.session_state.get("picked_scenario")
+_picked_conf = st.session_state.get("pick_confidence", "low")
+_scenario_mismatch = _picked and _picked != scenario and _picked_conf != "low"
+if _scenario_mismatch:
+    st.warning(
+        f"AI 推断您的需求更适合 **{_picked}**"
+        f"（{st.session_state.get('pick_rationale', '')}），"
+        f"当前选择为 **{scenario}**。建议切换或重新确认。"
+    )
+
 # 按 scenario 切换字段
 industry = ""
 our_product_name = ""
@@ -117,6 +128,8 @@ if st.button("开始分析", type="primary"):
         st.error(f"{scenario} 场景必须至少填一个竞品")
     elif scenario != "S2" and not our_product_name.strip():
         st.error(f"{scenario} 场景必须填写我方产品名称")
+    elif _scenario_mismatch:
+        st.error(f"场景选择与 AI 推断不一致（推荐 {_picked}），请先调整场景或重新点「AI 帮我选场景」确认。")
     else:
         body = {
             "scenario": scenario,
@@ -127,16 +140,6 @@ if st.button("开始分析", type="primary"):
             "our_product_brief": our_product_brief or None,
             "prior_trace_id": prior_trace_id or None,
         }
-
-        # 输入一致性检查：对比 AI 推断场景与用户手选（仅显示 warning，不阻断）
-        _picked = st.session_state.get("picked_scenario")
-        _picked_conf = st.session_state.get("pick_confidence", "low")
-        if _picked and _picked != scenario and _picked_conf != "low":
-            _rationale = st.session_state.get("pick_rationale", "")
-            st.warning(
-                f"AI 推断您的需求更适合 **{_picked}**（{_rationale}），"
-                f"当前选择为 **{scenario}**。如需切换请先点上方「AI 帮我选场景」。"
-            )
 
         with st.spinner("正在分析中，请稍候..."):
             try:

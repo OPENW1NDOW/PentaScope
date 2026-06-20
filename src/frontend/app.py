@@ -127,6 +127,62 @@ if st.button("开始分析", type="primary"):
             "our_product_brief": our_product_brief or None,
             "prior_trace_id": prior_trace_id or None,
         }
+
+        # 输入一致性检查：对比 AI 推断场景与用户手选
+        _proceed = True
+        _picked = st.session_state.get("picked_scenario")
+        _picked_conf = st.session_state.get("pick_confidence", "low")
+        # 仅在用户未采纳 AI 推荐时检查（已采纳 = selectbox 值与推荐一致）
+        if _picked and _picked != scenario and _picked_conf != "low":
+            _rationale = st.session_state.get("pick_rationale", "")
+            st.warning(
+                f"AI 推断您的需求更适合 **{_picked}**（{_rationale}），"
+                f"当前选择为 **{scenario}**。如确认无误可继续。"
+            )
+            col_go, col_switch = st.columns(2)
+            with col_go:
+                if st.button("继续使用当前场景", key="confirm_scenario"):
+                    _proceed = True
+            with col_switch:
+                if st.button(f"切换到 {_picked}", key="switch_scenario"):
+                    st.session_state["picked_scenario"] = _picked
+                    st.rerun()
+            if not st.session_state.get("confirm_scenario"):
+                _proceed = False
+        elif not _picked and analysis_context.strip():
+            # 用户没点过"AI 帮我选"，自动做一次静默检查
+            try:
+                _check = httpx.post(
+                    f"{API_BASE}/pick-scenario",
+                    json={"user_text": analysis_context},
+                    timeout=15,
+                )
+                if _check.status_code == 200:
+                    _cj = _check.json()
+                    if _cj["scenario"] != scenario and _cj["confidence"] != "low":
+                        st.warning(
+                            f"AI 推断您的需求更适合 **{_cj['scenario']}**"
+                            f"（{_cj.get('rationale', '')}），当前选择为 **{scenario}**。"
+                        )
+                        st.session_state["picked_scenario"] = _cj["scenario"]
+                        st.session_state["pick_confidence"] = _cj["confidence"]
+                        st.session_state["pick_rationale"] = _cj.get("rationale", "")
+                        col_go2, col_switch2 = st.columns(2)
+                        with col_go2:
+                            if st.button("继续使用当前场景", key="confirm_scenario_auto"):
+                                _proceed = True
+                        with col_switch2:
+                            if st.button(f"切换到 {_cj['scenario']}", key="switch_scenario_auto"):
+                                st.session_state["picked_scenario"] = _cj["scenario"]
+                                st.rerun()
+                        if not st.session_state.get("confirm_scenario_auto"):
+                            _proceed = False
+            except Exception:
+                pass  # 静默检查失败不阻断
+
+        if not _proceed:
+            st.stop()
+
         with st.spinner("正在分析中，请稍候..."):
             try:
                 response = httpx.post(

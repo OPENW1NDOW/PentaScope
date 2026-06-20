@@ -292,7 +292,7 @@ async def test_extract_profile_retry_includes_error_feedback():
     mock_pipeline = MagicMock()
     agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
 
-    result = await agent._extract_profile(
+    await agent._extract_profile(
         name="测试产品",
         text="测试正文内容" * 10,
         classification={"competitor_type": "核心竞品", "reason": "测试"},

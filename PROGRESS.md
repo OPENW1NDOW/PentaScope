@@ -52,12 +52,23 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
   - **JSON 鲁棒性追加：raw_decode 处理 Extra data**（commit `897010a`）
   - **collector Feature.description max_length 200→500**（commit `fa5bbf9`）
   - **OPEN_QUESTIONS 清理**：7 条关闭/并入 5 条，仅剩 2 条（inspector issue 丢失观察中 + query 已修待验证）
-- 进行中：无
+- 进行中：反馈闭环路由改进（spec v2 已落 + plan 9 task 已写，等下次 session 执行）
+- 本 session 额外完成：
+  - **S1-S4 端到端验证**（S1 0.800 / S2 1.000 / S3 0.833 / S4 0.633 max_retries）
+  - **分层模型配置**（MODEL_FAST/MODEL_PRO 环境变量 + builder 分层注入）
+  - **代码命名统一**（DOUBAO_* → LLM_* 通用配置，兼容旧 .env）
+  - **collector classify 步骤删除**（专源路由已移除，省每竞品 1 次无效 LLM 调用）
+  - **analyzer max_tokens 8192→16384**（S2 五竞品实测撞满）
+  - **phase 3 narrative max_tokens 8192→12288**（S1 jtbd_analysis 实测撞满）
+  - **前端超时 1800s→3600s**（S1 反馈闭环 32 分钟超时）
+  - **TESTING_GUIDE 测试用例全部改用国产产品**
+  - **README / CLAUDE.md 去 Doubao 硬编码**
+  - **反馈闭环路由 spec v2**（双轮 doubt-driven：单模型 12 条 + codex 跨模型 30 条，合并 9 条 actionable）
+  - **反馈闭环路由 plan**（9 task TDD，`docs/superpowers/plans/2026-06-20-feedback-loop-routing.md`）
 - 下一步（TODO，按优先级）：
-  1. **反馈闭环路由修正**（Q-2026-06-20-evidence-issue-路由错误）：evidence issues 区分"writer 没用已有 URL"vs"URL 真不存在"，前者打回 writer 不打回 collector
-  2. **collector 打回定向补采**（Q-2026-06-20-collector-打回无效重跑）：打回 collector 时从 feedback issues 提取缺什么 → 生成针对性补充 query
-  3. **内部重试带纠正反馈**（Q-2026-06-20-内部重试应带纠正反馈）：collector/analyzer/narrative 内部 ValidationError 重试时注入错误摘要
-  4. **前端输入一致性 warning**（方案 C，Cooper 拍板）：分析意图 vs 结构化字段冲突时弹 warning 不阻断
+  1. **执行反馈闭环路由 plan 9 task**（推荐 subagent-driven 或新 session inline）
+  2. **内部重试带纠正反馈**（Q-2026-06-20）：等 #1 做完后评估 ROI
+  3. **前端输入一致性 warning**（方案 C）
 - 阻塞：无
 - 安全提醒：无新增 key
 

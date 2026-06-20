@@ -85,16 +85,18 @@ inspector LLM 返回的 issue list 部分条目自身违反 `FeedbackIssue` sche
 
 ## Q-2026-06-20-内部重试应带纠正反馈
 
-**状态**：未决
+**状态**：未决（等 S1-S4 跑完看新 ValidationError 频率再决定优先级）
 
-collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑相同 prompt，不带任何纠正信息。LLM 大概率犯同样的错——重试只是"赌概率"而非"定向修正"。
+collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑相同 prompt，不带纠正信息。从实测看部分失败是**系统性**的（LLM 写太长/枚举值错），不是随机抖动——纯重试靠运气，加反馈修复率更高。
 
-writer phase 1/2 已经做对了（`【上次校验失败，请逐条修复】\n{错误摘要}`），其他 agent 应该对齐。
+但字符约束退役后 ValidationError 频率预期大幅下降，ROI 需要重新评估。
 
-待做：
+待做（如果频率仍高）：
 - collector extract：ValidationError 时告诉 LLM "哪个字段超长/缺失，请精简/补全"
 - analyzer：ValidationError 时告诉 LLM "哪个字段违规，请修正"
 - phase 3 narrative：ValidationError 时告诉 LLM "section_id/narrative 哪里不合规"
+
+参照：writer phase 1/2 已做（`【上次校验失败，请逐条修复】\n{错误摘要}`），效果验证有效
 
 ---
 

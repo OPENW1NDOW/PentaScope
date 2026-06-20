@@ -157,7 +157,7 @@ class AnalyzerAgent:
             + self._format_feedback(feedback_issues)
         )
         result = self._backfill_source_urls(
-            self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt, max_tokens=8192)),
+            self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt, max_tokens=16384)),
             profiles,
         )
 
@@ -166,7 +166,7 @@ class AnalyzerAgent:
         except ValidationError as e:
             logger.warning("[analyzer] Pydantic 校验失败, 重试: %s", e)
             result = self._backfill_source_urls(
-                self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt, max_tokens=8192)),
+                self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt, max_tokens=16384)),
                 profiles,
             )
             try:

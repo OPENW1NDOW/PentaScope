@@ -45,10 +45,18 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
     - 放宽 S1/S5 vendor_profiles.strengths ≥2 → ≥1
     - 保留列表结构性约束 + URL min_length=8 + max_length 防爆
     - 质量保障完全由 critic 4 维 rubric 评分承担
+  - **collector 搜索 query 策略优化**（commit `9e66079`）：
+    - 每场景从 1 条学术化 query → 3 条产品实操语言 query
+    - S1 功能特性/vs 竞品对比/用户评价；S2 公司融资/市场份额/行业排名；S3 定价/pricing plans/免费付费区别；S4 动态/changelog/融资新闻；S5 产品定位/vs 竞品/官网介绍
+    - 3 query 并发搜索，预计有效结果从 5 条提升到 10-12 条
+  - **JSON 鲁棒性追加：raw_decode 处理 Extra data**（commit `897010a`）
+  - **collector Feature.description max_length 200→500**（commit `fa5bbf9`）
+  - **OPEN_QUESTIONS 清理**：7 条关闭/并入 5 条，仅剩 2 条（inspector issue 丢失观察中 + query 已修待验证）
 - 进行中：无
 - 下一步（TODO，按优先级）：
-  1. **collector 搜索策略优化**（Q-2026-06-19-scenario-query-低相关）：每场景多条 query + 产品实操语言替代学术术语
-  2. **max_tokens 调参验证**：多场景真跑确认 S1-S4 也零截断
+  1. **多场景端到端验证**：S1-S5 各跑一次确认搜索优化 + 字符约束退役 + max_tokens 扩充三者协同效果
+  2. **分层模型调用**（06-17 待办）：collector/analyzer 用快模型，writer narrative 用强模型
+  3. **analyzer 并行拆分**（06-17 待办）：4 竞品拆 2×2 并发
 - 阻塞：无
 - 安全提醒：无新增 key
 

@@ -136,13 +136,23 @@ def build_graph(llm, http, parser, trace_writer=None):
     """
     _ = parser  # 旧签名保留，pipeline 自带解析逻辑，parser 不再透传
 
+    # 分层模型：fast（collector/recommender）+ pro（analyzer/writer/inspector）
+    # 外部传入的 llm 作为 fallback（测试 mock 时只传一个 llm 即覆盖全部）
+    from src.tools.llm_client import LLMClient
+    if isinstance(llm, LLMClient) and settings.MODEL_FAST != settings.MODEL_PRO:
+        llm_fast = LLMClient(model_ep=settings.MODEL_FAST)
+        llm_pro = LLMClient(model_ep=settings.MODEL_PRO)
+    else:
+        llm_fast = llm
+        llm_pro = llm
+
     search_source = TavilySource(http=http, api_key=settings.TAVILY_API_KEY)
     pipeline = CollectionPipeline(search_source=search_source)
-    collector = CollectorAgent(llm=llm, pipeline=pipeline)
-    analyzer = AnalyzerAgent(llm=llm)
-    writer = WriterOrchestrator(llm=llm)  # v3: WriterOrchestrator 替代 WriterAgent
-    inspector = InspectorAgent(llm=llm)
-    recommender = RecommenderAgent(llm=llm, search_source=search_source)  # v3: S2 专用
+    collector = CollectorAgent(llm=llm_fast, pipeline=pipeline)
+    analyzer = AnalyzerAgent(llm=llm_pro)
+    writer = WriterOrchestrator(llm=llm_pro)
+    inspector = InspectorAgent(llm=llm_pro)
+    recommender = RecommenderAgent(llm=llm_fast, search_source=search_source)
 
     # 记录节点执行与路由决策序列（可观测性追溯）
     node_trace: list = []

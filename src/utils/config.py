@@ -16,6 +16,9 @@ class Settings:
     DOUBAO_API_KEY: str = os.getenv("DOUBAO_API_KEY", "")
     DOUBAO_BASE_URL: str = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
     DOUBAO_MODEL_EP: str = os.getenv("DOUBAO_MODEL_EP", "ep-20260514111325-xjmj7")
+    # 分层模型：FAST 用于 collector/outline 等简单任务，PRO 用于 analyzer/writer/critic 等强推理任务
+    MODEL_FAST: str = os.getenv("MODEL_FAST", os.getenv("DOUBAO_MODEL_EP", "ep-20260514111325-xjmj7"))
+    MODEL_PRO: str = os.getenv("MODEL_PRO", os.getenv("DOUBAO_MODEL_EP", "ep-20260514111325-xjmj7"))
     LLM_TIMEOUT: int = 360
     LLM_MAX_RETRIES: int = 2
     HTTP_TIMEOUT: int = 120

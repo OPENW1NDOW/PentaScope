@@ -100,6 +100,25 @@ collector / analyzer / phase 3 narrative / inspector 内部重试都是纯重跑
 
 ---
 
+## Q-2026-06-20-evidence-issue-路由错误
+
+**状态**：未决
+
+S4 实测 evidence=2（source_refs 引用率不足）→ critic issues 类型 `url_not_discovered` → `_map_issue_type_to_agent` 映射到 collector → 打回 collector 重搜 → 搜索结果不变 → evidence 仍为 2。
+
+问题：**evidence 低不是"搜不到信息"而是"writer 没把已有 URL 写进 source_refs"**——应该打回 writer 让它重写时多引用，而非打回 collector 重搜。
+
+实证：S4 trace `20260620-153459-f19d5f` 两轮 evidence 都是 2，第二轮 specificity/actionability 反而退步（4→3），闭环有害。
+
+修复方向：
+- (a) 短期：修 `_map_issue_type_to_agent`——`url_not_discovered` 改映射到 writer（让 writer 重写时优先使用 discovered_urls 列表中的 URL）
+- (b) 中期：writer narrative prompt 加"每段必须引用至少 1 个 source_ref URL"指令
+- (c) 区分"URL 根本不存在"（真的需要 collector 补采）vs"URL 存在但 writer 没用"（应打回 writer）
+
+关联：Q-2026-06-20-collector-打回无效重跑
+
+---
+
 ## Q-2026-06-20-collector-打回无效重跑
 
 **状态**：未决

@@ -27,6 +27,13 @@ class AnalyzerAgent:
                 return a
         return default
 
+    @staticmethod
+    def _serialize_validation_error(e: ValidationError, max_chars: int = 1500) -> str:
+        errs = e.errors()[:5]
+        simplified = [{"loc": list(err["loc"]), "msg": err["msg"], "type": err["type"]} for err in errs]
+        text = json.dumps(simplified, ensure_ascii=False)
+        return text[:max_chars]
+
     @classmethod
     def _normalize(cls, result: dict) -> dict:
         """规整 LLM 输出中的 Literal 枚举字段，避免主语污染导致校验失败"""
@@ -165,8 +172,10 @@ class AnalyzerAgent:
             analysis = CompetitiveAnalysis(**result)
         except ValidationError as e:
             logger.warning("[analyzer] Pydantic 校验失败, 重试: %s", e)
+            error_summary = self._serialize_validation_error(e)
+            retry_prompt = f"{prompt}\n\n【上次校验失败，请逐条修复】\n{error_summary}"
             result = self._backfill_source_urls(
-                self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, prompt, max_tokens=16384)),
+                self._normalize(await self.llm.call_json(ANALYZER_SYSTEM, retry_prompt, max_tokens=16384)),
                 profiles,
             )
             try:

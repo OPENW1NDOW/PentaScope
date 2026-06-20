@@ -274,3 +274,35 @@ async def test_collect_returns_discovered_sources_with_urls():
     # URL 不能为空字符串
     for s in discovered_sources:
         assert s["url"], f"discovered_sources URL 不应为空: {s}"
+
+
+@pytest.mark.asyncio
+async def test_extract_profile_retry_includes_error_feedback():
+    """_extract_profile 第一次 ValidationError 时，重试 prompt 应包含错误摘要。"""
+    mock_llm = MagicMock()
+    # 第一次返回缺少 basic_info.name 的不合规数据
+    bad_raw = {"basic_info": {"company": "X公司"}}
+    # 第二次返回合规数据
+    good_raw = {
+        "basic_info": {"name": "测试产品", "company": "X公司"},
+        "classification": {"competitor_type": "核心竞品", "reason": "测试"},
+    }
+    mock_llm.call_json = AsyncMock(side_effect=[bad_raw, good_raw])
+
+    mock_pipeline = MagicMock()
+    agent = CollectorAgent(llm=mock_llm, pipeline=mock_pipeline)
+
+    result = await agent._extract_profile(
+        name="测试产品",
+        text="测试正文内容" * 10,
+        classification={"competitor_type": "核心竞品", "reason": "测试"},
+        sources=["https://example.com"],
+        pipeline_trace=[],
+    )
+
+    # 验证重试时调用了 2 次 LLM
+    assert mock_llm.call_json.call_count == 2
+    # 验证第二次调用的 prompt 包含错误反馈信息
+    second_call_args = mock_llm.call_json.call_args_list[1]
+    retry_prompt = second_call_args[0][1]  # positional arg 1 = user prompt
+    assert "校验失败" in retry_prompt or "修复" in retry_prompt

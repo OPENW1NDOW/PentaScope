@@ -263,3 +263,32 @@ async def test_analyze_without_scenario_input_keeps_backward_compat():
     # 不传 scenario_input
     result = await agent.analyze([profile])
     assert result is not None  # 没崩即通过
+
+
+@pytest.mark.asyncio
+async def test_analyze_retry_includes_error_feedback():
+    """analyzer 第一次 ValidationError 时，重试 prompt 应包含错误摘要。"""
+    from src.schemas.profile import CompetitorProfile, BasicInfo, Classification, ProfileMetadata
+
+    # 两次都返回不合规数据——我们只关心第二次 prompt 是否注入了错误信息
+    bad_result = {"swot": {"strengths": []}}
+
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[bad_result, bad_result])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name="XX"),
+        metadata=ProfileMetadata(collected_at="t", data_sources=["https://a.com"]),
+    )
+
+    with pytest.raises(ValueError):
+        await agent.analyze([profile])
+
+    # 验证 LLM 被调用了 2 次
+    assert mock_llm.call_json.call_count == 2
+    # 验证第二次调用的 prompt 包含错误反馈
+    second_call_args = mock_llm.call_json.call_args_list[1]
+    retry_prompt = second_call_args[0][1]  # positional arg 1 = user prompt
+    assert "校验失败" in retry_prompt or "修复" in retry_prompt

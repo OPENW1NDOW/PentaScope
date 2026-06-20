@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from pydantic import ValidationError
@@ -93,13 +94,22 @@ class CollectorAgent:
             return CompetitorProfile(**raw)
         except ValidationError as e:
             logger.warning("[collector] _extract_profile 校验失败, 重试: %s", e)
-            raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, prompt),
+            error_summary = self._serialize_validation_error(e)
+            retry_prompt = f"{prompt}\n\n【上次校验失败，请逐条修复】\n{error_summary}"
+            raw = self._normalize_raw(await self.llm.call_json(COLLECTOR_EXTRACT_SYSTEM, retry_prompt),
                                       classification, sources, pipeline_trace)
             try:
                 return CompetitorProfile(**raw)
             except ValidationError as e2:
                 logger.error("[collector] _extract_profile 重试后仍然失败: %s, raw=%s", e2, raw)
                 raise ValueError(f"Collector _extract_profile validation failed after retry: {e2}") from e2
+
+    @staticmethod
+    def _serialize_validation_error(e: ValidationError, max_chars: int = 1500) -> str:
+        errs = e.errors()[:5]
+        simplified = [{"loc": list(err["loc"]), "msg": err["msg"], "type": err["type"]} for err in errs]
+        text = json.dumps(simplified, ensure_ascii=False)
+        return text[:max_chars]
 
     @staticmethod
     def _calc_completeness_static(data: dict) -> float:

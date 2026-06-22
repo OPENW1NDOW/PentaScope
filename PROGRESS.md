@@ -16,6 +16,20 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-22（evidence 反馈闭环 v2 + 截断阈值调整）
+- 完成：
+  - **v1 代码全量清理**：删除 _route_evidence_issue / EvidenceFeedback / supplement_collect / _prev_evidence_coverage 等错误设计代码（-484 行）
+  - **路由映射修正**：`source_mismatch` 从 collector 改为 writer（78% 的 evidence issues 是 writer 引用错误）
+  - **按竞品分组传 URL**：phase 2 + phase 3 prompt 注入 `{竞品名: [URLs]}` 格式 + "跨竞品引用"禁止规则
+  - **打回精确反馈**：inspector 打回 writer 时传原始 reason/suggestion（"用 A 的 URL 证明 B 的论断"），而非泛化的"覆盖率低"
+  - **截断阈值 30→50 万**：覆盖金山办公等大厂竞品（实测 35-50 万字符范围）
+- 下一步（TODO）：
+  1. **端到端验证**：跑 S4 验证 evidence 评分是否提升（目标 ≥3）
+  2. **前端输入一致性 warning**：重新评估需求和方案
+- 阻塞：无
+
+---
+
 ## 2026-06-20（内部重试纠正反馈 + 前端输入一致性 warning）
 - 完成：
   - **内部重试带纠正反馈**：

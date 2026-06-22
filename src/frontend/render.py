@@ -94,6 +94,38 @@ def _t(val) -> str:
     return _TRANSLATIONS.get(val, val)
 
 
+# ============ 章节编号 ============
+
+_CN_NUMBERS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+               "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
+
+
+class _HeadingCounter:
+    """报告章节编号计数器：一、/（一）/ 1. 三级编号"""
+
+    def __init__(self):
+        self.l2 = 0
+        self.l3 = 0
+
+    def reset(self):
+        self.l2 = 0
+        self.l3 = 0
+
+    def h2(self, title: str) -> str:
+        self.l2 += 1
+        self.l3 = 0
+        prefix = _CN_NUMBERS[self.l2 - 1] if self.l2 <= len(_CN_NUMBERS) else str(self.l2)
+        return f"{prefix}、{title}"
+
+    def h3(self, title: str) -> str:
+        self.l3 += 1
+        prefix = _CN_NUMBERS[self.l3 - 1] if self.l3 <= len(_CN_NUMBERS) else str(self.l3)
+        return f"（{prefix}）{title}"
+
+
+_hc = _HeadingCounter()
+
+
 # ============ F3 图表（Plotly） ============
 
 _FIVE_FORCES_INTENSITY_NUM = {"low": 1, "medium": 3, "high": 5}
@@ -270,7 +302,7 @@ def _render_source_refs(refs: list[dict] | None, *, prefix: str = "来源") -> N
 def _render_at_a_glance(items: list[str]) -> None:
     if not items:
         return
-    st.subheader("核心要点")
+    st.header(_hc.h2("核心要点"))
     for it in items:
         st.markdown(f"- {it}")
 
@@ -279,7 +311,7 @@ def _render_executive_summary(es: dict) -> None:
     """5 段式执行摘要（v3 BaseReport 替代旧 4 段）"""
     if not es:
         return
-    st.header("执行摘要")
+    st.header(_hc.h2("执行摘要"))
     for label, key in [
         ("背景定位", "context"),
         ("核心论断", "core_thesis"),
@@ -287,25 +319,25 @@ def _render_executive_summary(es: dict) -> None:
     ]:
         val = es.get(key, "")
         if val:
-            st.subheader(label)
+            st.subheader(_hc.h3(label))
             st.write(val)
 
     kfb = es.get("key_findings_brief") or []
     if kfb:
-        st.subheader("关键发现速览")
+        st.subheader(_hc.h3("关键发现速览"))
         for f in kfb:
             st.markdown(f"- {f}")
 
     pf = es.get("path_forward") or []
     if pf:
-        st.subheader("行动路径")
+        st.subheader(_hc.h3("行动路径"))
         for p in pf:
             st.markdown(f"- {p}")
 
 
 def _render_scope_and_methodology(scope: dict, methodology: dict) -> None:
     if scope:
-        st.subheader("分析范围")
+        st.subheader(_hc.h3("分析范围"))
         st.markdown(f"**竞品**：{', '.join(scope.get('competitors', []))}")
         st.markdown(f"**时间窗**：{scope.get('time_window', '')}")
         regions = scope.get("regions") or []
@@ -335,7 +367,7 @@ def _render_scope_and_methodology(scope: dict, methodology: dict) -> None:
 def _render_key_findings(findings: list[dict]) -> None:
     if not findings:
         return
-    st.header("关键发现")
+    st.header(_hc.h2("关键发现"))
     for i, f in enumerate(findings, 1):
         st.markdown(f"**发现 {i}**：{f.get('statement', '')}")
         ev = f.get("evidence", "")
@@ -351,11 +383,11 @@ def _render_key_findings(findings: list[dict]) -> None:
 def _render_analysis_sections(sections: list[dict]) -> None:
     if not sections:
         return
-    st.header("详细章节")
+    st.header(_hc.h2("详细章节"))
     for sec in sections:
         heading = sec.get("heading", "")
         narrative = sec.get("narrative", "") or ""
-        st.subheader(heading)
+        st.subheader(_hc.h3(heading))
         st.markdown(narrative)
         _render_source_refs(sec.get("source_refs"))
 
@@ -366,7 +398,7 @@ def _render_swot(swot: dict) -> None:
     has_any = any(swot.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats"))
     if not has_any:
         return
-    st.header("SWOT 分析")
+    st.header(_hc.h2("SWOT 分析"))
     cols = st.columns(2)
     quadrants = [
         (cols[0], "strengths", "优势 S"),
@@ -377,7 +409,7 @@ def _render_swot(swot: dict) -> None:
     for col, key, label in quadrants:
         with col:
             entries = swot.get(key) or []
-            st.subheader(label)
+            st.subheader(_hc.h3(label))
             for e in entries:
                 st.markdown(f"- **{e.get('point', '')}**")
                 ev = e.get("evidence", "")
@@ -389,7 +421,7 @@ def _render_swot(swot: dict) -> None:
 def _render_recommendations(recs: list[dict]) -> None:
     if not recs:
         return
-    st.header("行动建议")
+    st.header(_hc.h2("行动建议"))
     timeline_groups: dict[str, list[dict]] = {"immediate": [], "short_term": [], "long_term": []}
     for r in recs:
         tl = r.get("timeline", "long_term")
@@ -402,7 +434,7 @@ def _render_recommendations(recs: list[dict]) -> None:
         items = timeline_groups.get(tl_key) or []
         if not items:
             continue
-        st.subheader(tl_label)
+        st.subheader(_hc.h3(tl_label))
         # grid 布局：每行 2 张卡
         for i in range(0, len(items), 2):
             cols = st.columns(2)
@@ -555,7 +587,7 @@ def render_scenario_payload(payload: dict | None) -> None:
     scenario_type = payload.get("scenario_type", "")
     fn = globals().get(f"_render_{scenario_type.lower()}_payload")
     if fn is None:
-        st.header("场景专属数据")
+        st.header(_hc.h2("场景专属数据"))
         st.caption(f"未知场景：`{scenario_type}`，回退原始 JSON")
         st.json(payload)
         return
@@ -565,12 +597,12 @@ def render_scenario_payload(payload: dict | None) -> None:
 # ============ S1 功能迭代 ============
 
 def _render_s1_payload(p: dict) -> None:
-    st.header("S1 功能迭代分析")
+    st.header(_hc.h2("S1 功能迭代分析"))
 
     # vendor_profiles 表
     vps = p.get("vendor_profiles") or []
     if vps:
-        st.subheader("竞品画像（Forrester Wave 风格）")
+        st.subheader(_hc.h3("竞品画像（Forrester Wave 风格）"))
         rows = [
             {
                 "竞品": v.get("competitor_name", ""),
@@ -587,7 +619,7 @@ def _render_s1_payload(p: dict) -> None:
     # feature_matrix 表（categories × competitors 评分）
     fm = p.get("feature_matrix") or {}
     if fm.get("categories"):
-        st.subheader("功能矩阵")
+        st.subheader(_hc.h3("功能矩阵"))
         st.caption(
             f"我方：{fm.get('our_product_name', '')} | "
             f"竞品：{', '.join(fm.get('competitors', []))} | "
@@ -613,13 +645,13 @@ def _render_s1_payload(p: dict) -> None:
     # 雷达图（F3）
     radar_scores = p.get("radar_scores") or []
     if radar_scores:
-        st.subheader("5 维雷达图")
+        st.subheader(_hc.h3("5 维雷达图"))
         _render_chart_or_skip(_radar_chart_s1(radar_scores))
 
     # tier1_disqualifiers
     t1d = p.get("tier1_disqualifiers") or []
     if t1d:
-        st.subheader("Tier 1 一票否决项")
+        st.subheader(_hc.h3("Tier 1 一票否决项"))
         for d in t1d:
             failing = ", ".join(d.get("competitors_failing") or [])
             st.markdown(f"- **{d.get('feature', '')}**：{failing} 不达标")
@@ -628,7 +660,7 @@ def _render_s1_payload(p: dict) -> None:
     # white_space_features
     ws_features = p.get("white_space_features") or []
     if ws_features:
-        st.subheader("无人触及功能（white space）")
+        st.subheader(_hc.h3("无人触及功能（white space）"))
         st.dataframe([
             {
                 "功能": w.get("feature", ""),
@@ -641,7 +673,7 @@ def _render_s1_payload(p: dict) -> None:
     # job_statement
     js = p.get("job_statement") or {}
     if js:
-        st.subheader("用户工作 JTBD")
+        st.subheader(_hc.h3("用户工作 JTBD"))
         st.markdown(
             f"**情境**：{js.get('situation', '')}\n\n"
             f"**动机**：{js.get('motivation', '')}\n\n"
@@ -652,7 +684,7 @@ def _render_s1_payload(p: dict) -> None:
     # feature_gaps
     fgs = p.get("feature_gaps") or []
     if fgs:
-        st.subheader("功能差距")
+        st.subheader(_hc.h3("功能差距"))
         st.dataframe([
             {
                 "功能": g.get("feature_name", ""),
@@ -668,7 +700,7 @@ def _render_s1_payload(p: dict) -> None:
     # roadmap_recommendations
     rr = p.get("roadmap_recommendations") or {}
     if rr:
-        st.subheader("路线图建议")
+        st.subheader(_hc.h3("路线图建议"))
         cols = st.columns(3)
         with cols[0]:
             st.markdown("**必须建设 (must_build)**")
@@ -703,12 +735,12 @@ def _render_market_value(label: str, mv: dict) -> None:
 
 
 def _render_s2_payload(p: dict) -> None:
-    st.header("S2 市场进入分析")
+    st.header(_hc.h2("S2 市场进入分析"))
 
     # market_sizing
     ms = p.get("market_sizing") or {}
     if ms:
-        st.subheader("市场规模 TAM/SAM/SOM")
+        st.subheader(_hc.h3("市场规模 TAM/SAM/SOM"))
         cols = st.columns(3)
         with cols[0]:
             _render_market_value("TAM", ms.get("tam") or {})
@@ -723,7 +755,7 @@ def _render_s2_payload(p: dict) -> None:
     # five_forces
     ff = p.get("five_forces") or {}
     if ff:
-        st.subheader("Porter 五力分析")
+        st.subheader(_hc.h3("Porter 五力分析"))
         _render_chart_or_skip(_radar_chart_five_forces(ff))
         forces_map = [
             ("new_entrants", "新进入者威胁"),
@@ -748,7 +780,7 @@ def _render_s2_payload(p: dict) -> None:
     # players
     players = p.get("players") or []
     if players:
-        st.subheader("市场玩家")
+        st.subheader(_hc.h3("市场玩家"))
         st.caption(f"市场集中度：{_t(p.get('market_concentration', ''))}")
         st.dataframe([
             {
@@ -770,7 +802,7 @@ def _render_s2_payload(p: dict) -> None:
     # consumer_segments
     segs = p.get("consumer_segments") or []
     if segs:
-        st.subheader("消费者分群")
+        st.subheader(_hc.h3("消费者分群"))
         st.dataframe([
             {
                 "分群": s.get("name", ""),
@@ -787,7 +819,7 @@ def _render_s2_payload(p: dict) -> None:
     # key_trends
     trends = p.get("key_trends") or []
     if trends:
-        st.subheader("关键趋势")
+        st.subheader(_hc.h3("关键趋势"))
         st.dataframe([
             {
                 "趋势": t.get("trend_name", ""),
@@ -801,7 +833,7 @@ def _render_s2_payload(p: dict) -> None:
     # entry_strategy
     es = p.get("entry_strategy") or {}
     if es:
-        st.subheader("进入策略")
+        st.subheader(_hc.h3("进入策略"))
         st.markdown(f"**推荐模式**：{_t(es.get('recommended_mode', ''))}")
         st.markdown(f"**目标分群**：{', '.join(es.get('target_segments') or [])}")
         st.markdown(f"**初始定位**：{es.get('initial_positioning', '')}")
@@ -822,7 +854,7 @@ def _render_s2_payload(p: dict) -> None:
     # competitor_recommendations（recommender 产出）
     rec = p.get("competitor_recommendations") or {}
     if rec:
-        st.subheader("Recommender 推荐玩家")
+        st.subheader(_hc.h3("Recommender 推荐玩家"))
         st.caption(f"行业：{rec.get('user_provided_industry', '')} | 方法：{rec.get('selection_method', '')}")
         rcs = rec.get("recommended_competitors") or []
         st.dataframe([
@@ -839,12 +871,12 @@ def _render_s2_payload(p: dict) -> None:
 # ============ S3 定价策略 ============
 
 def _render_s3_payload(p: dict) -> None:
-    st.header("S3 定价策略分析")
+    st.header(_hc.h2("S3 定价策略分析"))
 
     # pricing_baseline
     pb = p.get("pricing_baseline") or {}
     if pb:
-        st.subheader("当前定价基线")
+        st.subheader(_hc.h3("当前定价基线"))
         if pb.get("current_pricing_model"):
             st.markdown(f"**定价模式**：{_t(pb.get('current_pricing_model', ''))}")
         if pb.get("current_tier_count"):
@@ -860,7 +892,7 @@ def _render_s3_payload(p: dict) -> None:
     # value_drivers
     vds = p.get("value_drivers") or []
     if vds:
-        st.subheader("价值驱动因素")
+        st.subheader(_hc.h3("价值驱动因素"))
         st.dataframe([
             {"驱动": v.get("driver_name", ""), "重要性": v.get("importance", ""), "证据": v.get("evidence", "")}
             for v in vds
@@ -869,7 +901,7 @@ def _render_s3_payload(p: dict) -> None:
     # feature_classification
     fc = p.get("feature_classification") or {}
     if fc:
-        st.subheader("功能分类")
+        st.subheader(_hc.h3("功能分类"))
         cols = st.columns(3)
         with cols[0]:
             st.markdown("**Hygiene 基础**")
@@ -887,7 +919,7 @@ def _render_s3_payload(p: dict) -> None:
     # wtp_research
     wtp = p.get("wtp_research")
     if wtp:
-        st.subheader("支付意愿研究")
+        st.subheader(_hc.h3("支付意愿研究"))
         st.markdown(
             f"**方法**：`{wtp.get('method', '')}` | **置信度**：{wtp.get('confidence', '')}"
         )
@@ -899,7 +931,7 @@ def _render_s3_payload(p: dict) -> None:
     pkg = p.get("packaging") or {}
     tiers = pkg.get("tiers") or []
     if tiers:
-        st.subheader("推荐套餐设计 GBB")
+        st.subheader(_hc.h3("推荐套餐设计 GBB"))
         cols = st.columns(len(tiers))
         for col, t in zip(cols, tiers):
             with col:
@@ -927,7 +959,7 @@ def _render_s3_payload(p: dict) -> None:
     # competitive_pricing_matrix
     cpm = p.get("competitive_pricing_matrix") or []
     if cpm:
-        st.subheader("竞品定价矩阵")
+        st.subheader(_hc.h3("竞品定价矩阵"))
         for cp in cpm:
             st.markdown(f"**{cp.get('competitor_name', '')}** — {_t(cp.get('pricing_model', ''))}")
             ts = cp.get("tiers") or []
@@ -949,7 +981,7 @@ def _render_s3_payload(p: dict) -> None:
     # recommendations_summary
     rs = p.get("recommendations_summary") or {}
     if rs:
-        st.subheader("定价方案总结")
+        st.subheader(_hc.h3("定价方案总结"))
         st.write(rs.get("recommended_packaging_summary", ""))
         uplift = rs.get("expected_arr_uplift_pct")
         basis = rs.get("expected_arr_uplift_basis", "")
@@ -965,7 +997,7 @@ def _render_s3_payload(p: dict) -> None:
     # rollout_plan
     rp = p.get("rollout_plan") or []
     if rp:
-        st.subheader("Rollout 步骤")
+        st.subheader(_hc.h3("Rollout 步骤"))
         st.dataframe([
             {
                 "步骤": s.get("step_name", ""),
@@ -980,12 +1012,12 @@ def _render_s3_payload(p: dict) -> None:
 # ============ S4 持续监控 ============
 
 def _render_s4_payload(p: dict) -> None:
-    st.header("S4 持续监控分析")
+    st.header(_hc.h2("S4 持续监控分析"))
 
     # review_period
     rp = p.get("review_period") or {}
     if rp:
-        st.subheader("监控周期")
+        st.subheader(_hc.h3("监控周期"))
         prior = rp.get("prior_trace_id")
         st.caption(
             f"周期：{rp.get('review_period_label', '')} | "
@@ -1007,7 +1039,7 @@ def _render_s4_payload(p: dict) -> None:
         if not items:
             continue
         if not rendered_any:
-            st.subheader("变更检测")
+            st.subheader(_hc.h3("变更检测"))
             rendered_any = True
         st.markdown(f"**{label}**（{len(items)} 条）")
         st.dataframe([
@@ -1024,7 +1056,7 @@ def _render_s4_payload(p: dict) -> None:
     # threats
     threats = p.get("threats") or []
     if threats:
-        st.subheader("威胁评估")
+        st.subheader(_hc.h3("威胁评估"))
         st.dataframe([
             {
                 "标题": t.get("title", ""),
@@ -1039,7 +1071,7 @@ def _render_s4_payload(p: dict) -> None:
     # opportunities
     opps = p.get("opportunities") or []
     if opps:
-        st.subheader("机会识别 OSCOM")
+        st.subheader(_hc.h3("机会识别 OSCOM"))
         st.dataframe([
             {
                 "类型": _t(o.get("opportunity_type", "")),
@@ -1054,7 +1086,7 @@ def _render_s4_payload(p: dict) -> None:
     # trends
     trends = p.get("trends") or {}
     if any(trends.get(k) for k in ("sentiment_trend", "pricing_trend", "release_velocity_trend", "threat_level_trend")):
-        st.subheader("趋势方向")
+        st.subheader(_hc.h3("趋势方向"))
         cols = st.columns(4)
         labels = [
             (cols[0], "情感", "sentiment_trend"),
@@ -1073,7 +1105,7 @@ def _render_s4_payload(p: dict) -> None:
     # monitoring_actions
     actions = p.get("monitoring_actions") or []
     if actions:
-        st.subheader("推荐行动")
+        st.subheader(_hc.h3("推荐行动"))
         st.dataframe([
             {
                 "行动": a.get("description", ""),
@@ -1087,7 +1119,7 @@ def _render_s4_payload(p: dict) -> None:
     # battlecards
     bcs = p.get("battlecards") or []
     if bcs:
-        st.subheader("活体战卡")
+        st.subheader(_hc.h3("活体战卡"))
         for bc in bcs:
             st.markdown(
                 f"**{bc.get('competitor_name', '')}** — "
@@ -1103,12 +1135,12 @@ def _render_s4_payload(p: dict) -> None:
 # ============ S5 战略定位 ============
 
 def _render_s5_payload(p: dict) -> None:
-    st.header("S5 战略定位分析")
+    st.header(_hc.h2("S5 战略定位分析"))
 
     # vendor_profiles（含 Gartner MQ 评分）
     vps = p.get("vendor_profiles") or []
     if vps:
-        st.subheader("竞品画像 Gartner MQ")
+        st.subheader(_hc.h3("竞品画像 Gartner MQ"))
         _render_chart_or_skip(_scatter_magic_quadrant(vps))
         st.dataframe([
             {
@@ -1127,7 +1159,7 @@ def _render_s5_payload(p: dict) -> None:
     # perceptual_map
     pm = p.get("perceptual_map") or {}
     if pm:
-        st.subheader("感知地图 Perceptual Map")
+        st.subheader(_hc.h3("感知地图 Perceptual Map"))
         _render_chart_or_skip(_scatter_perceptual_map(pm))
         x_axis = pm.get("x_axis") or {}
         y_axis = pm.get("y_axis") or {}
@@ -1163,7 +1195,7 @@ def _render_s5_payload(p: dict) -> None:
     # strategy_canvas
     sc = p.get("strategy_canvas") or {}
     if sc:
-        st.subheader("战略画布")
+        st.subheader(_hc.h3("战略画布"))
         _render_chart_or_skip(_line_strategy_canvas(sc))
         factors = [f.get("name", "") for f in sc.get("competitive_factors") or []]
         rows = []
@@ -1178,7 +1210,7 @@ def _render_s5_payload(p: dict) -> None:
     # errc_grid
     eg = p.get("errc_grid") or {}
     if eg:
-        st.subheader("ERRC 4 宫格")
+        st.subheader(_hc.h3("ERRC 4 宫格"))
         cols = st.columns(4)
         for col, key, label in [
             (cols[0], "eliminate", "Eliminate 消除"),
@@ -1195,7 +1227,7 @@ def _render_s5_payload(p: dict) -> None:
     # blue_ocean_move
     bom = p.get("blue_ocean_move")
     if bom:
-        st.subheader("蓝海战略动作")
+        st.subheader(_hc.h3("蓝海战略动作"))
         st.markdown(f"**新价值曲线**：{bom.get('new_value_curve_summary', '')}")
         cols = st.columns(2)
         cols[0].metric("聚焦", bom.get("focus_assessment", ""))
@@ -1208,7 +1240,7 @@ def _render_s5_payload(p: dict) -> None:
     # positioning_statement —— [fix21] 6 位模板分行渲染 + 水印独立 warning
     ps = p.get("positioning_statement") or {}
     if ps:
-        st.subheader("定位陈述（Geoffrey Moore 6 位模板）")
+        st.subheader(_hc.h3("定位陈述（Geoffrey Moore 6 位模板）"))
         st.caption(f"置信度：`{ps.get('confidence', '')}`")
         if ps.get("confidence") and ps["confidence"] != "from_user_brief":
             st.warning("⚠️ 本定位陈述为 AI 推断版本，请人工校对后再对外使用")
@@ -1225,7 +1257,7 @@ def _render_s5_payload(p: dict) -> None:
     # category_strategy
     cs = p.get("category_strategy") or {}
     if cs:
-        st.subheader("品类战略")
+        st.subheader(_hc.h3("品类战略"))
         st.markdown(f"**选定品类**：{cs.get('chosen_category', '')}")
         st.caption(f"理由：{cs.get('why_this_category', '')}")
         implied = cs.get("competitors_implied") or []
@@ -1437,6 +1469,8 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
         st.warning("报告为空")
         return
 
+    _hc.reset()
+
     if trace_id:
         _render_export_buttons(trace_id)
     _render_kpi_strip(report)
@@ -1457,7 +1491,7 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
 
     bg = report.get("background", "")
     if bg:
-        st.header("背景")
+        st.header(_hc.h2("背景"))
         st.write(bg)
 
     _render_scope_and_methodology(
@@ -1474,7 +1508,7 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
 
     conclusions = report.get("conclusions", "")
     if conclusions:
-        st.header("结论")
+        st.header(_hc.h2("结论"))
         st.write(conclusions)
 
     _render_recommendations(report.get("recommendations") or [])

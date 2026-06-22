@@ -95,7 +95,7 @@ def test_render_key_findings_with_source_refs(st_spy):
         },
     ])
     st_spy.header.assert_called_with("关键发现")
-    st_spy.markdown.assert_any_call("**Finding 1**：竞品 A 增长率 30%")
+    st_spy.markdown.assert_any_call("**发现 1**：竞品 A 增长率 30%")
 
 
 def test_render_key_findings_empty_skipped(st_spy):
@@ -155,7 +155,7 @@ def test_render_recommendations_with_priority_emoji(st_spy):
         {"action": "x", "priority": "critical", "timeline": "immediate", "target_role": "", "rationale": ""},
     ])
     md_calls = [c.args[0] for c in st_spy.markdown.call_args_list]
-    assert any("🔴" in m and "critical" in m for m in md_calls)
+    assert any("紧急 (critical)" in m for m in md_calls)
 
 
 # ============ scope + methodology ============

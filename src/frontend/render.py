@@ -412,8 +412,6 @@ def _render_recommendations(recs: list[dict]) -> None:
                 target = r.get("target_role", "")
                 action = r.get("action", "")
                 rationale = r.get("rationale", "")
-                # 保留 PD-5 emoji 状态点（recommendations badge 在白名单内）
-                badge = ""
                 priority_class = (
                     f"priority-{priority}"
                     if priority in ("critical", "important", "consider")

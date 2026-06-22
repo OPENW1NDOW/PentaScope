@@ -148,15 +148,15 @@ async def test_extract_profile_truncates_oversize_text():
             }
 
     agent = CollectorAgent(llm=_LLM(), pipeline=None)
-    # 400K 字符正文，远超 300K 阈值
-    huge_text = "【来源: https://a.com】\n" + "正文一段" * 100000
+    # 600K 字符正文，远超 500K 阈值
+    huge_text = "【来源: https://a.com】\n" + "正文一段" * 150000
     await agent._extract_profile(
         "X", huge_text, {"competitor_type": "核心竞品", "reason": "r"},
         ["https://a.com"], [],
     )
-    # 实际喂给 LLM 的 user prompt 长度应受截断保护：≤ 300K + 头部 prefix(~500 字符)
-    assert len(captured["user"]) < 301_000, (
-        f"user prompt 长度 {len(captured['user'])} 超 300K，截断未生效"
+    # 实际喂给 LLM 的 user prompt 长度应受截断保护：≤ 500K + 头部 prefix(~500 字符)
+    assert len(captured["user"]) < 501_000, (
+        f"user prompt 长度 {len(captured['user'])} 超 500K，截断未生效"
     )
 
 

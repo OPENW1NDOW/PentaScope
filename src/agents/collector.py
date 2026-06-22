@@ -10,7 +10,7 @@ from src.agents.prompts import COLLECTOR_GOAL_SYSTEM, COLLECTOR_EXTRACT_SYSTEM
 logger = logging.getLogger(__name__)
 
 # 喂给 LLM 的 labeled_text 字符上限（适配 1M 上下文模型，留安全垫防 BPE 计数偏差）
-_EXTRACT_TEXT_MAX_CHARS = 300_000
+_EXTRACT_TEXT_MAX_CHARS = 500_000
 
 
 class CollectorAgent:

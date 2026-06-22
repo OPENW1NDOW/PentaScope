@@ -44,10 +44,10 @@ def _score_to_severity(dim_score: int, all_scores: dict) -> str:
 # ============ Critic 子函数（spec v4） ============
 
 _ISSUE_TYPE_TO_AGENT = {
-    # collector 类（采集层缺失或 snippet 错）
+    # collector 类（采集层缺失）
     "url_not_discovered": "collector",
-    "source_mismatch": "collector",
-    # writer 类（writer 选错引用 / 写作质量）
+    # writer 类（引用错误 / 写作质量）
+    "source_mismatch": "writer",
     "source_irrelevant": "writer",
     "vague_description": "writer",
     "cross_field_contradiction": "writer",

@@ -517,7 +517,7 @@ def test_map_issue_type_to_agent():
     from src.agents.inspector import _map_issue_type_to_agent
 
     assert _map_issue_type_to_agent("url_not_discovered") == "collector"
-    assert _map_issue_type_to_agent("source_mismatch") == "collector"
+    assert _map_issue_type_to_agent("source_mismatch") == "writer"
     assert _map_issue_type_to_agent("source_irrelevant") == "writer"
     assert _map_issue_type_to_agent("vague_description") == "writer"
     assert _map_issue_type_to_agent("cross_field_contradiction") == "writer"
@@ -691,3 +691,10 @@ async def test_inspect_v3_r17_cap_removed(make_simple_report):
     await inspector.inspect(report, discovered_sources=[])
 
     assert report.metadata.quality_score == pytest.approx(1.0, abs=0.01)
+
+
+def test_source_mismatch_routes_to_writer():
+    from src.agents.inspector import _map_issue_type_to_agent
+    assert _map_issue_type_to_agent("source_mismatch") == "writer"
+    assert _map_issue_type_to_agent("source_irrelevant") == "writer"
+    assert _map_issue_type_to_agent("url_not_discovered") == "collector"

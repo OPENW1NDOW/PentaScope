@@ -214,13 +214,13 @@ def _scatter_magic_quadrant(vps: list[dict]):
     fig.add_shape(type="line", x0=2.5, y0=0, x1=2.5, y1=5, line=dict(color="gray", dash="dash"))
     fig.add_shape(type="line", x0=0, y0=2.5, x1=5, y1=2.5, line=dict(color="gray", dash="dash"))
     # 象限标签
-    fig.add_annotation(x=4, y=4.5, text="Leaders", showarrow=False, font=dict(color="#888"))
-    fig.add_annotation(x=4, y=0.5, text="Challengers", showarrow=False, font=dict(color="#888"))
-    fig.add_annotation(x=1, y=4.5, text="Visionaries", showarrow=False, font=dict(color="#888"))
-    fig.add_annotation(x=1, y=0.5, text="Niche Players", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=4, y=4.5, text="领导者 (Leaders)", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=4, y=0.5, text="挑战者 (Challengers)", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=1, y=4.5, text="远见者 (Visionaries)", showarrow=False, font=dict(color="#888"))
+    fig.add_annotation(x=1, y=0.5, text="利基者 (Niche Players)", showarrow=False, font=dict(color="#888"))
     fig.update_layout(
-        xaxis_title="Ability to Execute 执行力",
-        yaxis_title="Completeness of Vision 愿景完整度",
+        xaxis_title="执行力 (Ability to Execute)",
+        yaxis_title="愿景完整度 (Completeness of Vision)",
         xaxis=dict(range=[0, 5]), yaxis=dict(range=[0, 5]),
         height=440, showlegend=False,
     )
@@ -841,11 +841,12 @@ def _render_s3_payload(p: dict) -> None:
     pb = p.get("pricing_baseline") or {}
     if pb:
         st.subheader("当前定价基线")
-        st.markdown(
-            f"**模式**：`{pb.get('current_pricing_model', '')}` | "
-            f"**层级数**：{pb.get('current_tier_count', '')} | "
-            f"**ARPU 备注**：{pb.get('current_arpu_note', '')}"
-        )
+        if pb.get("current_pricing_model"):
+            st.markdown(f"**定价模式**：{_t(pb.get('current_pricing_model', ''))}")
+        if pb.get("current_tier_count"):
+            st.markdown(f"**层级数**：{pb.get('current_tier_count', '')}")
+        if pb.get("current_arpu_note"):
+            st.markdown(f"**ARPU 备注**：{pb.get('current_arpu_note', '')}")
         pains = pb.get("pain_points") or []
         if pains:
             st.markdown("**痛点**：")
@@ -924,22 +925,22 @@ def _render_s3_payload(p: dict) -> None:
     if cpm:
         st.subheader("竞品定价矩阵")
         for cp in cpm:
-            with st.expander(f"{cp.get('competitor_name', '')} - {cp.get('pricing_model', '')}"):
-                ts = cp.get("tiers") or []
-                if ts:
-                    st.dataframe([
-                        {
-                            "套餐": t.get("name", ""),
-                            "月费": t.get("monthly_price", ""),
-                            "年费": t.get("annual_price", ""),
-                            "货币": t.get("currency", ""),
-                            "热销": "✓" if t.get("observed_is_most_popular") else "",
-                            "对象": t.get("observed_target_persona", ""),
-                        }
-                        for t in ts
-                    ], use_container_width=True)
-                if cp.get("free_plan_strategy"):
-                    st.caption(f"免费策略：{cp.get('free_plan_strategy', '')}")
+            st.markdown(f"**{cp.get('competitor_name', '')}** — {_t(cp.get('pricing_model', ''))}")
+            ts = cp.get("tiers") or []
+            if ts:
+                st.dataframe([
+                    {
+                        "套餐": t.get("name", ""),
+                        "月费": t.get("monthly_price", ""),
+                        "年费": t.get("annual_price", ""),
+                        "货币": t.get("currency", ""),
+                        "热销": "✓" if t.get("observed_is_most_popular") else "",
+                        "对象": t.get("observed_target_persona", ""),
+                    }
+                    for t in ts
+                ], use_container_width=True)
+            if cp.get("free_plan_strategy"):
+                st.caption(f"免费策略：{_t(cp.get('free_plan_strategy', ''))}")
 
     # recommendations_summary
     rs = p.get("recommendations_summary") or {}
@@ -1004,17 +1005,17 @@ def _render_s4_payload(p: dict) -> None:
         if not rendered_any:
             st.subheader("变更检测")
             rendered_any = True
-        with st.expander(f"{label}（{len(items)} 条）"):
-            st.dataframe([
-                {
-                    "竞品": it.get("competitor_name", ""),
-                    "类型": it.get("change_type", "") or it.get("category", "") or it.get("action", ""),
-                    "事实": (it.get("fia") or {}).get("fact", ""),
-                    "严重度": it.get("severity", ""),
-                    "基线": "✓" if it.get("is_baseline") else "",
-                }
-                for it in items
-            ], use_container_width=True)
+        st.markdown(f"**{label}**（{len(items)} 条）")
+        st.dataframe([
+            {
+                "竞品": it.get("competitor_name", ""),
+                "类型": _t(it.get("change_type", "") or it.get("category", "") or it.get("action", "")),
+                "事实": (it.get("fia") or {}).get("fact", ""),
+                "严重度": _t(it.get("severity", "")),
+                "基线": "✓" if it.get("is_baseline") else "",
+            }
+            for it in items
+        ], use_container_width=True)
 
     # threats
     threats = p.get("threats") or []
@@ -1023,9 +1024,9 @@ def _render_s4_payload(p: dict) -> None:
         st.dataframe([
             {
                 "标题": t.get("title", ""),
-                "严重度": t.get("severity", ""),
-                "可能性": t.get("likelihood", ""),
-                "象限": t.get("quadrant", ""),
+                "严重度": _t(t.get("severity", "")),
+                "可能性": _t(t.get("likelihood", "")),
+                "象限": _t(t.get("quadrant", "")),
                 "应对": t.get("recommended_response", ""),
             }
             for t in threats
@@ -1037,9 +1038,9 @@ def _render_s4_payload(p: dict) -> None:
         st.subheader("机会识别 OSCOM")
         st.dataframe([
             {
-                "类型": o.get("opportunity_type", ""),
-                "投入": o.get("estimated_effort", ""),
-                "影响": o.get("expected_impact", ""),
+                "类型": _t(o.get("opportunity_type", "")),
+                "投入": _t(o.get("estimated_effort", "")),
+                "影响": _t(o.get("expected_impact", "")),
                 "描述": o.get("description", ""),
                 "首步": o.get("first_step", ""),
             }
@@ -1084,14 +1085,15 @@ def _render_s4_payload(p: dict) -> None:
     if bcs:
         st.subheader("活体战卡")
         for bc in bcs:
-            with st.expander(
-                f"{bc.get('competitor_name', '')} - 完整度: {bc.get('overall_completeness', '')}"
-            ):
-                for sec in bc.get("sections") or []:
-                    st.markdown(f"**{sec.get('section_name', '')}** "
-                                f"({sec.get('completeness', '')})")
-                    if sec.get("content"):
-                        st.write(sec.get("content", ""))
+            st.markdown(
+                f"**{bc.get('competitor_name', '')}** — "
+                f"完整度：{_t(bc.get('overall_completeness', ''))}"
+            )
+            for sec in bc.get("sections") or []:
+                st.markdown(f"**{_t(sec.get('section_name', ''))}** "
+                            f"({_t(sec.get('completeness', ''))})")
+                if sec.get("content"):
+                    st.write(sec.get("content", ""))
 
 
 # ============ S5 战略定位 ============
@@ -1109,11 +1111,14 @@ def _render_s5_payload(p: dict) -> None:
                 "竞品": v.get("competitor_name", ""),
                 "执行力": v.get("ability_to_execute_score", ""),
                 "愿景完整度": v.get("completeness_of_vision_score", ""),
-                "象限": v.get("mq_quadrant", ""),
-                "概览": v.get("overview", ""),
+                "象限": _t(v.get("mq_quadrant", "")),
             }
             for v in vps
         ], use_container_width=True)
+        for v in vps:
+            overview = v.get("overview", "")
+            if overview:
+                st.caption(f"{v.get('competitor_name', '')}：{overview}")
 
     # perceptual_map
     pm = p.get("perceptual_map") or {}

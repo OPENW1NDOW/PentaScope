@@ -4,7 +4,7 @@ SOURCE_REFS_PROTOCOL = """
 【溯源 URL 强约束（编造 URL 视为严重违规）】
 
 1. 任何 evidence_url / SourceRef.url / source_url 字段，**只能填**输入的 profiles_source_urls 列表中实际存在的 URL。
-2. profiles_source_urls 列表见下方注入的 {discovered_urls_json}，请只用这些 URL，不要编造。
+2. profiles_source_urls 按竞品分组，论述哪个竞品时只能引用该竞品名下的 URL，绝不跨竞品引用。
 3. SourceRef 对象格式（source_refs 字段下的每条）：
    {{
      "url": "必须来自 profiles_source_urls，至少 8 字符",

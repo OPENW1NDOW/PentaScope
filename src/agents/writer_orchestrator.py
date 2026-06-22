@@ -347,6 +347,7 @@ class WriterOrchestrator:
         self._call_counter = 0  # M2 熔断计数
         # [v3-R18] phase 3 并发限速（C1 暂未用，提前创建供 C4 使用）
         self._narrative_sem = asyncio.Semaphore(settings.WRITER_NARRATIVE_CONCURRENCY)
+        self._grouped_urls: dict[str, list[str]] = {}
 
     async def write(
         self,
@@ -378,6 +379,15 @@ class WriterOrchestrator:
         discovered_urls: list[str] = sorted(
             {u for p in profiles for u in collect_profile_urls(p)}
         )
+        # 按竞品分组的 URL 字典（用于 phase 2/3 prompt 注入）
+        grouped_urls: dict[str, list[str]] = {}
+        for p in profiles:
+            name = p.basic_info.name
+            urls = sorted(collect_profile_urls(p))
+            if urls:
+                grouped_urls[name] = urls
+        self._grouped_urls = grouped_urls
+
         if not discovered_urls:
             raise WriterRouteToCollector(
                 "writer phase 4: profiles 中收集到 0 个 URL，无法构造可溯源报告。"
@@ -614,7 +624,7 @@ class WriterOrchestrator:
             ("=== 分析目标 ===", scenario_input.analysis_context),
             ("=== Profiles 摘要 ===", profile_summaries),
             ("=== Analysis 摘要 ===", analysis_json),
-            ("=== 可用溯源 URL ===", discovered_urls),
+            ("=== 可用溯源 URL（按竞品归属）===", self._grouped_urls),
         ]
 
         # [v3-R09] S4 prior 监控提示：告知 LLM 首次/增量，影响 title 写法
@@ -719,7 +729,7 @@ class WriterOrchestrator:
             ("=== 分析意图 ===", scenario_input.analysis_context),
             ("=== Profiles 摘要 ===", profile_summaries),
             ("=== Analysis 摘要 ===", analysis_json),
-            ("=== 可用溯源 URL ===", discovered_urls),
+            ("=== 可用溯源 URL（按竞品归属）===", self._grouped_urls),
         ]
 
         # [v3-R10] S2 推荐竞品仅作为只读上下文给 LLM（phase 2 后会被代码强制覆盖）
@@ -1171,7 +1181,7 @@ class WriterOrchestrator:
         [C5 carry-over] Semaphore scope 仅包裹 LLM 调用本身——ctx 收集 / JSON 序列化 / format prompt
         都是纯 CPU 工作，不应占用并发名额（否则 N>concurrency 时纯 CPU 也被串行化）。
         """
-        _ = discovered_urls
+        _ = discovered_urls  # 保留参数兼容性，实际用 self._grouped_urls
 
         # 按 [v3-R20] SECTION_CONTEXT_MAP 取本 section 应吃的字段（CPU 工作，semaphore 外）
         ctx = {
@@ -1217,6 +1227,21 @@ class WriterOrchestrator:
             section_id_hint=section_id_hint,
             context_payload=ctx_json,
         )
+        # 按竞品分组的溯源 URL + 引用规则
+        if self._grouped_urls:
+            url_section = "\n".join(
+                f"- {name}: {', '.join(urls)}"
+                for name, urls in self._grouped_urls.items()
+            )
+            system_prompt += (
+                f"\n\n【溯源引用规则】\n"
+                f"可用 URL（按竞品归属）：\n{url_section}\n\n"
+                f"规则：\n"
+                f"1. 论述哪个竞品时，source_refs 只能从该竞品对应的 URL 中选取\n"
+                f"2. 尽量为每个事实性论断（产品功能、市场数据、用户反馈等）附上至少 1 个 source_ref\n"
+                f"3. 找不到对应 URL 时 source_refs 留空 []，绝不编造、绝不跨竞品引用"
+            )
+
         if retry_error_hint:
             system_prompt += f"\n\n【上次生成失败，请修复】\n{retry_error_hint}"
 

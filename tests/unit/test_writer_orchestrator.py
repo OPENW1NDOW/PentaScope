@@ -1969,3 +1969,57 @@ async def test_phase3_retry_once_then_still_fail_uses_placeholder():
 
     # 总调用 = 2 + 5 + 1 = 8
     assert mock_llm.call_json.call_count == 8
+
+
+# ---------- 测试：按竞品分组 URL 注入 ----------
+
+@pytest.mark.asyncio
+async def test_phase2_prompt_contains_grouped_urls():
+    """phase 2 user prompt 应包含按竞品分组的 URL。"""
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    phase1_outline = _make_valid_outline_dict("测试")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis", "roadmap_analysis"]
+    side_effects = [phase1_outline, phase2_payload] + [_make_valid_narrative_json(t) for t in s1_types]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    try:
+        await orch.write(scenario_input=scenario_input, analysis=analysis, profiles=profiles)
+    except Exception:
+        pass
+
+    phase2_call = mock_llm.call_json.call_args_list[1]
+    user_prompt = phase2_call[0][1]
+    assert "AA" in user_prompt
+    assert "按竞品归属" in user_prompt or "竞品归属" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_phase3_prompt_contains_grouped_urls_and_rules():
+    """phase 3 每个 section 的 system_prompt 应包含按竞品分组的 URL + 引用规则。"""
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    phase1_outline = _make_valid_outline_dict("测试")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis", "roadmap_analysis"]
+    side_effects = [phase1_outline, phase2_payload] + [_make_valid_narrative_json(t) for t in s1_types]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    try:
+        await orch.write(scenario_input=scenario_input, analysis=analysis, profiles=profiles)
+    except Exception:
+        pass
+
+    narrative_calls = mock_llm.call_json.call_args_list[2:]
+    assert len(narrative_calls) >= 1
+    for call in narrative_calls:
+        system_prompt = call[0][0]
+        assert "溯源引用规则" in system_prompt
+        assert "跨竞品引用" in system_prompt

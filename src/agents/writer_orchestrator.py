@@ -242,22 +242,63 @@ def _build_data_collection_approach(
     )
 
 
-# [fix9] Appendix.glossary 预填常用术语
-_PREFILLED_GLOSSARY: dict[str, str] = {
-    "JTBD": "Jobs To Be Done，用户要完成的任务；从用户视角描述其目标与场景，而非功能本身。",
+# Appendix.glossary 动态场景化术语表
+_COMMON_GLOSSARY: dict[str, str] = {
     "SWOT": "Strengths/Weaknesses/Opportunities/Threats，针对单一主体的四象限分析框架。",
+    "JTBD": "Jobs To Be Done，用户要完成的任务；从用户视角描述其目标与场景，而非功能本身。",
     "Tier1": "竞品分级中的最高优先级层级，通常代表核心或行业头部玩家。",
     "Tier2": "竞品分级中的次优先级层级，通常代表细分市场玩家或潜在挑战者。",
-    "TAM": "Total Addressable Market，潜在总市场规模，假设 100% 占有率下的市场总量。",
-    "SAM": "Serviceable Addressable Market，可服务市场，受地理/行业/合规等限制后的可触达市场。",
-    "SOM": "Serviceable Obtainable Market，可获取市场，结合自身资源现实可拿下的市场份额。",
-    "GBB": "Good-Better-Best，三档定价分层策略，用价值阶梯促成升档转化。",
-    "MQ": "Magic Quadrant，按两轴（如执行能力 × 愿景完整性）划分玩家的二维定位象限图。",
-    "ARR": "Annual Recurring Revenue，年度经常性收入，订阅业务核心指标。",
-    "ICP": "Ideal Customer Profile，理想客户画像，最适合产品的目标客户特征集合。",
-    "niche": "细分市场 / 利基市场，规模较小但竞争弱、需求明确的目标人群或场景。",
-    "niche_focus": "细分聚焦策略，避开主流大市场正面竞争，专攻一个特定 niche 群体。",
 }
+
+_SCENARIO_GLOSSARY: dict[str, dict[str, str]] = {
+    "S1": {
+        "Forrester Wave": "Forrester 研究机构的竞品评估模型，按 strategy 和 current offering 两轴对厂商打分排位。",
+        "Feature Matrix": "功能矩阵，以表格形式横向对比多个竞品在各功能维度上的支持程度。",
+        "White Space": "功能空白区，指市场上所有现有玩家都尚未覆盖的功能或场景。",
+        "Roadmap": "产品路线图，按时间维度规划未来功能迭代的优先级与节奏。",
+    },
+    "S2": {
+        "TAM": "Total Addressable Market，潜在总市场规模，假设 100% 占有率下的市场总量。",
+        "SAM": "Serviceable Addressable Market，可服务市场，受地理/行业/合规等限制后的可触达市场。",
+        "SOM": "Serviceable Obtainable Market，可获取市场，结合自身资源现实可拿下的市场份额。",
+        "CAGR": "Compound Annual Growth Rate，复合年增长率，衡量市场或业务的长期增速。",
+        "Porter Five Forces": "波特五力模型，从新进入者/供应商/买家/替代品/现有竞争五个维度评估行业吸引力。",
+        "MQ": "Magic Quadrant，按两轴（如执行能力 × 愿景完整性）划分玩家的二维定位象限图。",
+        "ICP": "Ideal Customer Profile，理想客户画像，最适合产品的目标客户特征集合。",
+        "niche": "细分市场 / 利基市场，规模较小但竞争弱、需求明确的目标人群或场景。",
+    },
+    "S3": {
+        "GBB": "Good-Better-Best，三档定价分层策略，用价值阶梯促成升档转化。",
+        "WTP": "Willingness To Pay，支付意愿，客户对产品/功能愿意支付的最高价格。",
+        "ARPU": "Average Revenue Per User，每用户平均收入，衡量单客户贡献的核心指标。",
+        "ARR": "Annual Recurring Revenue，年度经常性收入，订阅业务核心指标。",
+        "Freemium": "免费增值模式，基础功能免费、高级功能付费的商业模型。",
+        "Churn": "客户流失率，一定周期内停止付费或使用的客户比例。",
+        "Price Anchor": "价格锚点，通过展示高价选项使目标价位显得更合理的定价心理学策略。",
+    },
+    "S4": {
+        "FIA": "Fact-Impact-Act，竞品情报三元组：事实→影响→行动，结构化记录竞品动态。",
+        "Battlecard": "活体战卡，面向销售团队的竞品对抗速查手册，含话术与差异点。",
+        "OSCOM": "Opportunity Scoring Model，机会评分模型，按投入/影响/紧迫度量化竞争机会。",
+        "Baseline": "监控基线，首次采集的竞品状态快照，后续增量对比的参照点。",
+        "Severity": "严重度等级（low/medium/high），衡量竞品变更对我方的影响程度。",
+    },
+    "S5": {
+        "MQ": "Magic Quadrant，按两轴（如执行能力 × 愿景完整性）划分玩家的二维定位象限图。",
+        "Perceptual Map": "感知地图，以二维坐标展示品牌在用户心智中的相对位置。",
+        "Strategy Canvas": "战略画布，以折线图展示各竞品在关键竞争要素上的投入水平差异。",
+        "ERRC": "Eliminate-Reduce-Raise-Create，蓝海战略四动作框架，重塑价值曲线。",
+        "Blue Ocean": "蓝海战略，通过价值创新开辟无竞争的新市场空间，而非在红海中拼杀。",
+        "Positioning Statement": "定位陈述，Geoffrey Moore 6 位模板，一句话定义产品的目标客户、品类、差异化。",
+    },
+}
+
+
+def _build_glossary(scenario: str) -> dict[str, str]:
+    """根据场景类型动态组装术语表：通用术语 + 场景专属术语。"""
+    glossary = dict(_COMMON_GLOSSARY)
+    glossary.update(_SCENARIO_GLOSSARY.get(scenario, {}))
+    return glossary
 
 
 def _derive_fallback_accessed_at(profiles: list[CompetitorProfile]) -> Optional[date]:
@@ -1589,7 +1630,7 @@ class WriterOrchestrator:
             swot=swot,
             conclusions=outline.get("conclusions", ""),
             recommendations=recommendations,
-            appendix=Appendix(glossary=dict(_PREFILLED_GLOSSARY)),
+            appendix=Appendix(glossary=_build_glossary(scenario)),
             scenario_payload=payload_model,
         )
         return report

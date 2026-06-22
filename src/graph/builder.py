@@ -387,6 +387,9 @@ def build_graph(llm, http, parser, trace_writer=None):
             )
             if trace_writer is not None:
                 trace_writer.save_raw("04_writer_error", err_dict)
+            # 基础设施错误（timeout/connect）不消耗 retry 名额
+            err_name = type(e).__name__
+            is_infra_error = "Timeout" in err_name or "Connect" in err_name
             feedback = RejectionFeedback(
                 passed=False,
                 issues=[FeedbackIssue(
@@ -394,15 +397,18 @@ def build_graph(llm, http, parser, trace_writer=None):
                     agent="writer",
                     field="writer_validation",
                     reason=str(e)[:200],
-                    suggestion="LLM 输出不符合 schema，建议 graph 重试 writer",
+                    suggestion="LLM 输出不符合 schema，建议 graph 重试 writer" if not is_infra_error else "基础设施错误（超时/网络），自动重试",
                 )],
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
+            next_retry = state.get("retry_count", 0)
+            if not is_infra_error:
+                next_retry += 1
             return {
                 "feedback": feedback,
                 "current_node": "writer",
-                "retry_count": state.get("retry_count", 0) + 1,
+                "retry_count": next_retry,
             }
 
     async def inspector_node(state: AnalysisState) -> dict:

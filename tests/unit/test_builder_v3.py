@@ -503,3 +503,50 @@ async def test_analyzer_node_catches_exception_and_injects_feedback(monkeypatch)
     assert result["feedback"].passed is False
     assert result["feedback"].issues[0].agent == "analyzer"
     assert result["retry_count"] == 1  # 0 → 1
+
+
+# ========== writer_node 基础设施错误不消耗 retry ==========
+
+@pytest.mark.asyncio
+async def test_writer_node_timeout_does_not_increment_retry():
+    """APITimeoutError 等基础设施错误不应递增 retry_count。"""
+    from httpx import ConnectTimeout
+    from src.schemas.input import ScenarioInput, CompetitorBasic
+    from src.schemas.profile import CompetitorProfile, BasicInfo, Classification, ProfileMetadata
+
+    mock_llm = MagicMock()
+    # phase 1 outline 调用时抛 timeout
+    mock_llm.call_json = AsyncMock(side_effect=ConnectTimeout("timeout"))
+
+    graph, _ = build_graph(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="test"),
+        basic_info=BasicInfo(name="TestComp", company=""),
+        metadata=ProfileMetadata(
+            collected_at="2026-06-22T00:00:00",
+            data_sources=["https://example.com/a"],
+            completeness_score=0.7,
+            pipeline_trace=[],
+        ),
+    )
+
+    state = {
+        "user_input": ScenarioInput(
+            scenario="S1",
+            competitors=[CompetitorBasic(name="TestComp")],
+            analysis_context="测试",
+            our_product_name="MyProduct",
+        ),
+        "analysis": MagicMock(),
+        "profiles": [profile],
+        "retry_count": 0,
+        "max_retries": 2,
+        "trace_id": "test-timeout",
+    }
+
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    assert "feedback" in result
+    # 基础设施错误不应递增 retry_count
+    assert result["retry_count"] == 0, f"timeout 不应递增 retry_count，实际值={result['retry_count']}"

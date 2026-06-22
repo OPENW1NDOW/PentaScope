@@ -103,7 +103,7 @@ def _render_chart_or_skip(fig, fallback_msg: str = "（plotly 未安装，跳过
     if not _PLOTLY_OK or fig is None:
         st.caption(fallback_msg)
         return
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False})
+    st.plotly_chart(fig, use_container_width=True, config={"staticPlot": True})
 
 
 def _radar_chart_s1(radar_scores: list[dict]):
@@ -757,12 +757,15 @@ def _render_s2_payload(p: dict) -> None:
                 "角色": _t(pl.get("market_role", "")),
                 "份额%": pl.get("market_share_pct", ""),
                 "增速%": pl.get("yoy_growth_pct", ""),
-                "差异化": pl.get("key_differentiator", ""),
                 "推荐": "✓" if pl.get("is_recommended") else "",
                 "已采集": "✓" if pl.get("is_collected") else "",
             }
             for pl in players
         ], use_container_width=True)
+        for pl in players:
+            diff = pl.get("key_differentiator", "")
+            if diff:
+                st.caption(f"{pl.get('name', '')}：{diff}")
 
     # consumer_segments
     segs = p.get("consumer_segments") or []
@@ -773,10 +776,13 @@ def _render_s2_payload(p: dict) -> None:
                 "分群": s.get("name", ""),
                 "份额%": s.get("share_pct", ""),
                 "可触达": _t(s.get("addressability", "")),
-                "核心需求": " / ".join(s.get("key_needs") or []),
             }
             for s in segs
         ], use_container_width=True)
+        for s in segs:
+            needs = s.get("key_needs") or []
+            if needs:
+                st.caption(f"{s.get('name', '')}：{' / '.join(needs)}")
 
     # key_trends
     trends = p.get("key_trends") or []

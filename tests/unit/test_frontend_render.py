@@ -684,3 +684,72 @@ def test_render_response_persists_even_when_report_none(st_spy):
     data = {"status": "completed", "trace_id": "abc-123", "report": None}
     render_analysis_response(data)
     assert st_spy.session_state.get("last_response") == data
+
+
+# ============ Round 2: staticPlot / subtitle / typography / table overflow ============
+
+
+def test_chart_uses_static_plot_config(st_spy, monkeypatch):
+    """R2 fix: plotly chart must use staticPlot=True to prevent all interaction"""
+    monkeypatch.setattr("src.frontend.render._PLOTLY_OK", True)
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    from src.frontend.render import _render_chart_or_skip
+    _render_chart_or_skip(fig)
+    st_spy.plotly_chart.assert_called_once()
+    call_kwargs = st_spy.plotly_chart.call_args[1]
+    assert call_kwargs.get("config") == {"staticPlot": True}
+
+
+def test_subtitle_uses_report_subtitle_class(st_spy):
+    """副标题必须使用 report-subtitle class 且字体够大（不是 st.caption）"""
+    from src.frontend.render import render_base_report
+    render_base_report({"title": "T", "subtitle": "副标题内容"})
+    md_calls = [c.args[0] for c in st_spy.markdown.call_args_list
+                if len(c.args) > 0 and isinstance(c.args[0], str)]
+    subtitle_calls = [m for m in md_calls if "report-subtitle" in m]
+    assert len(subtitle_calls) == 1
+    assert "副标题内容" in subtitle_calls[0]
+
+
+def test_s2_players_table_no_differentiator_column(st_spy):
+    """S2 市场玩家表不应包含'差异化'列（长文本拆出为 caption）"""
+    from src.frontend.render import _render_s2_payload
+    _render_s2_payload({
+        "scenario_type": "S2",
+        "players": [
+            {"name": "A", "company": "Co", "market_role": "challenger",
+             "market_share_pct": 10, "yoy_growth_pct": 20,
+             "key_differentiator": "很长的差异化描述文本",
+             "is_recommended": True, "is_collected": True},
+        ],
+        "market_concentration": "moderate",
+    })
+    # dataframe 应被调用，检查传入的 row dict 不含"差异化"key
+    df_calls = st_spy.dataframe.call_args_list
+    assert len(df_calls) >= 1
+    rows = df_calls[0].args[0]
+    for row in rows:
+        assert "差异化" not in row
+    # caption 应包含差异化内容
+    cap_calls = [c.args[0] for c in st_spy.caption.call_args_list]
+    assert any("很长的差异化描述文本" in c for c in cap_calls)
+
+
+def test_s2_segments_table_no_key_needs_column(st_spy):
+    """S2 消费者分群表不应包含'核心需求'列（长文本拆出为 caption）"""
+    from src.frontend.render import _render_s2_payload
+    _render_s2_payload({
+        "scenario_type": "S2",
+        "consumer_segments": [
+            {"name": "开发者", "share_pct": 40, "addressability": "easy",
+             "key_needs": ["API稳定", "文档清晰", "成本低"]},
+        ],
+    })
+    df_calls = st_spy.dataframe.call_args_list
+    assert len(df_calls) >= 1
+    rows = df_calls[0].args[0]
+    for row in rows:
+        assert "核心需求" not in row
+    cap_calls = [c.args[0] for c in st_spy.caption.call_args_list]
+    assert any("API稳定" in c for c in cap_calls)

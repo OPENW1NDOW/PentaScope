@@ -120,11 +120,45 @@ html, body, [class*="css"] {
 .action-card.priority-consider { border-left-color: var(--color-primary); }
 
 .report-subtitle {
-    font-size: 17px;
-    color: var(--color-text-secondary);
-    margin-top: -12px;
-    margin-bottom: 20px;
+    font-size: 20px;
+    color: var(--color-text);
+    font-weight: 500;
+    margin-top: -8px;
+    margin-bottom: 24px;
     line-height: 1.5;
+}
+
+/* 报告排版层级（Word 风格分级标题） */
+[data-testid="stAppViewContainer"] h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 4px;
+}
+[data-testid="stAppViewContainer"] h2 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: 6px;
+    margin-top: 36px;
+    margin-bottom: 16px;
+}
+[data-testid="stAppViewContainer"] h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1E293B;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    padding-left: 12px;
+    border-left: 3px solid var(--color-secondary);
+}
+[data-testid="stAppViewContainer"] h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 16px;
+    margin-bottom: 6px;
 }
 
 /* 导出按钮（!important 覆盖 Streamlit 默认 a 下划线） */

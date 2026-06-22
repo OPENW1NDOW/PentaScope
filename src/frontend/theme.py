@@ -119,6 +119,14 @@ html, body, [class*="css"] {
 .action-card.priority-important { border-left-color: var(--color-warning); }
 .action-card.priority-consider { border-left-color: var(--color-primary); }
 
+.report-subtitle {
+    font-size: 17px;
+    color: var(--color-text-secondary);
+    margin-top: -12px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
 /* 导出按钮（!important 覆盖 Streamlit 默认 a 下划线） */
 .btn-export {
   display: inline-flex;

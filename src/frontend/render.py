@@ -103,7 +103,7 @@ def _render_chart_or_skip(fig, fallback_msg: str = "（plotly 未安装，跳过
     if not _PLOTLY_OK or fig is None:
         st.caption(fallback_msg)
         return
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False})
 
 
 def _radar_chart_s1(radar_scores: list[dict]):
@@ -258,7 +258,7 @@ def _render_source_refs(refs: list[dict] | None, *, prefix: str = "来源") -> N
     for i, ref in enumerate(refs, 1):
         url = ref.get("url", "") if isinstance(ref, dict) else ""
         title = ref.get("title", "") if isinstance(ref, dict) else ""
-        label = title or f"链接 {i}"
+        label = title or (urlparse(url).netloc if url else "") or f"来源 {i}"
         if url:
             parts.append(f"[{label}]({url})")
         else:
@@ -304,36 +304,32 @@ def _render_executive_summary(es: dict) -> None:
 
 
 def _render_scope_and_methodology(scope: dict, methodology: dict) -> None:
-    cols = st.columns(2)
-    with cols[0]:
-        if scope:
-            st.subheader("分析范围")
-            st.markdown(f"**竞品**：{', '.join(scope.get('competitors', []))}")
-            st.markdown(f"**时间窗**：{scope.get('time_window', '')}")
-            regions = scope.get("regions") or []
-            if regions:
-                st.markdown(f"**区域**：{', '.join(regions)}")
-            exclusions = scope.get("exclusions") or []
-            if exclusions:
-                st.markdown(f"**排除**：{', '.join(exclusions)}")
-    with cols[1]:
-        if methodology:
-            st.subheader("方法论")
-            with st.expander("数据采集与评估", expanded=False):
-                st.write(methodology.get("data_collection_approach", ""))
-                ec = methodology.get("evaluation_criteria") or []
-                if ec:
-                    st.markdown("**评估维度**：")
-                    for c in ec:
-                        st.markdown(f"- {c}")
-                lim = methodology.get("limitations") or []
-                if lim:
-                    st.markdown("**已知局限**：")
-                    for l_ in lim:
-                        st.markdown(f"- {l_}")
-                ssn = methodology.get("sample_size_note", "")
-                if ssn:
-                    st.caption(ssn)
+    if scope:
+        st.subheader("分析范围")
+        st.markdown(f"**竞品**：{', '.join(scope.get('competitors', []))}")
+        st.markdown(f"**时间窗**：{scope.get('time_window', '')}")
+        regions = scope.get("regions") or []
+        if regions:
+            st.markdown(f"**区域**：{', '.join(regions)}")
+        exclusions = scope.get("exclusions") or []
+        if exclusions:
+            st.markdown(f"**排除**：{', '.join(exclusions)}")
+    if methodology:
+        with st.expander("方法论", expanded=False):
+            st.write(methodology.get("data_collection_approach", ""))
+            ec = methodology.get("evaluation_criteria") or []
+            if ec:
+                st.markdown("**评估维度**：")
+                for c in ec:
+                    st.markdown(f"- {c}")
+            lim = methodology.get("limitations") or []
+            if lim:
+                st.markdown("**已知局限**：")
+                for l_ in lim:
+                    st.markdown(f"- {l_}")
+            ssn = methodology.get("sample_size_note", "")
+            if ssn:
+                st.caption(ssn)
 
 
 def _render_key_findings(findings: list[dict]) -> None:
@@ -341,7 +337,7 @@ def _render_key_findings(findings: list[dict]) -> None:
         return
     st.header("关键发现")
     for i, f in enumerate(findings, 1):
-        st.markdown(f"**Finding {i}**：{f.get('statement', '')}")
+        st.markdown(f"**发现 {i}**：{f.get('statement', '')}")
         ev = f.get("evidence", "")
         impl = f.get("implication", "")
         if ev:
@@ -357,18 +353,9 @@ def _render_analysis_sections(sections: list[dict]) -> None:
         return
     st.header("详细章节")
     for sec in sections:
-        # 用 markdown HTML 包成 .section-card 应用主色剩头 + 浅色背景
         heading = sec.get("heading", "")
-        section_type = sec.get("section_type", "")
         narrative = sec.get("narrative", "") or ""
-        st.markdown(
-            f"""<div class="section-card">
-  <h3 style="margin-top:0;color:var(--color-primary)">{heading}</h3>
-  <small style="color:var(--color-text-secondary)">section_type: <code>{section_type}</code></small>
-</div>""",
-            unsafe_allow_html=True,
-        )
-        # narrative 走 st.markdown 保留 markdown 渲染（不进 .section-card 内层避免 HTML 嵌套问题）
+        st.subheader(heading)
         st.markdown(narrative)
         _render_source_refs(sec.get("source_refs"))
 
@@ -1437,7 +1424,11 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
     if title:
         st.title(title)
     if subtitle:
-        st.caption(subtitle)
+        from html import escape as _html_escape
+        st.markdown(
+            f'<p class="report-subtitle">{_html_escape(subtitle)}</p>',
+            unsafe_allow_html=True,
+        )
 
     _render_at_a_glance(report.get("at_a_glance") or [])
     _render_executive_summary(report.get("executive_summary") or {})
@@ -1454,6 +1445,9 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
 
     _render_key_findings(report.get("key_findings") or [])
     _render_analysis_sections(report.get("analysis_sections") or [])
+
+    render_scenario_payload(report.get("scenario_payload"))
+
     _render_swot(report.get("swot") or {})
 
     conclusions = report.get("conclusions", "")
@@ -1462,8 +1456,6 @@ def render_base_report(report: dict, *, trace_id: str | None = None) -> None:
         st.write(conclusions)
 
     _render_recommendations(report.get("recommendations") or [])
-
-    render_scenario_payload(report.get("scenario_payload"))
 
     _render_appendix(report.get("appendix") or {}, report=report)
     _render_metadata_panel(report.get("metadata") or {})

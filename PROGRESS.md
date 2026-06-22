@@ -16,6 +16,40 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-23（前端报告渲染全面优化）
+- 完成：
+  - **翻译基础设施**：新增 `src/utils/translations.py`，`_t()` 函数将 83 个英文枚举值翻译为"中文 (英文)"格式，前端/HTML/MD 三端共用
+  - **图表只读化**：Plotly 图表 `staticPlot: True`，禁止所有拖拽/缩放/交互
+  - **渲染顺序调整**：scenario_payload 移到 analysis_sections 之后、SWOT 之前
+  - **副标题增强**：20px / 深色 / font-weight 500，三端同步
+  - **分级标题排版**：H1-H4 CSS 层级（字号递减 + H2 下划线 + H3 左蓝边），三端同步
+  - **中文编号层级**：一、/（一）/ 1. 三级编号系统（`_HeadingCounter` class），三端同步
+  - **去 section-card + 去 section_type**：详细章节改为纯 `st.subheader`
+  - **Finding → 发现**：三端同步中文化
+  - **source_refs 域名 fallback**：空 title 时显示 URL 域名，三端同步
+  - **priority 翻译 + 去 emoji**：`[紧急 (critical)]` 格式，依赖 CSS border-color 区分
+  - **S1-S5 全量枚举翻译**：五力/玩家/趋势/进入策略/定价/变更/威胁/机会/战卡/MQ 全部翻译
+  - **S3/S4 去折叠**：竞品定价矩阵 + 活体战卡 + 变更检测 expander 全部展开
+  - **S5 MQ 标签双语**：坐标轴 + 象限标注，vendor 表去 overview 列
+  - **长文本列拆出**：S2 市场玩家"差异化" + 消费者分群"核心需求" → caption
+  - **动态术语表**：`_build_glossary(scenario)` 按场景组装（4 通用 + 场景专属），替代旧固定 13 项
+  - **Writer prompt**：narrative 禁止英文枚举值 + 行内数字不加粗
+  - **HTML 导出同步**：翻译 filter `| t` + 编号 + CSS 层级 + 去卡片 + 副标题
+  - **Markdown 导出同步**：翻译 + 编号 + 去 section_type + 域名 fallback
+  - **Code review 修复**：
+    - `_t()` 抽取到 `src/utils/translations.py`（消除 backend→frontend 跨层依赖）
+    - markdown.py 缩进 bug 修正
+    - markdown.py 计数器改 `threading.local()` 并发安全
+    - HTML 模板 cn 列表扩展到 20 项
+  - **测试**：486 passed，全量覆盖翻译/编号/图表配置/表格拆分
+- 下一步（TODO）：
+  1. **四级标题 "1. 2. 3."** 尚未实现——需确认哪些内容应使用
+  2. **前端体验验证**：重启前端用历史 trace 走查确认所有视觉改动
+  3. **S4 evidence 仍低（ev=1）**：待后续 session 分析
+- 阻塞：无
+
+---
+
 ## 2026-06-22 ~ 06-23（evidence v2 + 报告内容优化 + bug 修复）
 - 完成：
   - **evidence 反馈闭环 v2**：

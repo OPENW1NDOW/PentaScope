@@ -15,6 +15,33 @@
 
 ---
 
+## 2026-06-23: 翻译层抽取到 src/utils/translations.py
+
+- 选择：**将 `_t()` 函数和 `_TRANSLATIONS` 映射表从 `src/frontend/render.py` 抽取到 `src/utils/translations.py`**，前端/HTML exporter/Markdown exporter 三方统一 import
+- 理由：
+  1. 之前 html.py 和 markdown.py 从 `src.frontend.render` import `_t`，导致 API 服务器隐式依赖 streamlit（跨层依赖）
+  2. `src/utils/` 是无 UI 依赖的共享层，三端 import 干净
+- 备选（在 exporter 内部各自定义一份）：违反 DRY，映射表漂移风险
+
+---
+
+## 2026-06-23: 报告章节编号采用中文编号层级（一、/（一）/1.）
+
+- 选择：**所有章节标题加中文编号前缀**，一级用"一、二、三..."，二级用"（一）（二）（三）..."，三级用"1. 2. 3."
+- 理由：用户反馈报告内容没有分级标题形式，缺少缩进，难以找到重点关注部分；中文编号是中文报告的专业排版惯例
+- 实现：`_HeadingCounter` class（前端），`threading.local()` 计数器（MD exporter），Jinja2 `namespace` 变量（HTML template）
+- 备选（纯数字 1.1.1 格式）：不符合中文报告惯例
+
+---
+
+## 2026-06-23: 术语表从固定 13 项改为动态场景化
+
+- 选择：**`_build_glossary(scenario)` 函数根据场景类型组装术语表**（4 通用 + 5-8 场景专属）
+- 理由：之前 5 个场景报告术语表完全一样（固定 13 项），与实际报告内容不匹配（如 S4 没有 TAM 但有 FIA/Battlecard）
+- 备选（LLM 动态生成）：多一次 LLM 调用 + 结果不稳定 + 破坏 Phase 4 零 LLM 设计取向；当前代码映射方案维护成本低、确定性强
+
+---
+
 ## 2026-06-19: 字符 min_length 约束全面退役，质量保障交给 critic
 
 - 选择：**删除所有字符串字段的 min_length 约束**（report.py + s1-s5.py），只保留列表结构性约束 + URL 防空 + max_length 防爆

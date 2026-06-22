@@ -98,13 +98,21 @@
     a { color: var(--color-primary); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .source-refs { font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; }
+    .report-subtitle {
+      font-size: 20px;
+      color: var(--color-text);
+      font-weight: 500;
+      margin-top: -8px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
     @media print { body { padding: 8px; } }
   </style>
 </head>
 <body>
   <header class="hero">
     <h1>{{ report.title or "竞品分析报告" }}</h1>
-    {% if report.subtitle %}<p>{{ report.subtitle }}</p>{% endif %}
+    {% if report.subtitle %}<p class="report-subtitle">{{ report.subtitle }}</p>{% endif %}
     <small class="num">Trace: {{ trace_id }} · 生成于 {{ generated_at }}</small>
   </header>
 
@@ -145,7 +153,7 @@
     </div>
     <div class="kpi-card">
       <div class="kpi-card-label">可信度</div>
-      <div class="kpi-card-main" style="color:{{ confidence_color }}">{{ meta.confidence_level or "—" }}</div>
+      <div class="kpi-card-main" style="color:{{ confidence_color }}">{{ (meta.confidence_level or "") | t or "—" }}</div>
       <div class="kpi-card-sub"></div>
     </div>
   </div>
@@ -192,11 +200,10 @@
   {% if report.key_findings %}
     <h2>关键发现</h2>
     {% for f in report.key_findings %}
-      <div class="section-card">
-        <h3>Finding {{ loop.index }}</h3>
-        <div>{{ f.statement | safe_md }}</div>
-        {% if f.evidence %}<small><strong>依据</strong>：{{ f.evidence }}</small><br>{% endif %}
-        {% if f.implication %}<small><strong>启示</strong>：{{ f.implication }}</small>{% endif %}
+      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--color-border)">
+        <strong>发现 {{ loop.index }}</strong>：{{ f.statement | safe_md }}
+        {% if f.evidence %}<br><small><strong>依据</strong>：{{ f.evidence }}</small>{% endif %}
+        {% if f.implication %}<br><small><strong>启示</strong>：{{ f.implication }}</small>{% endif %}
         {% if f.source_refs %}
           <div class="source-refs">来源：
             {% for ref in f.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
@@ -210,16 +217,21 @@
   {% if report.analysis_sections %}
     <h2>详细章节</h2>
     {% for section in report.analysis_sections %}
-      <div class="section-card">
-        <h3>{{ section.heading }}</h3>
-        <small>section_type: <code>{{ section.section_type }}</code></small>
-        <div>{{ section.narrative | safe_md }}</div>
-        {% if section.source_refs %}
-          <div class="source-refs">来源：
-            {% for ref in section.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
-          </div>
-        {% endif %}
-      </div>
+      <h3>{{ section.heading }}</h3>
+      <div>{{ section.narrative | safe_md }}</div>
+      {% if section.source_refs %}
+        <div class="source-refs">来源：
+          {% for ref in section.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {# 5 场景图表 #}
+  {% if scenario_charts %}
+    <h2>场景专属可视化（{{ scenario_type }}）</h2>
+    {% for chart in scenario_charts %}
+      <div>{{ chart | safe }}</div>
     {% endfor %}
   {% endif %}
 
@@ -249,21 +261,13 @@
         <div class="action-grid">
           {% for r in tl_groups[tl_key] %}
             <div class="action-card priority-{{ r.priority }}">
-              <strong>[{{ r.priority }}]</strong> {{ r.action }}
+              <strong>[{{ r.priority | t }}]</strong> {{ r.action }}
               {% if r.target_role %}<br><small>对象：{{ r.target_role }}</small>{% endif %}
               {% if r.rationale %}<br><small>依据：{{ r.rationale }}</small>{% endif %}
             </div>
           {% endfor %}
         </div>
       {% endif %}
-    {% endfor %}
-  {% endif %}
-
-  {# 5 场景图表 #}
-  {% if scenario_charts %}
-    <h2>场景专属可视化（{{ scenario_type }}）</h2>
-    {% for chart in scenario_charts %}
-      <div>{{ chart | safe }}</div>
     {% endfor %}
   {% endif %}
 

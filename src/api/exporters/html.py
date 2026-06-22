@@ -16,6 +16,7 @@ import nh3
 from markupsafe import Markup
 
 from src.api.exporters import check_fonts
+from src.frontend.render import _t
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ _jinja_env = jinja2.Environment(
     autoescape=jinja2.select_autoescape(["html", "j2"]),
 )
 _jinja_env.filters["safe_md"] = _safe_markdown
+_jinja_env.filters["t"] = _t
 
 
 def _confidence_color(level: str) -> str:

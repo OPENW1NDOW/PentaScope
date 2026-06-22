@@ -2023,3 +2023,45 @@ async def test_phase3_prompt_contains_grouped_urls_and_rules():
         system_prompt = call[0][0]
         assert "溯源引用规则" in system_prompt
         assert "跨竞品引用" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_feedback_issues_injected_on_retry():
+    """打回 writer 时，phase 3 prompt 应包含 inspector 的 reason 和 suggestion。"""
+    from src.schemas.feedback import FeedbackIssue
+
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+
+    issues = [
+        FeedbackIssue(
+            agent="writer", field="key_findings[0].source_refs[1]",
+            severity="critical", dimension="evidence", issue_type="source_mismatch",
+            reason="用火山引擎文档证明 GrowingIO 的 XBA 模型",
+            suggestion="替换为 GrowingIO 官方文档链接",
+        ),
+    ]
+
+    phase1_outline = _make_valid_outline_dict("测试")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_types = ["overview", "vendor_profile_analysis", "feature_matrix_analysis", "jtbd_analysis", "roadmap_analysis"]
+    side_effects = [phase1_outline, phase2_payload] + [_make_valid_narrative_json(t) for t in s1_types]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    try:
+        await orch.write(
+            scenario_input=scenario_input, analysis=analysis, profiles=profiles,
+            feedback_issues=issues,
+        )
+    except Exception:
+        pass  # phase 4 assemble 可能因 fixture 不完整报错
+
+    # phase 3 调用从 index=2 开始（跳过 phase1 + phase2）
+    narrative_calls = mock_llm.call_json.call_args_list[2:]
+    assert len(narrative_calls) >= 1, "phase 3 应至少有 1 次 LLM 调用"
+    for call in narrative_calls:
+        system_prompt = call[0][0]
+        assert "火山引擎" in system_prompt
+        assert "GrowingIO" in system_prompt

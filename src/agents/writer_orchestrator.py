@@ -359,6 +359,7 @@ class WriterOrchestrator:
         competitor_recommendations: Any = None,
         prior_report_data: Optional[dict] = None,
         trace_id: str = "",
+        feedback_issues: list | None = None,
     ) -> BaseReport:
         """4 阶段编排入口。C1 在 phase 1 完成后 raise NotImplementedError。"""
         self._call_counter = 0
@@ -435,6 +436,7 @@ class WriterOrchestrator:
             analysis=analysis,
             discovered_urls=discovered_urls,
             warnings=warnings,
+            feedback_issues=feedback_issues,
         )
         logger.info("[writer] phase 3 完成, 进入 phase 4")
 
@@ -1172,6 +1174,7 @@ class WriterOrchestrator:
         scenario_input: ScenarioInput,
         discovered_urls: list[str],
         retry_error_hint: str | None = None,
+        feedback_issues: list | None = None,
     ) -> AnalysisSection:
         """[v3-R18] Semaphore 限速；[v3-R04] 走 _llm_call_with_quota 不绕熔断。
 
@@ -1242,6 +1245,17 @@ class WriterOrchestrator:
                 f"3. 找不到对应 URL 时 source_refs 留空 []，绝不编造、绝不跨竞品引用"
             )
 
+        if feedback_issues:
+            issue_lines = []
+            for iss in feedback_issues:
+                if getattr(iss, "dimension", None) == "evidence":
+                    issue_lines.append(f"- {iss.field}: {iss.reason} 建议：{iss.suggestion}")
+            if issue_lines:
+                system_prompt += (
+                    "\n\n【质检打回：以下引用存在问题，请修正】\n"
+                    + "\n".join(issue_lines)
+                )
+
         if retry_error_hint:
             system_prompt += f"\n\n【上次生成失败，请修复】\n{retry_error_hint}"
 
@@ -1264,6 +1278,7 @@ class WriterOrchestrator:
         analysis: Any,
         discovered_urls: list[str],
         warnings: list[str],
+        feedback_issues: list | None = None,
     ) -> tuple[list[AnalysisSection], list[str]]:
         """[v3-R05] [v3-R12] [v3-R18] 并行 narrative + 占位降级 + 半数闸门。
 
@@ -1284,6 +1299,7 @@ class WriterOrchestrator:
                     analysis=analysis,
                     scenario_input=scenario_input,
                     discovered_urls=discovered_urls,
+                    feedback_issues=feedback_issues,
                 )
                 for st in section_types
             ),
@@ -1314,6 +1330,7 @@ class WriterOrchestrator:
                     scenario_input=scenario_input,
                     discovered_urls=discovered_urls,
                     retry_error_hint=error_hint,
+                    feedback_issues=feedback_issues,
                 )
                 first_pass_results[i] = retry_result
                 logger.info("[writer] phase 3 section %s 重试成功", st)

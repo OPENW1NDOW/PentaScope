@@ -277,6 +277,14 @@ def build_graph(llm, http, parser, trace_writer=None):
         if ui.scenario == "S4" and ui.prior_trace_id:
             prior_data = _load_prior_report_data(ui.prior_trace_id)
 
+        # 打回时传 feedback issues 给 writer
+        writer_feedback_issues = None
+        feedback = state.get("feedback")
+        if feedback and not feedback.passed:
+            writer_feedback_issues = [i for i in feedback.issues if i.agent == "writer"]
+            if not writer_feedback_issues:
+                writer_feedback_issues = None
+
         try:
             report = await writer.write(
                 scenario_input=ui,
@@ -286,6 +294,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 competitor_recommendations=state.get("competitor_recommendations"),
                 prior_report_data=prior_data,
                 trace_id=state.get("trace_id", ""),
+                feedback_issues=writer_feedback_issues,
             )
             _save("03_report", report)
             return {"report": report, "current_node": "writer"}

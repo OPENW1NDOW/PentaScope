@@ -413,7 +413,7 @@ def _render_recommendations(recs: list[dict]) -> None:
                 action = r.get("action", "")
                 rationale = r.get("rationale", "")
                 # 保留 PD-5 emoji 状态点（recommendations badge 在白名单内）
-                badge = {"critical": "🔴", "important": "🟡", "consider": "🟢"}.get(priority, "")
+                badge = ""
                 priority_class = (
                     f"priority-{priority}"
                     if priority in ("critical", "important", "consider")
@@ -445,7 +445,7 @@ def _render_recommendations(recs: list[dict]) -> None:
                     )
                     st.markdown(
                         f"""<div class="action-card {priority_class}">
-  <div style="font-size:14px;font-weight:600">{badge} [{priority}] {action}</div>
+  <div style="font-size:14px;font-weight:600">[{_t(priority)}] {action}</div>
   {target_html}
   {rationale_html}
   {refs_html}
@@ -576,7 +576,7 @@ def _render_s1_payload(p: dict) -> None:
         rows = [
             {
                 "竞品": v.get("competitor_name", ""),
-                "波次定位": v.get("wave_position", ""),
+                "波次定位": _t(v.get("wave_position", "")),
                 "一句话": v.get("one_line_pitch", ""),
                 "最佳适配": v.get("best_fit_for", ""),
                 "优势数": len(v.get("strengths") or []),
@@ -673,15 +673,15 @@ def _render_s1_payload(p: dict) -> None:
         st.subheader("路线图建议")
         cols = st.columns(3)
         with cols[0]:
-            st.markdown("**must_build**")
+            st.markdown("**必须建设 (must_build)**")
             for x in rr.get("must_build") or []:
                 st.markdown(f"- {x}")
         with cols[1]:
-            st.markdown("**should_skip**")
+            st.markdown("**建议跳过 (should_skip)**")
             for x in rr.get("should_skip") or []:
                 st.markdown(f"- {x}")
         with cols[2]:
-            st.markdown("**should_differentiate**")
+            st.markdown("**差异化方向 (should_differentiate)**")
             for x in rr.get("should_differentiate") or []:
                 st.markdown(f"- {x}")
         st.caption(rr.get("rationale_summary", ""))
@@ -737,7 +737,7 @@ def _render_s2_payload(p: dict) -> None:
         rows = [
             {
                 "维度": label,
-                "强度": (ff.get(k) or {}).get("intensity", ""),
+                "强度": _t((ff.get(k) or {}).get("intensity", "")),
                 "影响": (ff.get(k) or {}).get("implication", ""),
             }
             for k, label in forces_map
@@ -751,12 +751,12 @@ def _render_s2_payload(p: dict) -> None:
     players = p.get("players") or []
     if players:
         st.subheader("市场玩家")
-        st.caption(f"市场集中度：{p.get('market_concentration', '')}")
+        st.caption(f"市场集中度：{_t(p.get('market_concentration', ''))}")
         st.dataframe([
             {
                 "名称": pl.get("name", ""),
                 "公司": pl.get("company", ""),
-                "角色": pl.get("market_role", ""),
+                "角色": _t(pl.get("market_role", "")),
                 "份额%": pl.get("market_share_pct", ""),
                 "增速%": pl.get("yoy_growth_pct", ""),
                 "差异化": pl.get("key_differentiator", ""),
@@ -774,7 +774,7 @@ def _render_s2_payload(p: dict) -> None:
             {
                 "分群": s.get("name", ""),
                 "份额%": s.get("share_pct", ""),
-                "可触达": s.get("addressability", ""),
+                "可触达": _t(s.get("addressability", "")),
                 "核心需求": " / ".join(s.get("key_needs") or []),
             }
             for s in segs
@@ -787,9 +787,9 @@ def _render_s2_payload(p: dict) -> None:
         st.dataframe([
             {
                 "趋势": t.get("trend_name", ""),
-                "方向": t.get("direction", ""),
-                "时间窗": t.get("time_horizon", ""),
-                "对进入影响": t.get("impact_on_entry", ""),
+                "方向": _t(t.get("direction", "")),
+                "时间窗": _t(t.get("time_horizon", "")),
+                "对进入影响": _t(t.get("impact_on_entry", "")),
             }
             for t in trends
         ], use_container_width=True)
@@ -798,7 +798,7 @@ def _render_s2_payload(p: dict) -> None:
     es = p.get("entry_strategy") or {}
     if es:
         st.subheader("进入策略")
-        st.markdown(f"**推荐模式**：`{es.get('recommended_mode', '')}`")
+        st.markdown(f"**推荐模式**：{_t(es.get('recommended_mode', ''))}")
         st.markdown(f"**目标分群**：{', '.join(es.get('target_segments') or [])}")
         st.markdown(f"**初始定位**：{es.get('initial_positioning', '')}")
         ksf = es.get("key_success_factors") or []
@@ -812,7 +812,7 @@ def _render_s2_payload(p: dict) -> None:
             for r in risks:
                 st.markdown(
                     f"- {r.get('description', '')} "
-                    f"（风险={r.get('likelihood', '')}/影响={r.get('impact', '')}）"
+                    f"（可能性：{_t(r.get('likelihood', ''))} / 影响：{_t(r.get('impact', ''))}）"
                 )
 
     # competitor_recommendations（recommender 产出）
@@ -1381,7 +1381,8 @@ def _render_kpi_strip(report: dict) -> None:
     scenario_sub = _SCENARIO_LABELS.get(scenario, "")
     comp_main, comp_sub = _format_competitors(report)
     src_main, src_sub = _format_data_sources(meta)
-    conf_level = meta.get("confidence_level") or "—"
+    _raw_conf = meta.get("confidence_level") or ""
+    conf_level = _t(_raw_conf) if _raw_conf else "—"
     conf_color = _confidence_color(conf_level)
 
     cols = st.columns(5)

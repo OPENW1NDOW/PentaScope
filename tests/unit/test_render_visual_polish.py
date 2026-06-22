@@ -29,7 +29,12 @@ def test_btn_export_css_no_underline_with_important():
 
 def test_at_a_glance_renders_with_correct_label():
     """_render_at_a_glance 应渲染「核心要点」标题（不是误译的「一图看懂」）。"""
+    from src.frontend.render import _hc
+    _hc.reset()
     captured_calls = []
+
+    def fake_header(text):
+        captured_calls.append(("header", text))
 
     def fake_subheader(text):
         captured_calls.append(("subheader", text))
@@ -38,19 +43,20 @@ def test_at_a_glance_renders_with_correct_label():
         captured_calls.append(("markdown", text))
 
     import streamlit as st
-    real_subheader, real_markdown = st.subheader, st.markdown
+    real_header, real_subheader, real_markdown = st.header, st.subheader, st.markdown
+    st.header = fake_header
     st.subheader = fake_subheader
     st.markdown = fake_markdown
     try:
         render._render_at_a_glance(["要点1", "要点2", "要点3"])
     finally:
-        st.subheader, st.markdown = real_subheader, real_markdown
+        st.header, st.subheader, st.markdown = real_header, real_subheader, real_markdown
 
-    subheaders = [t for kind, t in captured_calls if kind == "subheader"]
-    assert "核心要点" in subheaders, (
-        f"_render_at_a_glance 应渲染「核心要点」标题，实际 subheader: {subheaders}"
+    all_headings = [t for kind, t in captured_calls if kind in ("header", "subheader")]
+    assert any("核心要点" in h for h in all_headings), (
+        f"_render_at_a_glance 应渲染「核心要点」标题，实际 headings: {all_headings}"
     )
-    assert "一图看懂" not in subheaders, (
+    assert not any("一图看懂" in h for h in all_headings), (
         "「一图看懂」是误译（at_a_glance 内容不是图，是要点速览），应改为「核心要点」"
     )
 
@@ -59,6 +65,8 @@ def test_at_a_glance_renders_with_correct_label():
 
 def test_executive_summary_subheaders_chinese_only():
     """_render_executive_summary 子标题应纯中文，不带英文。"""
+    from src.frontend.render import _hc
+    _hc.reset()
     captured = []
 
     def fake_subheader(text):

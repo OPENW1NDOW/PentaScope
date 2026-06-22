@@ -11,6 +11,8 @@ import pytest
 @pytest.fixture
 def st_spy(monkeypatch):
     """把 streamlit 替换成 MagicMock，记录所有调用"""
+    from src.frontend.render import _hc
+    _hc.reset()
     spy = MagicMock()
     # 共用一个上下文 mock，便于断言 cm.metric / cm.markdown 调用
     cm = MagicMock()
@@ -67,8 +69,9 @@ def test_render_executive_summary_5_sections(st_spy):
         "implications": "启示" * 30,
         "path_forward": ["行动一"],
     })
-    # 至少调用了 header（"执行摘要"）
-    st_spy.header.assert_any_call("执行摘要")
+    # 至少调用了 header 包含"执行摘要"
+    header_calls = [str(c) for c in st_spy.header.call_args_list]
+    assert any("执行摘要" in c for c in header_calls)
     # subheader 对 5 个段都触发（其中 3 个 直接段 + 2 个 list 段共 5 次以内）
     assert st_spy.subheader.call_count >= 4
 
@@ -76,10 +79,11 @@ def test_render_executive_summary_5_sections(st_spy):
 def test_render_executive_summary_skips_empty_fields(st_spy):
     from src.frontend.render import _render_executive_summary
     _render_executive_summary({"context": "x" * 100})
-    st_spy.header.assert_called_with("执行摘要")
+    header_calls = [str(c) for c in st_spy.header.call_args_list]
+    assert any("执行摘要" in c for c in header_calls)
     # 只 context 有值时不应渲染 implications 等
-    subheader_calls = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "现实启示 Implications" not in subheader_calls
+    subheader_calls = [str(c) for c in st_spy.subheader.call_args_list]
+    assert not any("现实启示 Implications" in c for c in subheader_calls)
 
 
 # ============ key_findings ============
@@ -94,7 +98,8 @@ def test_render_key_findings_with_source_refs(st_spy):
             "source_refs": [{"url": "https://x.com", "title": "财报"}],
         },
     ])
-    st_spy.header.assert_called_with("关键发现")
+    header_calls = [str(c) for c in st_spy.header.call_args_list]
+    assert any("关键发现" in c for c in header_calls)
     st_spy.markdown.assert_any_call("**发现 1**：竞品 A 增长率 30%")
 
 
@@ -114,11 +119,11 @@ def test_render_swot_renders_all_4_quadrants(st_spy):
         "opportunities": [{"point": "市场扩张"}],
         "threats": [{"point": "新对手"}],
     })
-    subheader_calls = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "优势 S" in subheader_calls
-    assert "劣势 W" in subheader_calls
-    assert "机会 O" in subheader_calls
-    assert "威胁 T" in subheader_calls
+    subheader_calls = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("优势 S" in c for c in subheader_calls)
+    assert any("劣势 W" in c for c in subheader_calls)
+    assert any("机会 O" in c for c in subheader_calls)
+    assert any("威胁 T" in c for c in subheader_calls)
 
 
 def test_render_swot_empty_skipped(st_spy):
@@ -131,7 +136,8 @@ def test_render_swot_partial_renders(st_spy):
     """仅 strengths 有内容也渲染"""
     from src.frontend.render import _render_swot
     _render_swot({"strengths": [{"point": "x"}]})
-    st_spy.header.assert_called_with("SWOT 分析")
+    header_calls = [str(c) for c in st_spy.header.call_args_list]
+    assert any("SWOT 分析" in c for c in header_calls)
 
 
 # ============ recommendations ============
@@ -144,9 +150,9 @@ def test_render_recommendations_groups_by_timeline(st_spy):
         {"action": "改 B", "priority": "important", "timeline": "short_term", "target_role": "Dev",
          "rationale": "技术债"},
     ])
-    subheader_calls = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "即时（1 个月内）" in subheader_calls
-    assert "短期（3 个月内）" in subheader_calls
+    subheader_calls = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("即时（1 个月内）" in c for c in subheader_calls)
+    assert any("短期（3 个月内）" in c for c in subheader_calls)
 
 
 def test_render_recommendations_with_priority_emoji(st_spy):
@@ -271,9 +277,9 @@ def test_render_s1_with_vendor_profiles(st_spy):
                           "estimated_impact": "high", "recommendation": "build"}],
         "roadmap_recommendations": {"must_build": ["x"], "rationale_summary": "xx"},
     })
-    headers = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "竞品画像（Forrester Wave 风格）" in headers
-    assert "功能矩阵" in headers
+    headers = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("竞品画像（Forrester Wave 风格）" in h for h in headers)
+    assert any("功能矩阵" in h for h in headers)
 
 
 # ============ S2 ============
@@ -303,9 +309,9 @@ def test_render_s2_with_market_sizing_and_players(st_spy):
                            "main_risks": [{"description": "x", "likelihood": "low", "impact": "low",
                                            "mitigation": "y"}]},
     })
-    headers = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "市场规模 TAM/SAM/SOM" in headers
-    assert "市场玩家" in headers
+    headers = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("市场规模 TAM/SAM/SOM" in h for h in headers)
+    assert any("市场玩家" in h for h in headers)
 
 
 # ============ S3 ============
@@ -334,8 +340,8 @@ def test_render_s3_with_packaging(st_spy):
             "default_billing_cycle": "annual", "rationale": "x" * 60,
         },
     })
-    headers = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "推荐套餐设计 GBB" in headers
+    headers = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("推荐套餐设计 GBB" in h for h in headers)
 
 
 # ============ S4 ============
@@ -361,9 +367,9 @@ def test_render_s4_with_changes_and_battlecards(st_spy):
                          "sections": [{"section_name": "quick_summary", "completeness": "full",
                                        "content": "x"}]}],
     })
-    headers = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "监控周期" in headers
-    assert "活体战卡" in headers
+    headers = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("监控周期" in h for h in headers)
+    assert any("活体战卡" in h for h in headers)
 
 
 # ============ S5 ============
@@ -486,11 +492,11 @@ def test_render_s5_with_perceptual_map_and_canvas(st_spy):
         "category_strategy": {"chosen_category": "AI 工具", "why_this_category": "x" * 30,
                               "competitors_implied": ["A"]},
     })
-    headers = [c.args[0] for c in st_spy.subheader.call_args_list]
-    assert "竞品画像 Gartner MQ" in headers
-    assert "感知地图 Perceptual Map" in headers
-    assert "战略画布" in headers
-    assert "ERRC 4 宫格" in headers
+    headers = [str(c) for c in st_spy.subheader.call_args_list]
+    assert any("竞品画像 Gartner MQ" in h for h in headers)
+    assert any("感知地图 Perceptual Map" in h for h in headers)
+    assert any("战略画布" in h for h in headers)
+    assert any("ERRC 4 宫格" in h for h in headers)
 
 
 # ============ [fix3 prove-it] render_analysis_response: report=None 时的文案兜底 ============

@@ -27,7 +27,6 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 - 下一步（TODO）：
   1. **evidence 反馈闭环 v2**：按竞品分组传 URL + 打回时传 inspector 原始 reason/suggestion + 简化路由逻辑
   2. **前端输入一致性 warning**：重新评估需求和方案
-  3. **后台任务模式**：后端异步化 + 轮询 + 终止能力
 - 阻塞：无
 
 ---

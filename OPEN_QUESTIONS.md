@@ -145,7 +145,12 @@ inspector 打回 collector 时只是用相同 query 重新搜索——结果几�
 
 ## Q-2026-06-20-evidence-反馈闭环路由需重新设计
 
-**状态**：未决
+**状态**：已讨论，方向确认（2026-06-22），待实施
+
+**确认的改进方向**（06-22 讨论结论）：
+- critic 判断可靠性已验证：5 条抽样 4 条完全正确 + 1 条部分合理，误判率≈0
+- 核心要求：不要求每段都有 source_refs，但一旦标了就必须准确（URL 属于论述的竞品）
+- 实施方案：(1) writer prompt 按竞品分组传 URL + 引用规则 (2) 打回时传 inspector 原始 reason/suggestion (3) 简化路由逻辑
 
 当前 `_route_evidence_issue` + EvidenceFeedback 的设计基于错误假设——认为 evidence 评分低是因为"URL 引用不足"，实际数据表明 97% 的问题是"引用错误"（张冠李戴 + 证据不相关），不是"引用不足"。
 

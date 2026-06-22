@@ -516,7 +516,7 @@ def test_safe_minimal_fallback_returns_safe_value():
 def test_map_issue_type_to_agent():
     from src.agents.inspector import _map_issue_type_to_agent
 
-    assert _map_issue_type_to_agent("url_not_discovered") == "collector"
+    assert _map_issue_type_to_agent("url_not_discovered") == "writer"
     assert _map_issue_type_to_agent("source_mismatch") == "writer"
     assert _map_issue_type_to_agent("source_irrelevant") == "writer"
     assert _map_issue_type_to_agent("vague_description") == "writer"
@@ -697,4 +697,4 @@ def test_source_mismatch_routes_to_writer():
     from src.agents.inspector import _map_issue_type_to_agent
     assert _map_issue_type_to_agent("source_mismatch") == "writer"
     assert _map_issue_type_to_agent("source_irrelevant") == "writer"
-    assert _map_issue_type_to_agent("url_not_discovered") == "collector"
+    assert _map_issue_type_to_agent("url_not_discovered") == "writer"

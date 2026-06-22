@@ -1346,13 +1346,25 @@ def _format_quality_score(meta: dict) -> tuple[str, str]:
     return main, sub
 
 
-def _format_data_sources(meta: dict) -> tuple[str, str]:
-    """KPI 数据源数。"""
-    sources = meta.get("data_sources") or []
-    total = len(sources)
-    if total == 0:
+def _format_data_sources(report: dict) -> tuple[str, str]:
+    """KPI 数据源数 = 全报告实际引用的独立 URL 去重数。"""
+    urls = set()
+    _collect_all_urls(report, urls)
+    if not urls:
         return "—", ""
-    return str(total), ""
+    return str(len(urls)), ""
+
+
+def _collect_all_urls(obj, urls: set):
+    """递归收集报告中所有 source_refs 的 url。"""
+    if isinstance(obj, dict):
+        if "url" in obj and "source_type" in obj and obj.get("url"):
+            urls.add(obj["url"])
+        for v in obj.values():
+            _collect_all_urls(v, urls)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_all_urls(item, urls)
 
 
 def _format_competitors(report: dict) -> tuple[str, str]:
@@ -1389,7 +1401,7 @@ def _render_kpi_strip(report: dict) -> None:
     scenario = meta.get("scenario") or "—"
     scenario_sub = _SCENARIO_LABELS.get(scenario, "")
     comp_main, comp_sub = _format_competitors(report)
-    src_main, src_sub = _format_data_sources(meta)
+    src_main, src_sub = _format_data_sources(report)
     _raw_conf = meta.get("confidence_level") or ""
     conf_level = _t(_raw_conf) if _raw_conf else "—"
     conf_color = _confidence_color(conf_level)

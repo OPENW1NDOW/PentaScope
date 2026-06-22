@@ -40,6 +40,3 @@ class AnalysisState(TypedDict, total=False):
 
     # v4 critic：采集阶段产出的搜索源信息（供 inspector evidence rubric 使用）
     discovered_sources: list[dict]  # [{"url", "title", "snippet"}]
-
-    # evidence 路由：上轮 coverage（用于判断是否改善）
-    _prev_evidence_coverage: Optional[float]

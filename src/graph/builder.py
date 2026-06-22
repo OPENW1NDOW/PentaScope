@@ -32,8 +32,6 @@ from src.schemas.input import CompetitorBasic
 from src.tools.sources import TavilySource
 from src.utils.config import settings
 from src.utils.paths import runs_dir
-from src.utils.url_normalize import normalize_url as _normalize_url
-from src.agents.writer_orchestrator import _collect_source_refs_recursive
 
 logger = logging.getLogger(__name__)
 
@@ -125,51 +123,6 @@ def _route_entry(state: AnalysisState) -> str:
     return "recommender" if ui.scenario == "S2" else "collector"
 
 
-_EVIDENCE_ISSUE_TYPES = frozenset({"url_not_discovered", "source_mismatch", "source_irrelevant"})
-
-
-def _extract_used_urls(report) -> set[str]:
-    """从报告递归收集所有 source_refs 里的 url。"""
-    if report is None:
-        return set()
-    dump = report.model_dump()
-    refs, bare = _collect_source_refs_recursive(dump)
-    urls = {r["url"] for r in refs if r.get("url")}
-    urls |= bare
-    return urls
-
-
-def _route_evidence_issue(state: dict) -> str | None:
-    """evidence 类 issue 的智能路由。返回 None 表示走原有映射。"""
-    discovered = state.get("discovered_sources", [])
-    if not discovered:
-        return None
-
-    discovered_urls = {_normalize_url(d["url"]) for d in discovered
-                       if isinstance(d, dict) and d.get("url")}
-    if not discovered_urls:
-        return None
-
-    report = state.get("report")
-    if report is None:
-        return None
-
-    used_urls = {_normalize_url(u) for u in _extract_used_urls(report)}
-    coverage = len(used_urls & discovered_urls) / len(discovered_urls)
-
-    prev_coverage = state.get("_prev_evidence_coverage")
-    retry_count = state.get("retry_count", 0)
-    if retry_count >= 2 and prev_coverage is not None and coverage >= prev_coverage - 0.05:
-        return "end"
-
-    if len(discovered_urls) >= 8 and coverage < 0.5:
-        return "writer"
-    elif len(discovered_urls) < 5:
-        return "collector"
-    else:
-        return "writer"
-
-
 def build_graph(llm, http, parser, trace_writer=None):
     """构建 LangGraph 状态图，返回 (compiled_graph, node_trace)。
 
@@ -239,31 +192,6 @@ def build_graph(llm, http, parser, trace_writer=None):
         logger.info("[graph] → collector")
         node_trace.append("collector")
         ui = state["user_input"]
-
-        # 检测是否为 evidence 反馈打回的增量补采模式
-        feedback = state.get("feedback")
-        existing_profiles = state.get("profiles")
-        if feedback and not feedback.passed and existing_profiles:
-            ev_issues = [i for i in feedback.issues
-                         if getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES]
-            if ev_issues:
-                logger.info("[graph] collector 进入增量补采模式")
-                new_profiles, new_sources = await collector.supplement_collect(
-                    competitors=ui.competitors,
-                    feedback_issues=ev_issues,
-                    scenario=ui.scenario,
-                    existing_profiles=existing_profiles,
-                )
-                if new_sources:
-                    existing_ds = state.get("discovered_sources") or []
-                    return {
-                        "profiles": new_profiles,
-                        "discovered_sources": existing_ds + new_sources,
-                        "current_node": "collector",
-                    }
-                else:
-                    logger.warning("[graph] collector 补采无新数据，跳过")
-                    return {"current_node": "collector"}
 
         rec = state.get("competitor_recommendations")
         if rec is not None and rec.recommended_competitors:
@@ -349,21 +277,6 @@ def build_graph(llm, http, parser, trace_writer=None):
         if ui.scenario == "S4" and ui.prior_trace_id:
             prior_data = _load_prior_report_data(ui.prior_trace_id)
 
-        # 检测 evidence 反馈
-        evidence_feedback = None
-        feedback = state.get("feedback")
-        if feedback and not feedback.passed:
-            ev_issues = [i for i in feedback.issues if getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES]
-            if ev_issues:
-                from src.schemas.feedback import EvidenceFeedback
-                ds = state.get("discovered_sources") or []
-                urls = sorted({d["url"] for d in ds if isinstance(d, dict) and d.get("url")})
-                evidence_feedback = EvidenceFeedback(
-                    available_urls=urls,
-                    weak_fields=[i.field for i in ev_issues],
-                    coverage_pct=state.get("_prev_evidence_coverage", 0.0),
-                )
-
         try:
             report = await writer.write(
                 scenario_input=ui,
@@ -373,7 +286,6 @@ def build_graph(llm, http, parser, trace_writer=None):
                 competitor_recommendations=state.get("competitor_recommendations"),
                 prior_report_data=prior_data,
                 trace_id=state.get("trace_id", ""),
-                evidence_feedback=evidence_feedback,
             )
             _save("03_report", report)
             return {"report": report, "current_node": "writer"}
@@ -514,24 +426,11 @@ def build_graph(llm, http, parser, trace_writer=None):
         next_retry = state.get("retry_count", 0)
         if not feedback.passed:
             next_retry += 1
-        result = {
+        return {
             "feedback": feedback,
             "current_node": "inspector",
             "retry_count": next_retry,
         }
-        # 写入 evidence coverage 供下轮 _route_evidence_issue 判断退出条件
-        if not feedback.passed:
-            has_evidence_issue = any(
-                getattr(i, "issue_type", None) in _EVIDENCE_ISSUE_TYPES
-                for i in feedback.issues
-            )
-            if has_evidence_issue and report is not None:
-                ds = state.get("discovered_sources") or []
-                d_urls = {_normalize_url(d["url"]) for d in ds if isinstance(d, dict) and d.get("url")}
-                u_urls = {_normalize_url(u) for u in _extract_used_urls(report)}
-                if d_urls:
-                    result["_prev_evidence_coverage"] = len(u_urls & d_urls) / len(d_urls)
-        return result
 
     def should_continue(state: AnalysisState) -> str:
         """v3 should_continue：按 feedback.issues[*].agent 路由回 collector/analyzer/writer，
@@ -554,15 +453,6 @@ def build_graph(llm, http, parser, trace_writer=None):
             logger.warning("[graph] 达到 max_retries=%d，强制结束", max_retries)
             node_trace.append(f"reject->end(retry={retry_count})")
             return "end"
-
-        # evidence issues 优先扫描
-        for issue in feedback.issues:
-            if issue.severity in ("critical", "major") and getattr(issue, "issue_type", None) in _EVIDENCE_ISSUE_TYPES:
-                evidence_route = _route_evidence_issue(state)
-                if evidence_route is not None:
-                    node_trace.append(f"reject->{evidence_route} (evidence_route)")
-                    return evidence_route
-                break
 
         # 取第一条 critical/major issue 的 agent 决定回边
         for issue in feedback.issues:

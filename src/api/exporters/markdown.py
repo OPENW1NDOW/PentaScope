@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Callable
+from urllib.parse import urlparse
+
+from src.frontend.render import _t
 
 _BEIJING = timezone(timedelta(hours=8))
 
@@ -93,7 +96,7 @@ def _render_key_findings(findings: list) -> str:
         return ""
     lines = ["\n## 关键发现\n"]
     for i, f in enumerate(findings, 1):
-        lines.append(f"### Finding {i}")
+        lines.append(f"### 发现 {i}")
         lines.append(f"\n{f.get('statement', '')}\n")
         if f.get("evidence"):
             lines.append(f"**依据**：{f['evidence']}")
@@ -111,9 +114,6 @@ def _render_analysis_sections(sections: list) -> str:
     lines = ["\n## 详细章节\n"]
     for sec in sections:
         lines.append(f"### {sec.get('heading', '')}")
-        st = sec.get("section_type", "")
-        if st:
-            lines.append(f"\n> section_type: `{st}`")
         nar = sec.get("narrative", "")
         if nar:
             lines.append(f"\n{nar}")
@@ -162,7 +162,7 @@ def _render_recommendations(recs: list) -> str:
         for r in items:
             priority = r.get("priority", "")
             action = r.get("action", "")
-            lines.append(f"#### [{priority}] {action}")
+            lines.append(f"#### [{_t(priority)}] {action}")
             if r.get("target_role"):
                 lines.append(f"- 对象：{r['target_role']}")
             if r.get("rationale"):
@@ -201,11 +201,11 @@ def _render_appendix(appx: dict) -> str:
 
 def _format_source_refs(refs: list) -> str:
     parts = []
-    for ref in refs:
+    for i, ref in enumerate(refs, 1):
         if not isinstance(ref, dict):
             continue
         url = ref.get("url", "")
-        title = ref.get("title", "") or "链接"
+        title = ref.get("title", "") or (urlparse(url).netloc if url else "") or f"来源 {i}"
         if url:
             parts.append(f"[{title}]({url})")
         else:

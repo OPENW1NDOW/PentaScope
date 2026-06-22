@@ -619,6 +619,7 @@ class WriterOrchestrator:
             analysis_json = analysis_json[:5000] + "...[truncated]"
 
         sections = [
+            ("=== 当前日期 ===", date.today().isoformat()),
             ("=== 场景 ===", scenario),
             ("=== 我方产品 ===", our_product_brief),
             ("=== 竞品列表 ===", competitor_basics),

@@ -20,7 +20,7 @@ def test_executive_summary_5_fields():
     # max_length 仍在（防爆）
     with pytest.raises(ValidationError):
         ExecutiveSummary(
-            context="x" * 301, core_thesis="y",
+            context="x" * 601, core_thesis="y",
             key_findings_brief=["a", "b"],
             implications="z", path_forward=["a"]
         )

@@ -1275,15 +1275,12 @@ def _format_quality_score(meta: dict) -> tuple[str, str]:
 
 
 def _format_data_sources(meta: dict) -> tuple[str, str]:
-    """KPI 数据源数 = 总数 + 三档分桶副信息。"""
+    """KPI 数据源数。"""
     sources = meta.get("data_sources") or []
     total = len(sources)
     if total == 0:
         return "—", ""
-    high = sum(1 for s in sources if (s.get("confidence") or "") == "high")
-    mid = sum(1 for s in sources if (s.get("confidence") or "") == "medium")
-    low = sum(1 for s in sources if (s.get("confidence") or "") == "low")
-    return str(total), f"高 {high} 中 {mid} 低 {low}"
+    return str(total), ""
 
 
 def _format_competitors(report: dict) -> tuple[str, str]:

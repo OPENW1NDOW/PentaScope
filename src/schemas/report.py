@@ -17,10 +17,10 @@ from src.schemas.scenarios.s5 import S5PositioningPayload
 
 class ExecutiveSummary(BaseModel):
     """执行摘要 5 段式（替代旧 4 段）"""
-    context: str = Field(max_length=300)
-    core_thesis: str = Field(max_length=200)
+    context: str = Field(max_length=600)
+    core_thesis: str = Field(max_length=400)
     key_findings_brief: list[str] = Field(min_length=2, max_length=4)
-    implications: str = Field(max_length=400)
+    implications: str = Field(max_length=800)
     path_forward: list[str] = Field(min_length=1, max_length=3)
 
 

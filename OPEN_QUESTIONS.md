@@ -128,7 +128,7 @@ inspector 打回 collector 时只是用相同 query 重新搜索——结果几�
 
 ## Q-2026-06-20-graph-执行依赖前端连接
 
-**状态**：未决
+**状态**：暂不实施（2026-06-22）——当前阶段 ROI 低，等前端技术栈升级或交付其他用户时再做
 
 `/api/v1/analyze` 是同步 HTTP 请求——graph 全链路（10-30 分钟）在一个 request 生命周期内执行。前端断连（息屏 / 浏览器超时 / Streamlit WebSocket 断）→ uvicorn cancel async task → graph 中断，已落盘的中间产物保留但流水线不完整。
 

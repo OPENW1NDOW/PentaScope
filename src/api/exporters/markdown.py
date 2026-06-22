@@ -24,7 +24,7 @@ _SCENARIO_NAMES = {
 def _render_at_a_glance(items: list) -> str:
     if not items:
         return ""
-    lines = ["\n## 一图看懂\n"]
+    lines = ["\n## 核心要点\n"]
     for it in items:
         lines.append(f"- {it}")
     return "\n".join(lines)

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 from urllib.parse import urlparse
 
-from src.frontend.render import _t
+from src.utils.translations import _t
 
 _BEIJING = timezone(timedelta(hours=8))
 
@@ -21,31 +21,31 @@ _SCENARIO_NAMES = {
     "S5": "S5 战略定位",
 }
 
+import threading
+
 _CN_NUMBERS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
                "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
 
-_md_l2 = 0
-_md_l3 = 0
+_md_local = threading.local()
 
 
 def _reset_md_counter():
-    global _md_l2, _md_l3
-    _md_l2 = 0
-    _md_l3 = 0
+    _md_local.l2 = 0
+    _md_local.l3 = 0
 
 
 def _md_h2(title: str) -> str:
-    global _md_l2, _md_l3
-    _md_l2 += 1
-    _md_l3 = 0
-    prefix = _CN_NUMBERS[_md_l2 - 1] if _md_l2 <= len(_CN_NUMBERS) else str(_md_l2)
+    _md_local.l2 = getattr(_md_local, "l2", 0) + 1
+    _md_local.l3 = 0
+    n = _md_local.l2
+    prefix = _CN_NUMBERS[n - 1] if n <= len(_CN_NUMBERS) else str(n)
     return f"{prefix}、{title}"
 
 
 def _md_h3(title: str) -> str:
-    global _md_l3
-    _md_l3 += 1
-    prefix = _CN_NUMBERS[_md_l3 - 1] if _md_l3 <= len(_CN_NUMBERS) else str(_md_l3)
+    _md_local.l3 = getattr(_md_local, "l3", 0) + 1
+    n = _md_local.l3
+    prefix = _CN_NUMBERS[n - 1] if n <= len(_CN_NUMBERS) else str(n)
     return f"（{prefix}）{title}"
 
 
@@ -72,7 +72,7 @@ def _render_executive_summary(es: dict) -> str:
     kfb = es.get("key_findings_brief") or []
     if kfb:
         lines.append(f"\n### {_md_h3('关键发现速览')}\n")
-    for f in kfb:
+        for f in kfb:
             lines.append(f"- {f}")
     pf = es.get("path_forward") or []
     if pf:

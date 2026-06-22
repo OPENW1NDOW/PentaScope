@@ -161,3 +161,40 @@ def test_markdown_handles_missing_optional_fields():
     out = render_markdown(minimal, trace_id="t-min")
     assert "# 极简" in out
     assert "t-min" in out
+
+
+# ============ Code review fixes ============
+
+
+def test_markdown_kfb_items_only_render_when_present():
+    """Critical fix: key_findings_brief items must NOT render when list is empty.
+    Also: when kfb is empty, h3 counter should not increment for it."""
+    rep = _minimal_base_report("S1", {})
+    rep["executive_summary"]["key_findings_brief"] = []
+    rep["executive_summary"]["path_forward"] = ["路径 X"]
+    out = render_markdown(rep, trace_id="t-kfb-empty")
+    assert "关键发现速览" not in out
+    assert "路径 X" in out
+    # path_forward should be （四）not （五）when kfb is skipped
+    # (context=一, core_thesis=二, implications=三, path_forward=四)
+    assert "（四）" in out
+
+
+def test_markdown_concurrent_safety():
+    """Critical fix: concurrent calls should not corrupt heading numbers"""
+    import concurrent.futures
+    rep = _minimal_base_report("S1", {})
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(render_markdown, rep, trace_id=f"t-{i}") for i in range(4)]
+        for f in concurrent.futures.as_completed(futures):
+            results.append(f.result())
+    for out in results:
+        assert "一、核心要点" in out
+
+
+def test_t_imported_from_utils_not_frontend():
+    """Important fix: _t should be importable from utils without streamlit"""
+    from src.utils.translations import _t, _TRANSLATIONS
+    assert _t("high") == "高 (high)"
+    assert len(_TRANSLATIONS) > 50

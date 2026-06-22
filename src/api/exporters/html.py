@@ -18,7 +18,7 @@ import nh3
 from markupsafe import Markup
 
 from src.api.exporters import check_fonts
-from src.frontend.render import _t
+from src.utils.translations import _t
 
 logger = logging.getLogger(__name__)
 

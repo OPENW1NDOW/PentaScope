@@ -16,15 +16,28 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
-## 2026-06-22（evidence 反馈闭环 v2 + 截断阈值调整）
+## 2026-06-22 ~ 06-23（evidence v2 + 报告内容优化 + bug 修复）
 - 完成：
-  - **v1 代码全量清理**：删除 _route_evidence_issue / EvidenceFeedback / supplement_collect / _prev_evidence_coverage 等错误设计代码（-484 行）
-  - **路由映射修正**：`source_mismatch` 从 collector 改为 writer（78% 的 evidence issues 是 writer 引用错误）
-  - **按竞品分组传 URL**：phase 2 + phase 3 prompt 注入 `{竞品名: [URLs]}` 格式 + "跨竞品引用"禁止规则
-  - **打回精确反馈**：inspector 打回 writer 时传原始 reason/suggestion（"用 A 的 URL 证明 B 的论断"），而非泛化的"覆盖率低"
-  - **截断阈值 30→50 万**：覆盖金山办公等大厂竞品（实测 35-50 万字符范围）
+  - **evidence 反馈闭环 v2**：
+    - v1 代码全量清理（-484 行）
+    - 路由映射修正：`source_mismatch` + `url_not_discovered` 全部路由到 writer（inspector critic 所有 issue 不再打回 collector）
+    - 按竞品分组传 URL：phase 2 + phase 3 prompt 注入 `{竞品名: [URLs]}` + "绝不跨竞品引用"规则
+    - 打回精确反馈：传 inspector 原始 reason/suggestion
+  - **截断阈值 30→50 万**：金山办公不再被截断
+  - **报告内容优化**：
+    - 标题 prompt：时间准确性 + 禁止场景代号 + 风格多样化 + 注入当前日期
+    - 执行摘要 max_length 翻倍（context 600 / core_thesis 400 / implications 800）
+    - narrative 子标题禁止文字序号编号（避免与前端章节编号冲突）
+  - **前端/导出器统一**：
+    - 参考资料 KPI 改为全文实际引用 URL 去重数（前端 + HTML 导出器同步）
+    - 隐藏 DataSource confidence 分布（全是 medium 无信息量）
+  - **bug 修复**：
+    - 基础设施错误（timeout/connect）不消耗 retry 名额
+    - 后端 429 并发锁防重复提交
+  - **端到端验证**：S2 score=0.900 passed ✓ / S5 score=0.833 passed ✓ / S4 score=0.400（timeout 消耗 retry，已修）
 - 下一步（TODO）：
-  1. **端到端验证**：跑 S4 验证 evidence 评分是否提升（目标 ≥3）
+  1. **S4 evidence 仍低（ev=1）**：分组 URL 注入对 S4 多竞品场景效果不如 S2/S5，需分析原因
+  2. **前端 warning 需求**：已取消
 - 阻塞：无
 
 ---

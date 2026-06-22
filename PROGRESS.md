@@ -24,9 +24,10 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
     - writer phase 3 narrative：重试时注入 `retry_error_hint` 到 system_prompt
     - 参照 writer `_call_with_validation` 成熟模式统一实施
   - **前端输入一致性 warning**：已回退，需重新评估实现方案（Streamlit rerun 模型与阻断交互冲突）
-- 下一步：
-  1. **端到端验证**：跑 S4 验证 evidence 路由回边是否正确触发
-  2. **前端输入一致性 warning**：重新评估需求和实现方案（需解决 Streamlit rerun 与阻断/终止的兼容性）
+- 下一步（TODO）：
+  1. **evidence 反馈闭环 v2**：按竞品分组传 URL + 打回时传 inspector 原始 reason/suggestion + 简化路由逻辑
+  2. **前端输入一致性 warning**：重新评估需求和方案
+  3. **后台任务模式**：后端异步化 + 轮询 + 终止能力
 - 阻塞：无
 
 ---

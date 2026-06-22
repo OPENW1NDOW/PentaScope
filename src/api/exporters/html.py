@@ -6,9 +6,11 @@ PD-4 修入：字体 base64 内嵌 + Plotly include_plotlyjs=True 内嵌 plotly.
 from __future__ import annotations
 
 import base64
+import copy
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlparse as _urlparse
 
 import jinja2
 import markdown as md_lib
@@ -102,14 +104,26 @@ def _competitors_sub(report: dict) -> str:
     return ""
 
 
+def _count_all_source_urls(report: dict) -> int:
+    """递归收集报告中所有 source_refs 的 url 去重数。"""
+    urls: set[str] = set()
+    _collect_urls(report, urls)
+    return len(urls)
+
+
+def _collect_urls(obj, urls: set):
+    if isinstance(obj, dict):
+        if "url" in obj and "source_type" in obj and obj.get("url"):
+            urls.add(obj["url"])
+        for v in obj.values():
+            _collect_urls(v, urls)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_urls(item, urls)
+
+
 def _sources_sub(meta: dict) -> str:
-    sources = meta.get("data_sources") or []
-    if not sources:
-        return ""
-    high = sum(1 for s in sources if (s.get("confidence") or "") == "high")
-    mid = sum(1 for s in sources if (s.get("confidence") or "") == "medium")
-    low = sum(1 for s in sources if (s.get("confidence") or "") == "low")
-    return f"高 {high} 中 {mid} 低 {low}"
+    return ""
 
 
 def _build_scenario_charts(report: dict) -> tuple[str, list[str]]:
@@ -165,6 +179,25 @@ def _build_scenario_charts(report: dict) -> tuple[str, list[str]]:
     return scenario_type, charts
 
 
+def _fill_source_titles(node):
+    """为空 title 的 source_ref 填入域名。"""
+    if isinstance(node, dict):
+        for ref in node.get("source_refs") or []:
+            if isinstance(ref, dict) and not ref.get("title"):
+                url = ref.get("url", "")
+                ref["title"] = _urlparse(url).netloc if url else ""
+        for ref in node.get("data_sources") or []:
+            if isinstance(ref, dict) and not ref.get("title"):
+                url = ref.get("url", "")
+                ref["title"] = _urlparse(url).netloc if url else ""
+        for v in node.values():
+            if isinstance(v, (dict, list)):
+                _fill_source_titles(v)
+    elif isinstance(node, list):
+        for item in node:
+            _fill_source_titles(item)
+
+
 def render_html(report: dict, *, trace_id: str) -> str:
     """渲染 BaseReport dict 为完整 HTML 字符串。
 
@@ -174,17 +207,21 @@ def render_html(report: dict, *, trace_id: str) -> str:
 
     template = _jinja_env.get_template("report.html.j2")
 
-    scenario_type, scenario_charts = _build_scenario_charts(report)
-    meta = report.get("metadata") or {}
+    report_copy = copy.deepcopy(report)
+    _fill_source_titles(report_copy)
+
+    scenario_type, scenario_charts = _build_scenario_charts(report_copy)
+    meta = report_copy.get("metadata") or {}
 
     return template.render(
-        report=report,
+        report=report_copy,
         trace_id=trace_id,
         generated_at=datetime.now(_BEIJING).strftime("%Y-%m-%d %H:%M"),
         font_jakarta_regular=_font_base64("PlusJakartaSans-Regular.woff2"),
         font_fira=_font_base64("FiraCode-Regular.woff2"),
         scenario_label=_SCENARIO_LABELS.get(meta.get("scenario") or "", ""),
-        competitors_sub=_competitors_sub(report),
+        competitors_sub=_competitors_sub(report_copy),
+        sources_count=_count_all_source_urls(report_copy),
         sources_sub=_sources_sub(meta),
         confidence_color=_confidence_color(meta.get("confidence_level") or ""),
         scenario_type=scenario_type,

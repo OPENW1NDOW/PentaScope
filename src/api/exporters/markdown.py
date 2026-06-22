@@ -21,13 +21,40 @@ _SCENARIO_NAMES = {
     "S5": "S5 战略定位",
 }
 
+_CN_NUMBERS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+               "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
+
+_md_l2 = 0
+_md_l3 = 0
+
+
+def _reset_md_counter():
+    global _md_l2, _md_l3
+    _md_l2 = 0
+    _md_l3 = 0
+
+
+def _md_h2(title: str) -> str:
+    global _md_l2, _md_l3
+    _md_l2 += 1
+    _md_l3 = 0
+    prefix = _CN_NUMBERS[_md_l2 - 1] if _md_l2 <= len(_CN_NUMBERS) else str(_md_l2)
+    return f"{prefix}、{title}"
+
+
+def _md_h3(title: str) -> str:
+    global _md_l3
+    _md_l3 += 1
+    prefix = _CN_NUMBERS[_md_l3 - 1] if _md_l3 <= len(_CN_NUMBERS) else str(_md_l3)
+    return f"（{prefix}）{title}"
+
 
 # ============ 公共骨架渲染 ============
 
 def _render_at_a_glance(items: list) -> str:
     if not items:
         return ""
-    lines = ["\n## 核心要点\n"]
+    lines = [f"\n## {_md_h2('核心要点')}\n"]
     for it in items:
         lines.append(f"- {it}")
     return "\n".join(lines)
@@ -36,20 +63,20 @@ def _render_at_a_glance(items: list) -> str:
 def _render_executive_summary(es: dict) -> str:
     if not es:
         return ""
-    lines = ["\n## 执行摘要"]
+    lines = [f"\n## {_md_h2('执行摘要')}"]
     for label, key in [("背景定位", "context"), ("核心论断", "core_thesis"),
                        ("现实启示", "implications")]:
         v = es.get(key)
         if v:
-            lines.append(f"\n### {label}\n\n{v}")
+            lines.append(f"\n### {_md_h3(label)}\n\n{v}")
     kfb = es.get("key_findings_brief") or []
     if kfb:
-        lines.append("\n### 关键发现速览\n")
-        for f in kfb:
+        lines.append(f"\n### {_md_h3('关键发现速览')}\n")
+    for f in kfb:
             lines.append(f"- {f}")
     pf = es.get("path_forward") or []
     if pf:
-        lines.append("\n### 行动路径\n")
+        lines.append(f"\n### {_md_h3('行动路径')}\n")
         for p in pf:
             lines.append(f"- {p}")
     return "\n".join(lines)
@@ -58,7 +85,7 @@ def _render_executive_summary(es: dict) -> str:
 def _render_scope(scope: dict) -> str:
     if not scope:
         return ""
-    lines = ["\n## 分析范围\n"]
+    lines = [f"\n## {_md_h2('分析范围')}\n"]
     comps = scope.get("competitors") or []
     if comps:
         lines.append(f"- 竞品：{', '.join(comps)}")
@@ -74,7 +101,7 @@ def _render_scope(scope: dict) -> str:
 def _render_methodology(meth: dict) -> str:
     if not meth:
         return ""
-    lines = ["\n## 方法论\n"]
+    lines = [f"\n## {_md_h2('方法论')}\n"]
     approach = meth.get("data_collection_approach")
     if approach:
         lines.append(approach)
@@ -94,9 +121,9 @@ def _render_methodology(meth: dict) -> str:
 def _render_key_findings(findings: list) -> str:
     if not findings:
         return ""
-    lines = ["\n## 关键发现\n"]
+    lines = [f"\n## {_md_h2('关键发现')}\n"]
     for i, f in enumerate(findings, 1):
-        lines.append(f"### 发现 {i}")
+        lines.append(f"### {_md_h3(f'发现 {i}')}")
         lines.append(f"\n{f.get('statement', '')}\n")
         if f.get("evidence"):
             lines.append(f"**依据**：{f['evidence']}")
@@ -111,9 +138,9 @@ def _render_key_findings(findings: list) -> str:
 def _render_analysis_sections(sections: list) -> str:
     if not sections:
         return ""
-    lines = ["\n## 详细章节\n"]
+    lines = [f"\n## {_md_h2('详细章节')}\n"]
     for sec in sections:
-        lines.append(f"### {sec.get('heading', '')}")
+        lines.append(f"### {_md_h3(sec.get('heading', ''))}")
         nar = sec.get("narrative", "")
         if nar:
             lines.append(f"\n{nar}")
@@ -129,12 +156,12 @@ def _render_swot(swot: dict) -> str:
     has_any = any(swot.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats"))
     if not has_any:
         return ""
-    lines = ["\n## SWOT 分析\n"]
+    lines = [f"\n## {_md_h2('SWOT 分析')}\n"]
     for key, label in [("strengths", "优势 S"), ("weaknesses", "劣势 W"),
                        ("opportunities", "机会 O"), ("threats", "威胁 T")]:
         entries = swot.get(key) or []
         if entries:
-            lines.append(f"### {label}\n")
+            lines.append(f"### {_md_h3(label)}\n")
             for e in entries:
                 lines.append(f"- **{e.get('point', '')}**")
                 if e.get("evidence"):
@@ -148,7 +175,7 @@ def _render_swot(swot: dict) -> str:
 def _render_recommendations(recs: list) -> str:
     if not recs:
         return ""
-    lines = ["\n## 行动建议\n"]
+    lines = [f"\n## {_md_h2('行动建议')}\n"]
     groups: dict[str, list] = {"immediate": [], "short_term": [], "long_term": []}
     for r in recs:
         groups.setdefault(r.get("timeline", "long_term"), []).append(r)
@@ -158,7 +185,7 @@ def _render_recommendations(recs: list) -> str:
         items = groups.get(tl_key) or []
         if not items:
             continue
-        lines.append(f"### {tl_label}\n")
+        lines.append(f"### {_md_h3(tl_label)}\n")
         for r in items:
             priority = r.get("priority", "")
             action = r.get("action", "")
@@ -499,6 +526,7 @@ def render_markdown(report: dict, *, trace_id: str) -> str:
     PD-2 宽松字段覆盖：每场景渲染常用字段；嵌套深字段（如 S3
     pricing_page_audit 8 法则）放弃覆盖。
     """
+    _reset_md_counter()
     parts: list[str] = []
 
     title = report.get("title") or "竞品分析报告"
@@ -516,7 +544,7 @@ def render_markdown(report: dict, *, trace_id: str) -> str:
 
     bg = report.get("background")
     if bg:
-        parts.append(f"\n## 背景\n\n{bg}")
+        parts.append(f"\n## {_md_h2('背景')}\n\n{bg}")
 
     parts.append(_render_scope(report.get("scope") or {}))
     parts.append(_render_methodology(report.get("methodology") or {}))
@@ -526,7 +554,7 @@ def render_markdown(report: dict, *, trace_id: str) -> str:
 
     conclusions = report.get("conclusions")
     if conclusions:
-        parts.append(f"\n## 结论\n\n{conclusions}")
+        parts.append(f"\n## {_md_h2('结论')}\n\n{conclusions}")
 
     parts.append(_render_recommendations(report.get("recommendations") or []))
 
@@ -540,7 +568,7 @@ def render_markdown(report: dict, *, trace_id: str) -> str:
     fn = _SCENARIO_RENDERERS.get(scenario_type)
     scenario_full = _SCENARIO_NAMES.get(scenario_type, scenario_type)
     if fn:
-        parts.append(f"\n## 场景专属：{scenario_full}\n")
+        parts.append(f"\n## {_md_h2(f'场景专属：{scenario_full}')}\n")
         parts.append(fn(payload))
     elif scenario_type:
         parts.append(f"\n## 场景专属：{scenario_type}\n\n（未注册渲染器，跳过细节）")

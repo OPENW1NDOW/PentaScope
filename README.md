@@ -4,7 +4,7 @@
 
 > Penta = 5 场景 · Scope = 全景视角。基于 LangGraph 的多 Agent 编排，从公开信息采集到 5 场景咨询级竞品报告的全链路自动化。
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange) ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-green) ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red) ![Tests](https://img.shields.io/badge/tests-478%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange) ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-green) ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red) ![Tests](https://img.shields.io/badge/tests-508%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
 
@@ -94,7 +94,7 @@
 | 数据采集 | Tavily API + httpx + BeautifulSoup4 | 多 query 并发搜索 |
 | 报告导出 | markdown + Jinja2 + nh3 | Markdown / HTML 双格式 |
 | 质量评分 | LLM-as-critic 4 维 rubric | evidence / specificity / coherence / actionability |
-| 测试 | pytest + pytest-asyncio + ruff | 478 passed / ruff clean |
+| 测试 | pytest + pytest-asyncio + ruff | 508 passed / ruff clean |
 
 ---
 
@@ -179,7 +179,7 @@ ruff check src tests            # lint
 
 | 文档 | 内容 |
 |---|---|
-| [docs/PRD.md](docs/PRD.md) | 产品需求文档（V3.0，14 章节） |
+| [docs/PRD.md](docs/PRD.md) | 产品需求文档（V4.0，14 章节） |
 | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | 5 场景手动测试指南，含可复制粘贴案例 |
 | [docs/SPEC.md](docs/SPEC.md) | 技术规格 |
 | [docs/竞品分析SOP.md](docs/竞品分析SOP.md) | 业务流程 SOP |
@@ -190,9 +190,9 @@ ruff check src tests            # lint
 
 ## 测试与质量
 
-- 478 个单元测试 + 集成测试全过
+- 508 个单元测试 + 集成测试全过
 - ruff lint 全清
-- 5 场景端到端 happy path 验证（S5 最新 quality_score=0.900、S2 quality_score=0.800）
+- 5 场景端到端 happy path 验证（S1 score=0.900 / S2 score=1.000 / S3 score=0.667 / S5 score=0.900）
 - LLM-as-critic eval 反例集（9 个 fixture 验证 4 维评分判断力）
 - 安全：路径穿越白名单（`^[a-f0-9-]+$` + 长度 ≤64）、HTML XSS sanitize、API key URL/异常双重脱敏
 

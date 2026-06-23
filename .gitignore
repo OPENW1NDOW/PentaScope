@@ -43,4 +43,8 @@ runs/
 # 赛题原始材料 + 前期调研笔记（仅本地保留，不对外分发）
 docs/competition-materials/
 
+# 答辩准备材料（本地保留）
+docs/defense/
+.frontend-slides/
+
 # Claude Code worktrees 落在 .claude/worktrees/，已被上面的 .claude/ 规则覆盖

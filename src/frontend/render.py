@@ -21,6 +21,11 @@ except ImportError:  # pragma: no cover
 
 
 # ============ 枚举值翻译（从 utils 导入，避免跨层依赖） ============
+import sys as _sys
+from pathlib import Path as _Path
+_PROJECT_ROOT = str(_Path(__file__).resolve().parents[2])
+if _PROJECT_ROOT not in _sys.path:
+    _sys.path.insert(0, _PROJECT_ROOT)
 from src.utils.translations import _t, _TRANSLATIONS  # noqa: E402
 
 

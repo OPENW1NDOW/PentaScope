@@ -326,10 +326,10 @@ def test_s5_rename_errc_raise_to_raise_level():
     assert cleaned["errc_grid"]["raise_level"] == [{"factor": "易用性"}]
 
 
-# ============ [fix20 prove-it] S5 vendor_profiles / perceptual_map / category_strategy 兜底 ============
+# ============ [fix20 removed] S5 normalizer 不再注入伪造占位数据 ============
 
-def test_s5_vendor_strengths_padded_when_under_two():
-    """[fix20] vendor_profiles[*].strengths 少于 2 条时，复制最后一条凑齐 2 条（schema 要求 ≥2）"""
+def test_s5_vendor_strengths_not_padded_when_under_two():
+    """vendor_profiles[*].strengths 少于 2 条时，normalizer 不再伪造补齐（fix20 已撤回）"""
     raw = {
         "vendor_profiles": [
             {"competitor_name": "A", "strengths": [
@@ -338,11 +338,12 @@ def test_s5_vendor_strengths_padded_when_under_two():
         ]
     }
     cleaned = normalize_for_scenario("S5", raw)
-    assert len(cleaned["vendor_profiles"][0]["strengths"]) >= 2
+    assert len(cleaned["vendor_profiles"][0]["strengths"]) == 1
+    assert "补充条目" not in cleaned["vendor_profiles"][0]["strengths"][0]["point"]
 
 
 def test_s5_vendor_strengths_kept_when_already_two_or_more():
-    """[fix20] strengths 已经 ≥2 条时不应改动"""
+    """strengths 已经 ≥2 条时不应改动"""
     raw = {
         "vendor_profiles": [
             {"competitor_name": "A", "strengths": [
@@ -356,8 +357,8 @@ def test_s5_vendor_strengths_kept_when_already_two_or_more():
     assert len(cleaned["vendor_profiles"][0]["strengths"]) == 3
 
 
-def test_s5_perceptual_axis_short_label_padded():
-    """[fix20] perceptual_map.x_axis/y_axis 的 low_label/high_label 单字时自动补字（schema ≥2 字符）"""
+def test_s5_perceptual_axis_short_label_not_padded():
+    """perceptual_map 轴标签单字时 normalizer 不再补字（fix20 已撤回）"""
     raw = {
         "perceptual_map": {
             "x_axis": {"low_label": "低", "high_label": "高"},
@@ -366,14 +367,14 @@ def test_s5_perceptual_axis_short_label_padded():
     }
     cleaned = normalize_for_scenario("S5", raw)
     pm = cleaned["perceptual_map"]
-    assert len(pm["x_axis"]["low_label"]) >= 2
-    assert len(pm["x_axis"]["high_label"]) >= 2
-    assert len(pm["y_axis"]["low_label"]) >= 2
-    assert len(pm["y_axis"]["high_label"]) >= 2
+    assert pm["x_axis"]["low_label"] == "低"
+    assert pm["x_axis"]["high_label"] == "高"
+    assert pm["y_axis"]["low_label"] == "弱"
+    assert pm["y_axis"]["high_label"] == "强"
 
 
 def test_s5_perceptual_axis_two_char_label_kept():
-    """[fix20] 已经 ≥2 字的 label 不应被改"""
+    """已经 ≥2 字的 label 不应被改"""
     raw = {
         "perceptual_map": {
             "x_axis": {"low_label": "低端", "high_label": "高端"},
@@ -384,18 +385,17 @@ def test_s5_perceptual_axis_two_char_label_kept():
     assert cleaned["perceptual_map"]["x_axis"]["high_label"] == "高端"
 
 
-def test_s5_category_strategy_empty_dict_filled_with_placeholders():
-    """[fix20] category_strategy 是空 dict / 缺子字段时，自动用占位填齐（让 schema 通过）"""
+def test_s5_category_strategy_empty_dict_not_filled():
+    """category_strategy 空 dict 时 normalizer 不再注入伪造占位（fix20 已撤回）"""
     raw = {"category_strategy": {}}
     cleaned = normalize_for_scenario("S5", raw)
     cs = cleaned["category_strategy"]
-    assert cs.get("chosen_category") and len(cs["chosen_category"]) >= 4
-    assert cs.get("why_this_category") and len(cs["why_this_category"]) >= 30
-    assert isinstance(cs.get("competitors_implied"), list) and len(cs["competitors_implied"]) >= 1
+    assert cs.get("chosen_category") is None
+    assert "normalizer" not in str(cs.get("why_this_category", ""))
 
 
 def test_s5_category_strategy_existing_fields_kept():
-    """[fix20] category_strategy 已填的字段不应被覆盖"""
+    """category_strategy 已填的字段不应被覆盖"""
     raw = {
         "category_strategy": {
             "chosen_category": "AI 设计协作工具",

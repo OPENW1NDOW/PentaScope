@@ -5,7 +5,6 @@ from src.agents.analyzer import AnalyzerAgent
 
 
 class TestAnalyzerAgent:
-    @pytest.mark.xfail(reason="A 大类过渡：fixture 用旧 SwotEntry 短字符串，新 schema min_length=10 不通过；待 E 大类 writer/analyzer 重写时一并修", strict=False)
     @pytest.mark.asyncio
     async def test_analyze_returns_competitive_analysis(self, sample_competitor_profile, sample_competitive_analysis):
         mock_llm = MagicMock()
@@ -89,7 +88,6 @@ def test_format_feedback_empty_when_no_analyzer_issue():
     assert AnalyzerAgent._format_feedback(only_writer) == ""
 
 
-@pytest.mark.xfail(reason="A 大类过渡：fixture 用旧 SwotEntry 短字符串，新 schema min_length=10 不通过；待 E 大类 writer/analyzer 重写时一并修", strict=False)
 @pytest.mark.asyncio
 async def test_analyze_appends_feedback_to_prompt(sample_competitor_profile, sample_competitive_analysis):
     from src.schemas.profile import CompetitorProfile

@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from src.schemas.feedback import FeedbackIssue
 from src.schemas.report import (
     ExecutiveSummary, ReportScope, Methodology, Finding, AnalysisSection,
     Recommendation, Appendix, Swot, SwotEntry,
@@ -278,3 +279,27 @@ def test_base_report_metadata_scenario_consistency():
     """metadata.scenario 与 scenario_payload.scenario_type 不一致应拒"""
     with pytest.raises(ValidationError, match="but"):
         _make_minimal_base_report("S2")  # metadata="S2"，但 payload 是 S1
+
+
+# ============ FeedbackIssue Literal 约束 ============
+
+def test_feedback_issue_dimension_literal_constraint():
+    """dimension 只接受合法枚举值，非法值应 ValidationError"""
+    FeedbackIssue(agent="writer", field="test", severity="minor", reason="r", dimension="evidence")
+    FeedbackIssue(agent="writer", field="test", severity="minor", reason="r", dimension="critic_failed")
+    with pytest.raises(ValidationError):
+        FeedbackIssue(agent="writer", field="test", severity="minor", reason="r", dimension="invalid_dim")
+
+
+def test_feedback_issue_type_literal_constraint():
+    """issue_type 只接受合法枚举值，非法值应 ValidationError"""
+    FeedbackIssue(agent="writer", field="test", severity="critical", reason="r", issue_type="url_not_discovered")
+    FeedbackIssue(agent="writer", field="test", severity="critical", reason="r", issue_type="source_mismatch")
+    with pytest.raises(ValidationError):
+        FeedbackIssue(agent="writer", field="test", severity="critical", reason="r", issue_type="fake_type")
+
+
+def test_feedback_issue_dimension_optional_none():
+    """dimension=None 仍然合法（兼容旧 trace）"""
+    issue = FeedbackIssue(agent="writer", field="test", severity="minor", reason="test")
+    assert issue.dimension is None

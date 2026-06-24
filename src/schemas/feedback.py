@@ -10,13 +10,10 @@ class FeedbackIssue(BaseModel):
     reason: str
     suggestion: str = ""
     # v4 新增（Optional 兼容旧 trace 反序列化）
-    dimension: Optional[str] = None
-    """critic 维度名（"evidence"/"specificity"/"coherence"/"actionability"）
-    或 "programmatic" / "critic_failed"——用于去重 + 反馈路由"""
-    issue_type: Optional[str] = None
-    """枚举: url_not_discovered / source_mismatch / source_irrelevant /
-    vague_description / cross_field_contradiction / vague_recommendation /
-    critic_failed / programmatic_*"""
+    dimension: Optional[Literal["evidence", "specificity", "coherence", "actionability", "programmatic", "critic_failed", "overall"]] = None
+    """critic 维度名——用于去重 + 反馈路由"""
+    issue_type: Optional[Literal["url_not_discovered", "source_mismatch", "source_irrelevant", "vague_description", "cross_field_contradiction", "vague_recommendation", "critic_failed"]] = None
+    """critic issue 类型——用于 _map_issue_type_to_agent 路由"""
 
 
 class CriticScores(BaseModel):

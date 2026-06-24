@@ -26,7 +26,7 @@ from pathlib import Path as _Path
 _PROJECT_ROOT = str(_Path(__file__).resolve().parents[2])
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
-from src.utils.translations import _t, _TRANSLATIONS  # noqa: E402
+from src.utils.translations import _t  # noqa: E402
 
 
 # ============ 章节编号 ============

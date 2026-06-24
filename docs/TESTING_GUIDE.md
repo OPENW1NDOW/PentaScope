@@ -89,6 +89,8 @@ streamlit run src/frontend/app.py
 
 **适用产品**：已有可对标的成熟产品 + 想看竞品功能矩阵
 
+> 推荐参考 trace_id：`20260620-201224-88f548`（quality_score=1.0, retries=0）
+
 ### 输入
 
 - **分析场景**：S1 功能迭代（已有产品对标）
@@ -138,6 +140,8 @@ streamlit run src/frontend/app.py
 
 **适用场景**：还没产品，想看赛道格局
 
+> 推荐参考 trace_id：`20260620-144341-10b7e6`（quality_score=1.0, retries=0）
+
 ### 输入
 
 - **分析场景**：S2 市场进入（无产品调研）
@@ -184,6 +188,8 @@ streamlit run src/frontend/app.py
 
 **适用场景**：已有产品 + 准备调价 / 重新打包
 
+> 推荐参考 trace_id：`20260620-151025-436f94`（quality_score=0.833, retries=0）
+
 ### 输入
 
 - **分析场景**：S3 定价策略
@@ -228,6 +234,8 @@ streamlit run src/frontend/app.py
 ## 测试 4：S4 持续监控
 
 **适用场景**：建立竞品基线 + 后续按周期跟踪
+
+> 推荐参考 trace_id：`20260610-041859-5fdda8`（quality_score=0.717, retries=2）
 
 ### 输入（首次模式）
 
@@ -285,6 +293,8 @@ streamlit run src/frontend/app.py
 ## 测试 5：S5 战略定位
 
 **适用场景**：产品已有但想重新定位 / 品牌升级
+
+> 推荐参考 trace_id：`20260619-203923-9f5681`（quality_score=0.9, retries=0）
 
 ### 输入
 

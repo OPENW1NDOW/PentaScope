@@ -32,12 +32,14 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
   - **#7 collector_node 无异常处理**：套与 analyzer_node 同构的 try/except，collector.collect 抛异常（parse_goal ValueError / 网络异常）时注入 feedback agent='collector' 走反馈闭环回 collector 重采，而非崩溃终止整图；1 个新增测试
   - **#8 MD 导出零转义**：新增 `_md_cell`（转义 `|`/换行）+ `_md_link`（转义 `]`、url 用 `<...>` 尖括号）helper，应用到全部 5 场景表格单元格 + data_sources_full/source_refs 链接；2 个新增测试
   - **#9 KPI 可信度颜色失效**：`_render_kpi_strip` 颜色改用原始 `_raw_conf`（high/medium/low）取色，而非翻译后的 '高 (high)'；3 个参数化新增测试
+  - **#13 Tavily key 静默降级**：新增 `TavilyAuthError` + `post_json_with_status`（返回 data+status），`TavilySource.search` 在 401/403 抛异常而非静默返回 []；`collector.collect` 检测鉴权失败时 `logger.error` 明确提示检查 TAVILY_API_KEY；4 个新增/更新测试
+  - **#12 trace_id 熵**：经评估单机/演示场景下 24 bit 熵够用，非真实风险，**跳过**；已记入 `OPEN_QUESTIONS.md#Q-2026-06-25-trace_id-熵不足`（未来多租户部署时再提熵+加鉴权）
   - **文档同步**：CLAUDE.md / PRD.md 更新配额 25 + retry 计数新语义
   - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，加入 `.gitignore`
   - **清理**：删除 `docs/trae-competition-showcase.html`
-  - **测试**：`tests/unit + tests/integration` 517 passed，零回归；ruff All checks passed
+  - **测试**：`tests/unit + tests/integration` 520 passed，零回归；ruff All checks passed
 - 下一步：
-  1. 按 severity 继续处理 #12（trace_id 熵）、#13（Tavily key 静默降级）及 minor/nit 项
+  1. 处理剩余 minor/nit 项（#4 配套的同步 IO 阻塞、死代码清理、文档漂移、schema 约束微调等）
 - 阻塞：无
 
 ---

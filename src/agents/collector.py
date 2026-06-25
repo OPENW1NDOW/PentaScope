@@ -158,15 +158,27 @@ class CollectorAgent:
         )
         profiles = []
         all_sources: list[dict] = []
+        auth_failed = False
         for comp, r in zip(user_input.competitors, results):
             if isinstance(r, CompetitorProfile):
                 profiles.append(r)
+                # [#13] 检测 TavilyAuthError：pipeline_trace 会记录每个 query 的 error
+                for entry in getattr(r.metadata, "pipeline_trace", []) or []:
+                    err = str(entry.get("error", "")) if isinstance(entry, dict) else ""
+                    if "TavilyAuthError" in err:
+                        auth_failed = True
             else:
                 logger.error("[collector] %s 采集彻底失败, 产占位: %s", comp.name, r)
                 profiles.append(self._build_placeholder_profile(
                     comp, {"competitor_type": "核心竞品", "reason": "采集失败占位"},
                     trace=[{"step": "collect_failed", "error": str(r)}],
                 ))
+        # [#13] key 配错/失效时给明确信号，避免「全占位报告无报错」难定位
+        if auth_failed:
+            logger.error(
+                "[collector] 检测到 Tavily 鉴权失败（TAVILY_API_KEY 错误/失效），"
+                "所有竞品采集将走占位降级。请检查 .env 的 TAVILY_API_KEY。"
+            )
         # 收集所有搜索源 URL（ProfileMetadata.data_sources 是 list[str]）
         for profile in profiles:
             for url in getattr(profile.metadata, "data_sources", []):

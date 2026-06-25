@@ -72,6 +72,18 @@
 
 ---
 
+## 2026-06-25: Tavily 鉴权失败用异常信号而非静默降级（#13）
+
+- 选择：`TavilySource.search` 在 HTTP 401/403 时抛 `TavilyAuthError`，而非静默返回 `[]`；`collector.collect` 检测到鉴权失败时 `logger.error` 明确提示检查 TAVILY_API_KEY
+- 理由：
+  1. 原设计 `post_json` 对 401/403/429/5xx/解析失败一律返回 None，`search` 把 None 等同「合法无结果」返回 []。配错/漏配 key 时全链路静默走占位降级，产全占位报告无报错，定位成本高
+  2. 新增 `post_json_with_status` 返回 (data, status)，让调用方区分「鉴权失败」与「无结果」；401/403 抛异常让 pipeline 的 gather(return_exceptions=True) 捕获并记 trace
+  3. `collector.collect` 扫 pipeline_trace 检测 TavilyAuthError，统一 logger.error 给明确信号
+- 备选（在 search 返回特殊标记而非抛异常）：破坏 `search → list[SourceResult]` 的返回契约，调用方需处处判标记；抛异常更符合「鉴权失败是不可恢复的基础设施错误」语义
+- 关联：`src/tools/http_client.py::post_json_with_status`、`src/tools/sources.py::TavilyAuthError`、`src/agents/collector.py::collect`
+
+---
+
 ## 2026-06-25: S4 prior 降级判空统一为 prior_report_data（#3）
 
 - 选择：phase1/phase2 的 S4 mode_hint 与 `_inject_s4_prior_diff` 三处统一用 `_prior_is_usable(prior_report_data)` 判空，而非 `scenario_input.prior_trace_id is None`

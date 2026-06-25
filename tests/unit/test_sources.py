@@ -11,7 +11,7 @@ async def test_tavily_parses_results_with_body():
         {"url": "https://feishu.cn/pricing", "raw_content": "", "content": "飞书定价说明" * 30},
     ]}
     http = MagicMock()
-    http.post_json = AsyncMock(return_value=raw)
+    http.post_json_with_status = AsyncMock(return_value=(raw, 200))
     results = await TavilySource(http, api_key="k").search("飞书 产品 功能 定价")
     assert len(results) == 2
     assert isinstance(results[0], SourceResult)
@@ -31,11 +31,35 @@ async def test_tavily_unavailable_without_key():
 
 @pytest.mark.asyncio
 async def test_tavily_returns_empty_on_request_failure():
+    """[#13] post_json_with_status 返回 (None, None)（网络失败/超时，无状态码）→ 真无结果，返回 []。"""
     from src.tools.sources import TavilySource
     http = MagicMock()
-    http.post_json = AsyncMock(return_value=None)
+    http.post_json_with_status = AsyncMock(return_value=(None, None))
     results = await TavilySource(http, api_key="k").search("x")
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_returns_empty_on_200_no_results():
+    """[#13] 200 但 results 为空 → 合法的无结果，返回 []（不抛异常）。"""
+    from src.tools.sources import TavilySource
+    http = MagicMock()
+    http.post_json_with_status = AsyncMock(return_value=({"results": []}, 200))
+    results = await TavilySource(http, api_key="k").search("x")
+    assert results == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [401, 403])
+async def test_tavily_raises_auth_error_on_401_403(status):
+    """[#13] 401/403（key 错误/失效）→ 抛 TavilyAuthError，而非静默返回 []。
+    让 pipeline/collector 感知 key 异常，避免「配错 key 却产全占位报告无信号」。
+    """
+    from src.tools.sources import TavilySource, TavilyAuthError
+    http = MagicMock()
+    http.post_json_with_status = AsyncMock(return_value=(None, status))
+    with pytest.raises(TavilyAuthError):
+        await TavilySource(http, api_key="bad-key").search("x")
 
 
 @pytest.mark.asyncio
@@ -45,14 +69,14 @@ async def test_tavily_uses_post_bearer_and_search_top_n(monkeypatch):
     monkeypatch.setattr("src.tools.sources.settings.SEARCH_TOP_N", 7)
     captured = {}
 
-    async def fake_post_json(url, json_body, headers=None):
+    async def fake_post_json_with_status(url, json_body, headers=None):
         captured["url"] = url
         captured["body"] = json_body
         captured["headers"] = headers
-        return {"results": []}
+        return ({"results": []}, 200)
 
     http = MagicMock()
-    http.post_json = fake_post_json
+    http.post_json_with_status = fake_post_json_with_status
     await TavilySource(http, api_key="SECRET").search("飞书")
     assert captured["url"] == "https://api.tavily.com/search"
     assert captured["body"]["query"] == "飞书"

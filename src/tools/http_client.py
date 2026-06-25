@@ -108,17 +108,28 @@ class HttpClient:
         用于需要 POST + JSON body 的 API（如 Tavily）。不轮换 User-Agent。
         网络抖动是常态——超时单次 retry 把"竞品采集失败"概率压到平方级。
         """
+        data, _ = await self.post_json_with_status(url, json_body, headers=headers)
+        return data
+
+    async def post_json_with_status(
+        self, url: str, json_body: dict, headers: dict | None = None,
+    ) -> tuple[dict | list | None, int | None]:
+        """[#13] 同 post_json，但额外返回 HTTP 状态码，供调用方区分鉴权失败(401/403)与无结果。
+
+        返回 (data, status_code)：200 → (parsed_json, 200)；非 200 → (None, status)；
+        网络/解析失败 → (None, None)。
+        """
         last_err = None
         for attempt in range(2):  # 0=首次, 1=retry
             try:
                 await self._rate_limit(url)
                 response = await self.client.post(url, json=json_body, headers=headers)
                 if response.status_code == 200:
-                    return response.json()
+                    return response.json(), 200
                 logger.warning("[http] %s 返回状态码 %d (attempt %d/2)",
                                _redact_key(url), response.status_code, attempt + 1)
                 # 非超时错误不重试（401/403/429 等重试也救不了）
-                return None
+                return None, response.status_code
             except httpx.TimeoutException as e:
                 last_err = e
                 logger.warning("[http] %s 请求超时 (attempt %d/2)",
@@ -127,10 +138,10 @@ class HttpClient:
             except (httpx.RequestError, ValueError) as e:
                 logger.warning("[http] %s 请求/解析失败: %s",
                                _redact_key(url), _redact_key(str(e)))
-                return None
+                return None, None
         logger.warning("[http] %s 重试 %d 次仍超时，放弃: %s",
                        _redact_key(url), 2, last_err)
-        return None
+        return None, None
 
     async def __aenter__(self):
         return self

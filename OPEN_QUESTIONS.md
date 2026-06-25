@@ -184,3 +184,24 @@ inspector 打回 collector 时只是用相同 query 重新搜索——结果几�
 关联：本条替代已关闭的 Q-2026-06-20-evidence-issue-路由错误 和 Q-2026-06-20-collector-打回无效重跑
 
 ---
+
+## Q-2026-06-25-trace_id-熵不足
+
+**状态**：未决（单机/演示场景下暂不修）
+
+### 问题
+`trace_writer.py:24` 的 `new_trace_id` 随机段仅 `secrets.token_hex(3)` = 24 bit ≈ 1670 万种。配合精确到秒的时间戳 + `/trace/{id}` 无鉴权，理论上攻击者锁定某秒后枚举 ≤16M 个 hex 可命中同秒其他用户的 trace_id，读取其 meta（含 `input.competitors` / `analysis_context` 等业务敏感信息）。
+
+### 2026-06-25 Cooper 决断
+**当前部署场景为单机开发 + 答辩演示，/trace 不对外暴露，24 bit 熵够用，#12 不是真实风险，跳过不修。**
+
+### 未来触发条件
+若 PentaScope 转为多租户/公开部署（/trace 对外暴露），需同时做两件事：
+1. **提熵**：`token_hex(3)` → `token_hex(16)`（128 bit）；`routes.py::_TRACE_RE` 改为接受 6 或 32 hex 向后兼容旧 trace（或仅接受新格式，放弃旧 trace 访问）
+2. **加鉴权**：给 `/trace/{id}` 加签名 token / Bearer auth（涉及前端追溯面板、导出接口同步传 token，跨多文件）
+
+### 关联
+- 审查报告 #12（major / high confidence，但默认了"对外暴露 /trace"前提）
+- `src/tools/trace_writer.py:24`、`src/api/routes.py:126 _TRACE_RE`、`src/graph/builder.py:43 _TRACE_ID_PATTERN`
+
+---

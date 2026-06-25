@@ -8,6 +8,7 @@
 - 删除旧的 quality_score 倒推回填（F 阶段重写 inspector）
 - inspector_node 加 report=None 兜底（writer 抛错时 skip 质检）
 """
+import asyncio
 import json
 import logging
 import re
@@ -157,10 +158,11 @@ def build_graph(llm, http, parser, trace_writer=None):
     # 记录节点执行与路由决策序列（可观测性追溯）
     node_trace: list = []
 
-    def _save(stage: str, data):
+    async def _save(stage: str, data):
         # 落盘是辅助能力，trace_writer 为 None 时跳过
+        # [#同步IO] 同步文件 IO 委托给线程池，避免阻塞事件循环（report JSON 可达数 MB）
         if trace_writer is not None:
-            trace_writer.save_stage(stage, data)
+            await asyncio.to_thread(trace_writer.save_stage, stage, data)
 
     # ========== recommender_node（S2 专用）==========
 
@@ -228,7 +230,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 "feedback": failed_feedback,
                 "current_node": "collector",
             }
-        _save("01_profiles", profiles)
+        await _save("01_profiles", profiles)
         return {
             "profiles": profiles,
             "analysis_goal": goal,
@@ -272,7 +274,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 "feedback": failed_feedback,
                 "current_node": "analyzer",
             }
-        _save("02_analysis", analysis)
+        await _save("02_analysis", analysis)
         return {"analysis": analysis, "current_node": "analyzer"}
 
     async def writer_node(state: AnalysisState) -> dict:
@@ -299,7 +301,7 @@ def build_graph(llm, http, parser, trace_writer=None):
         # [v3-R09] S4 场景前置读 prior_report_data
         prior_data = None
         if ui.scenario == "S4" and ui.prior_trace_id:
-            prior_data = _load_prior_report_data(ui.prior_trace_id)
+            prior_data = await asyncio.to_thread(_load_prior_report_data, ui.prior_trace_id)
 
         # 打回时传 feedback issues 给 writer
         writer_feedback_issues = None
@@ -320,7 +322,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 trace_id=state.get("trace_id", ""),
                 feedback_issues=writer_feedback_issues,
             )
-            _save("03_report", report)
+            await _save("03_report", report)
             return {"report": report, "current_node": "writer"}
         except WriterRouteToEnd as e:
             # 不可恢复（LLM quota / scope 全空 / scope 无法构造）→ passed=True 强制结束
@@ -410,7 +412,7 @@ def build_graph(llm, http, parser, trace_writer=None):
                 err_dict["error_type"], err_dict.get("errors_summary", ""),
             )
             if trace_writer is not None:
-                trace_writer.save_raw("04_writer_error", err_dict)
+                await asyncio.to_thread(trace_writer.save_raw, "04_writer_error", err_dict)
             # [方案 A1] 基础设施错误（timeout/connect）走独立 infra_retry_count，不消耗 retry_count
             err_name = type(e).__name__
             is_infra_error = "Timeout" in err_name or "Connect" in err_name
@@ -511,9 +513,9 @@ def build_graph(llm, http, parser, trace_writer=None):
             max_retries=state.get("max_retries", 2),
             discovered_sources=discovered_sources,
         )
-        _save("04_feedback", feedback)
+        await _save("04_feedback", feedback)
         # inspector 回填 quality_score 后重新落盘 report（writer 先于 inspector 落盘，初始 score=None）
-        _save("03_report", report)
+        await _save("03_report", report)
         # [方案 A] 打回 +1；critic_failed（agent="end"）不 +1（#11）；passed=True 不增（直接 end）
         next_retry = state.get("retry_count", 0)
         if not feedback.passed:

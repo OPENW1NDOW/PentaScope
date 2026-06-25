@@ -57,7 +57,6 @@ class CollectionPipeline:
     async def collect(
         self,
         competitor_name: str,
-        category: str | None = None,
         scenario: str | None = None,
     ):
         """采集一个竞品的正文 + 来源 + 管线追踪。

@@ -59,6 +59,17 @@ class CollectorAgent:
     @staticmethod
     def _normalize_raw(raw: dict, classification: dict, sources: list[str], pipeline_trace: list[dict]) -> dict:
         """规整 LLM 输出：补充 classification/metadata，兜底纠正常见结构偏差"""
+        # [#防御] LLM 偶发输出 JSON null / 非 dict（call_json 可能返回 None），
+        # 此处先规整成空 dict，避免 raw.get 抛 AttributeError 被 _collect_single 吞成占位。
+        if not isinstance(raw, dict):
+            raw = {}
+        # [#13 防御] LLM 偶发把 user_reviews/pricing 填成非 dict（字符串/列表/null），
+        # 此时 .get 会抛 AttributeError 被 _collect_single 吞成占位，丢失已采集正文。
+        # 此处先规整成空 dict，保留其余字段继续抽取。
+        if not isinstance(raw.get("user_reviews"), dict):
+            raw["user_reviews"] = {}
+        if not isinstance(raw.get("pricing"), dict):
+            raw["pricing"] = {}
         # sample_reviews 偶尔被 LLM 填成字符串数组，转成 SampleReview 结构
         reviews = raw.get("user_reviews", {}).get("sample_reviews")
         if isinstance(reviews, list):

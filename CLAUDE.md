@@ -132,7 +132,7 @@ ruff check --fix src tests               # 自动修复
     2. **payload**（LLM）— Phase 2 实例化场景 Payload schema，含 S2 recommender 强制覆盖、S4 prior diff 前置注入
     3. **narrative**（LLM 并行）— Phase 3 `asyncio.Semaphore` 限速 + 半数硬闸门 + 占位降级
     4. **assemble**（0 LLM）— Phase 4 代码合成 `BaseReport`（SWOT 透传 + URL 双通道收集 + scope.competitors S2 union + ReportMetadata 构造）
-  - `InspectorAgent.inspect` — `_check_common` + `_check_s1..s5` dispatcher + LLM 质检；`quality_score` 由 `src/agents/quality_score.py::calc_quality_score` 三项加权（source_coverage / confidence_avg / inspector_pass_rate），placeholder warnings 强制 cap 0.5（v3-R17 / v3-R22）。**改 inspector 时勿动这条 quality_score 回填链**。
+  - `InspectorAgent.inspect` — `_check_common` + `_check_s1..s5` dispatcher + LLM 质检（critic 4 维 rubric）；`quality_score` 由 `src/agents/quality_score.py::calc_critic_score` 4 维加权（evidence 0.30 / specificity 0.30 / coherence 0.20 / actionability 0.20）归一化到 [0,1]，critic_failed 降级时直接写 0.5（v4 已删除 v3-R17 的 placeholder cap，raw == final）。**改 inspector 时勿动这条 quality_score 回填链**；`_SEVERITY_WEIGHTS` 复用 `quality_score._DIMENSION_WEIGHTS`，调权重改一处即可。
 
   所有 prompt 集中在 `src/agents/prompts/`（含 `writer/` 子目录的 outline/payload/narrative 三套）。
 

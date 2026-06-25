@@ -9,14 +9,15 @@ import logging
 from pydantic import ValidationError
 
 from src.agents.prompts.inspector import CRITIC_SYSTEM, CRITIC_PROMPT_VERSION
-from src.agents.quality_score import calc_critic_score
+from src.agents.quality_score import _DIMENSION_WEIGHTS as _SEVERITY_WEIGHTS, calc_critic_score
 from src.schemas.feedback import CriticScores, FeedbackIssue, RejectionFeedback
 from src.schemas.report import BaseReport
 
 logger = logging.getLogger(__name__)
 
 
-_SEVERITY_WEIGHTS = {"evidence": 0.30, "specificity": 0.30, "coherence": 0.20, "actionability": 0.20}
+# [#11 常量分叉] _SEVERITY_WEIGHTS 复用 quality_score._DIMENSION_WEIGHTS，避免两份相同常量分叉
+# （调权重时漏改一处会导致 severity 判定与 quality_score 静默不一致）
 
 
 def _score_to_severity(dim_score: int, all_scores: dict) -> str:
@@ -392,6 +393,8 @@ def _check_s1(payload) -> list[FeedbackIssue]:
         ))
 
     # white_space_features 与 feature_gaps 都空（功能迭代核心产出缺失）
+    # 防御性兜底：feature_gaps 已被 schema min_length=1 强制 ≥1，正常路径此条件恒 False；
+    # 保留以拦截绕过 schema 的异常输入（如 trace 回放/SimpleNamespace 测试场景）。
     if not payload.white_space_features and not payload.feature_gaps:
         issues.append(FeedbackIssue(
             agent="analyzer", field="scenario_payload.feature_gaps",
@@ -475,14 +478,9 @@ def _check_s3(payload) -> list[FeedbackIssue]:
             suggestion="若可能，采集行业基准或 pilot 数据替代 llm_inferred",
         ))
 
-    # competitive_pricing_matrix 数 < scope.competitors 的一半
-    cpm_n = len(payload.competitive_pricing_matrix)
-    return issues if cpm_n >= 2 else issues + [FeedbackIssue(
-        agent="collector", field="scenario_payload.competitive_pricing_matrix",
-        severity="major",
-        reason=f"竞品定价矩阵仅 {cpm_n} 条，覆盖不足",
-        suggestion="至少采集 2 个竞品的完整定价",
-    )]
+    # competitive_pricing_matrix 数量校验已被 schema min_length=2 覆盖（死代码已移除）
+
+    return issues
 
 
 def _check_s4(payload) -> list[FeedbackIssue]:

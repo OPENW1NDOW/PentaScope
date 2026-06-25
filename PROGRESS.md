@@ -33,6 +33,22 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
   - **#8 MD 导出零转义**：新增 `_md_cell`（转义 `|`/换行）+ `_md_link`（转义 `]`、url 用 `<...>` 尖括号）helper，应用到全部 5 场景表格单元格 + data_sources_full/source_refs 链接；2 个新增测试
   - **#9 KPI 可信度颜色失效**：`_render_kpi_strip` 颜色改用原始 `_raw_conf`（high/medium/low）取色，而非翻译后的 '高 (high)'；3 个参数化新增测试
   - **#13 Tavily key 静默降级**：新增 `TavilyAuthError` + `post_json_with_status`（返回 data+status），`TavilySource.search` 在 401/403 抛异常而非静默返回 []；`collector.collect` 检测鉴权失败时 `logger.error` 明确提示检查 TAVILY_API_KEY；4 个新增/更新测试
+  - **minor/nit 批量清理**：
+    - **同步 IO 阻塞事件循环**：`builder.py` 的 `_save` 闭包改 async，用 `asyncio.to_thread` 包装 `trace_writer.save_stage/save_raw` + `_load_prior_report_data`，所有调用点改 await，避免大 JSON 落盘阻塞并发协程
+    - **`_SEVERITY_WEIGHTS` 常量分叉**：inspector.py 删除局部 `_SEVERITY_WEIGHTS`，复用 `quality_score._DIMENSION_WEIGHTS`，消除调权重漏改导致的 severity 与 quality_score 静默不一致
+    - **S3 死代码移除**：`_check_s3` 的 `cpm_n>=2` 恒 True else 分支删除（schema min_length=2 已覆盖）
+    - **S1 检查注释**：`feature_gaps` 检查保留为防御性兜底 + 注释标注 schema 已覆盖
+    - **`_normalize_raw` 防御**：`user_reviews`/`pricing` 非 dict 时规整成空 dict，避免 AttributeError 被吞成占位丢失已采集正文
+    - **`CompetitorBasic.name` min_length**：2→1，允许单字符竞品名（如 'V'、'Go'）
+    - **`CollectionPipeline.collect` 死参数 `category`** 删除
+    - **`_serialize_validation_error` 统一**：`_call_with_validation` + 非 S5 phase2 改用 `_enhanced` 人类可读版，提升重试反馈质量
+    - **CLAUDE.md 文档漂移**：quality_score 描述从 v3（calc_quality_score 三项+cap 0.5）更新为 v4（calc_critic_score 4 维+critic_failed 0.5+raw==final+常量复用）
+    - **对抗审查补救**（6 面 finder + skeptic 验证，8 存活 → 修 3 真 bug + 补 1 测试）：
+      - 修 `_Pipe.collect` mock 签名残留 `category` 形参（删死参数引入的测试回归，TypeError 被吞成占位路径断言失真）
+      - 修 `_normalize_raw` 对 raw=None 无防御（LLM 输出 JSON null 时 call_json 返回 None 导致 AttributeError）
+      - 补 S4+prior_trace_id writer_node 测试，覆盖 `asyncio.to_thread(_load_prior_report_data)` 异步路径（原零覆盖）
+      - 修 docs/SPEC.md + docs/PRD.md 的 CompetitorBasic.name min_length=2→1 文档漂移
+  - **#12 trace_id 熵**：经评估单机/演示场景下 24 bit 熵够用，非真实风险，**跳过**；已记入 `OPEN_QUESTIONS.md#Q-2026-06-25-trace_id-熵不足`（未来多租户部署时再提熵+加鉴权）
   - **#12 trace_id 熵**：经评估单机/演示场景下 24 bit 熵够用，非真实风险，**跳过**；已记入 `OPEN_QUESTIONS.md#Q-2026-06-25-trace_id-熵不足`（未来多租户部署时再提熵+加鉴权）
   - **文档同步**：CLAUDE.md / PRD.md 更新配额 25 + retry 计数新语义
   - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，加入 `.gitignore`

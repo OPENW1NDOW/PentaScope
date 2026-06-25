@@ -158,7 +158,7 @@ ScenarioInput:
   prior_trace_id: Optional[str]                 # S4 增量模式，路径白名单 ^[a-f0-9-]+$ 长度 ≤64
 
 CompetitorBasic:
-  name: str                                     # min_length=2, max_length=50
+  name: str                                     # min_length=1, max_length=50
   company: str                                  # 默认 ""
   category: str                                 # 默认 ""
   official_url: Optional[str]                   # 用户可提供官网

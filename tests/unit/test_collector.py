@@ -226,7 +226,7 @@ async def test_collect_returns_goal_with_profiles():
             return {"competitor_type": "核心竞品", "reason": "r"}
 
     class _Pipe:
-        async def collect(self, name, category):
+        async def collect(self, name, scenario=None):
             return ("", [], [], "")
 
     agent = CollectorAgent(llm=_LLM(), pipeline=_Pipe())

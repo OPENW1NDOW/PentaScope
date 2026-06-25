@@ -29,6 +29,12 @@ def test_s1_requires_competitors_and_our_product():
     assert si.our_product_name == "MyProduct"
 
 
+def test_competitor_name_allows_single_char():
+    """[#min_length 放宽] CompetitorBasic.name min_length=1，允许单字符/短竞品名（如 'Go'、'V'）。"""
+    cb = CompetitorBasic(name="V")
+    assert cb.name == "V"
+
+
 def test_s2_no_industry_fails():
     with pytest.raises(ValidationError, match="industry"):
         ScenarioInput(

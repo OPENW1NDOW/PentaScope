@@ -129,7 +129,7 @@ from typing import Literal
 
 class CompetitorBasic(BaseModel):
     """竞品基础信息（用户输入）"""
-    name: str = Field(..., min_length=2, max_length=50, description="竞品名称")
+    name: str = Field(..., min_length=1, max_length=50, description="竞品名称")
     company: str = Field(default="", description="所属公司（选填，系统可推断）")
     category: str = Field(default="", description="行业分类（选填，系统可推断）")
 

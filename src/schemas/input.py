@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class CompetitorBasic(BaseModel):
-    name: str = Field(min_length=2, max_length=50)
+    name: str = Field(min_length=1, max_length=50)
     company: str = ""
     category: str = ""
     official_url: Optional[str] = None  # 可选用户提供官网

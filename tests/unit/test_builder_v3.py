@@ -675,3 +675,59 @@ async def test_inspector_node_critic_failed_does_not_increment_retry(monkeypatch
 
     # critic_failed 不消耗 retry 名额
     assert result["retry_count"] == 1, f"critic_failed 不应 +1，实际={result['retry_count']}"
+
+
+@pytest.mark.asyncio
+async def test_writer_node_s4_loads_prior_report_via_async_path(tmp_path, monkeypatch):
+    """[#async IO] S4 + prior_trace_id 时走 asyncio.to_thread(_load_prior_report_data) 异步路径，
+    prior 报告有效则 prior_data 非 None 传给 writer.write。
+    覆盖 builder.py:304 的 to_thread 包装分支（单测直调同步函数会绕过此路径）。
+    """
+    from src.agents.writer_orchestrator import WriterRouteToEnd
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    # 准备一个有效的 S4 prior 报告文件（trace_id 仅含 hex+连字符，过 _TRACE_ID_PATTERN 白名单）
+    prior_dir = tmp_path / "abc123-def456"
+    prior_dir.mkdir()
+    (prior_dir / "03_report.json").write_text(
+        '{"metadata":{"scenario":"S4","schema_version":"2.0"},'
+        '"scenario_payload":{"review_period":{"monitored_competitors":["A"]}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.graph.builder.RUNS_DIR", tmp_path)
+
+    captured_prior = {}
+
+    async def _fake_write(*args, **kwargs):
+        captured_prior["prior_report_data"] = kwargs.get("prior_report_data")
+        # 抛 WriterRouteToEnd 让 writer_node 走异常分支快速返回，避免跑完整 write
+        raise WriterRouteToEnd("test stub: terminate after capturing prior")
+
+    monkeypatch.setattr(
+        "src.agents.writer_orchestrator.WriterOrchestrator.write",
+        _fake_write,
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = {
+        "user_input": ScenarioInput(
+            scenario="S4",
+            competitors=[CompetitorBasic(name="A")],
+            analysis_context="增量监控",
+            our_product_name="MyProduct",
+            prior_trace_id="abc123-def456",
+        ),
+        "analysis": MagicMock(),
+        "profiles": [MagicMock()],
+        "retry_count": 0,
+        "max_retries": 2,
+        "trace_id": "test-s4-prior",
+    }
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    # prior_data 通过 to_thread 异步加载并传入 write
+    assert captured_prior["prior_report_data"] is not None
+    assert captured_prior["prior_report_data"]["metadata"]["scenario"] == "S4"
+    # WriterRouteToEnd → passed=True 强制终止
+    assert result["feedback"].passed is True
+

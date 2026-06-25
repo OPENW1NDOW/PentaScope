@@ -547,7 +547,7 @@ class WriterOrchestrator:
             except ValidationError as e:
                 if attempt >= max_retries:
                     raise
-                last_error_summary = self._serialize_validation_error(e, max_chars=1500)
+                last_error_summary = self._serialize_validation_error_enhanced(e, max_chars=1500)
 
     @staticmethod
     def _serialize_validation_error(e: ValidationError, max_chars: int = 1500) -> str:
@@ -1104,7 +1104,7 @@ class WriterOrchestrator:
             except ValidationError as e:
                 if attempt >= max_retries:
                     raise
-                last_error_summary = self._serialize_validation_error(e, max_chars=1500)
+                last_error_summary = self._serialize_validation_error_enhanced(e, max_chars=1500)
                 # 把摘要落 log 便于诊断（log 只取前 400 字防爆）
                 logger.warning(
                     "[writer] phase 2 ValidationError 重试 1 次, 错误摘要: %s",

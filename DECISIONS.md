@@ -72,6 +72,17 @@
 
 ---
 
+## 2026-06-25: S4 prior 降级判空统一为 prior_report_data（#3）
+
+- 选择：phase1/phase2 的 S4 mode_hint 与 `_inject_s4_prior_diff` 三处统一用 `_prior_is_usable(prior_report_data)` 判空，而非 `scenario_input.prior_trace_id is None`
+- 理由：
+  1. 原设计 mode_hint 判 `scenario_input.prior_trace_id`（用户输入），但 inject 判 `prior_report_data`（实际加载结果）。用户填了 prior_trace_id 但 prior 报告丢失/损坏时，prior_report_data=None → inject 不写 review_period.prior_trace_id（保持 None）→ schema `_check_first_review_baseline` 走首次模式强约束；但 prompt 仍按用户输入给「增量监控」→ LLM 生成 is_baseline=False + 非 None trends → 与 schema 冲突 → ValidationError 必然发生 → 重试仍失败 → retry 耗尽
+  2. 判空对象必须统一到「prior 是否真正可用」= prior_report_data 非 None + scenario=S4 + schema_version=2.0
+  3. 抽 `_prior_is_usable` 静态方法三处复用，消除判空逻辑分叉
+- 备选（降级时仍写 prior_trace_id 放弃 baseline 强约束）：破坏首次监控的 schema 不变量，且 diff 已无法算，伪溯源
+
+---
+
 ## 2026-06-19: 字符 min_length 约束全面退役，质量保障交给 critic
 
 - 选择：**删除所有字符串字段的 min_length 约束**（report.py + s1-s5.py），只保留列表结构性约束 + URL 防空 + max_length 防爆

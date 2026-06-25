@@ -28,12 +28,13 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
     - **#6 配额误杀**：`WRITER_MAX_LLM_CALLS` 18→25，覆盖 S5 最坏 21 次 + 余量
     - state.py 新增 `infra_retry_count` 字段；config.py 新增 `INFRA_MAX_RETRIES=3`
     - 11 个测试改预期/新增（先红后绿）
+  - **#3 S4 prior 降级失败循环**：phase1/phase2 mode_hint 判空对象从 `scenario_input.prior_trace_id` 改为 `prior_report_data`（抽 `_prior_is_usable` helper 三处复用），prior 丢失/损坏时降级为首次监控提示，消除「prompt 说增量但 schema 走首次」的必然 ValidationError 循环；2 个新增测试 + 1 个现有测试改预期
   - **文档同步**：CLAUDE.md / PRD.md 更新配额 25 + retry 计数新语义
   - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，加入 `.gitignore`
   - **清理**：删除 `docs/trae-competition-showcase.html`
-  - **测试**：`tests/unit + tests/integration` 509 passed，零回归；ruff All checks passed
+  - **测试**：`tests/unit + tests/integration` 511 passed，零回归；ruff All checks passed
 - 下一步：
-  1. 按 severity 继续处理 #3（S4 prior 降级）、#7（collector_node 无异常处理）、#8（MD 导出转义）、#9（KPI 颜色）、#12（trace_id 熵）及 minor/nit 项
+  1. 按 severity 继续处理 #7（collector_node 无异常处理）、#8（MD 导出转义）、#9（KPI 颜色）、#12（trace_id 熵）及 minor/nit 项
 - 阻塞：无
 
 ---

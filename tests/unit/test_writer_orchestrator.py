@@ -514,11 +514,10 @@ def test_phase2_s4_prior_schema_mismatch_does_not_inject_trace_id():
 
 @pytest.mark.asyncio
 async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
-    """[v3-R09 prove-it] S4 + prior_trace_id 存在时，Phase 1 user_prompt 应含 '增量监控' 而非 '首次监控'。
+    """[v3-R09 prove-it] S4 + prior 报告可用时，Phase 1 user_prompt 应含 '增量监控' 而非 '首次监控'。
 
-    现象：Phase 1 outline prompt 未收到 prior 监控信息，LLM 照抄 analysis_context 里的
-    '首次监控' 生成 title，即使这是第二轮增量分析。
-    修：_phase1_outline 构建 user_prompt 时注入 mode_hint。
+    [#3] mode_hint 改判 prior_report_data 是否可用：需传入可用的 prior_report_data
+    （scenario=S4 + schema_version=2.0）才触发增量模式。
     """
     from src.schemas.input import CompetitorBasic, ScenarioInput
 
@@ -536,10 +535,14 @@ async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
         scenario="S4",
         prior_trace_id="prior-abc-123",
         competitors=[CompetitorBasic(name="Mixpanel")],
-        analysis_context="这是首次监控基线",
+        analysis_context="这是增量监控第二轮",
         our_product_name="MyAnalytics",
     )
     profile = _make_profile(data_sources=["https://example.com"])
+    prior_report_data = {
+        "metadata": {"scenario": "S4", "schema_version": "2.0"},
+        "scenario_payload": {"review_period": {"monitored_competitors": ["Mixpanel"]}},
+    }
 
     await orch._phase1_outline(
         scenario="S4",
@@ -550,12 +553,13 @@ async def test_phase1_s4_prior_trace_id_injects_incremental_mode_hint():
         competitor_basics=[{"name": "Mixpanel"}],
         our_product_brief={"name": "MyAnalytics"},
         discovered_urls=["https://example.com"],
+        prior_report_data=prior_report_data,
     )
 
     assert len(captured_prompts) == 1
     user_prompt = captured_prompts[0]
     assert "增量监控" in user_prompt, (
-        "prior_trace_id=prior-abc-123 时 user_prompt 应含 '增量监控'，实际不含"
+        "prior 可用时 user_prompt 应含 '增量监控'，实际不含"
     )
     assert "prior-abc-123" in user_prompt, (
         "user_prompt 应包含 prior_trace_id 值，实际不含"
@@ -601,6 +605,98 @@ async def test_phase1_s4_no_prior_trace_id_injects_baseline_mode_hint():
     user_prompt = captured_prompts[0]
     assert "首次监控" in user_prompt, (
         "prior_trace_id=None 时 user_prompt 应含 '首次监控'，实际不含"
+    )
+
+
+# ---------- [#3] S4 prior 降级：prior_report_data=None 时 mode_hint 必须降级为首次监控 ----------
+
+@pytest.mark.asyncio
+async def test_phase1_s4_prior_data_none_degrades_to_baseline_mode_hint():
+    """[#3] 用户填了 prior_trace_id 但 prior 报告丢失（prior_report_data=None）→
+    Phase 1 mode_hint 必须降级为「首次监控」，而非「增量监控」。
+
+    否则 outline 标题说增量但实际 schema 走首次模式，语义矛盾。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    captured_prompts: list[str] = []
+
+    async def _capture_llm(system_prompt, user_prompt, *, max_tokens=None):
+        captured_prompts.append(user_prompt)
+        return _make_valid_outline_dict()
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=_capture_llm)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id="prior-abc-123",  # 用户填了，但 prior 报告丢失
+        competitors=[CompetitorBasic(name="Mixpanel")],
+        analysis_context="监控竞品动态",  # 中性文本，避免污染 mode_hint 断言
+        our_product_name="MyAnalytics",
+    )
+    profile = _make_profile(data_sources=["https://example.com"])
+
+    await orch._phase1_outline(
+        scenario="S4",
+        scenario_input=scenario_input,
+        analysis=MagicMock(model_dump_json=MagicMock(return_value="{}")),
+        profiles=[profile],
+        competitor_names=["Mixpanel"],
+        competitor_basics=[{"name": "Mixpanel"}],
+        our_product_brief={"name": "MyAnalytics"},
+        discovered_urls=["https://example.com"],
+        prior_report_data=None,  # prior 报告丢失
+    )
+
+    user_prompt = captured_prompts[0]
+    assert "首次监控" in user_prompt, (
+        "prior_report_data=None 时应降级为「首次监控」，实际不含"
+    )
+    assert "增量监控" not in user_prompt, (
+        "prior_report_data=None 时不应再给「增量监控」提示，否则 LLM 生成 is_baseline=False 与 schema 冲突"
+    )
+
+
+def test_phase2_s4_prior_data_none_degrades_to_baseline_mode_hint():
+    """[#3] Phase 2 mode_hint 同理：prior_report_data=None 时必须降级为「首次监控」。
+
+    这是 #3 失败循环的根因——phase2 prompt 给「增量监控」→ LLM 生成 is_baseline=False +
+    非 None trends → schema _check_first_review_baseline（review_period.prior_trace_id=None）
+    强制 baseline → ValidationError 必然发生 → 重试仍失败 → retry 耗尽。
+    """
+    from src.schemas.input import CompetitorBasic, ScenarioInput
+
+    mock_llm = MagicMock(spec=LLMClient)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    scenario_input = ScenarioInput(
+        scenario="S4",
+        prior_trace_id="prior-abc-123",  # 用户填了
+        competitors=[CompetitorBasic(name="Mixpanel")],
+        analysis_context="监控竞品动态",  # 中性文本，避免污染 mode_hint 断言
+        our_product_name="MyAnalytics",
+    )
+    profile = _make_profile(data_sources=["https://example.com"])
+
+    prompt = orch._build_phase2_user_prompt(
+        scenario="S4",
+        scenario_input=scenario_input,
+        analysis=MagicMock(model_dump_json=MagicMock(return_value="{}")),
+        profiles=[profile],
+        competitor_recommendations=None,
+        competitor_names=["Mixpanel"],
+        competitor_basics=[{"name": "Mixpanel"}],
+        discovered_urls=["https://example.com"],
+        prior_report_data=None,  # prior 报告丢失
+    )
+
+    assert "首次监控" in prompt, (
+        "prior_report_data=None 时 phase2 prompt 应降级为「首次监控」"
+    )
+    assert "增量监控" not in prompt, (
+        "prior_report_data=None 时不应给「增量监控」提示"
     )
 
 

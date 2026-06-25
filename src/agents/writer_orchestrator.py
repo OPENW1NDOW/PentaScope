@@ -446,6 +446,7 @@ class WriterOrchestrator:
             competitor_basics,
             our_product_brief,
             discovered_urls,
+            prior_report_data=prior_report_data,
         )
         logger.info("[writer] phase 1 完成, 进入 phase 2")
 
@@ -623,6 +624,7 @@ class WriterOrchestrator:
         competitor_basics: list[dict],
         our_product_brief: dict,
         discovered_urls: list[str],
+        prior_report_data: Optional[dict] = None,
     ) -> dict:
         """Phase 1：一次 LLM 调用产出 BaseReport 全部非 payload/sections/swot 字段。
 
@@ -671,13 +673,14 @@ class WriterOrchestrator:
             ("=== 可用溯源 URL（按竞品归属）===", self._grouped_urls),
         ]
 
-        # [v3-R09] S4 prior 监控提示：告知 LLM 首次/增量，影响 title 写法
+        # [v3-R09 / #3] S4 prior 监控提示：判「prior 是否真正可用」而非「用户是否填了 prior_trace_id」。
+        # prior 报告丢失/损坏时 prior_report_data=None，必须降级为首次监控提示，
+        # 否则 LLM 生成 is_baseline=False 与 schema _check_first_review_baseline 冲突必崩。
         if scenario == "S4":
-            mode_hint = (
-                "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
-                if scenario_input.prior_trace_id is None
-                else f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
-            )
+            if self._prior_is_usable(prior_report_data):
+                mode_hint = f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
+            else:
+                mode_hint = "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
             sections.append(("=== prior 监控信息 ===", mode_hint))
 
         parts: list[str] = []
@@ -737,6 +740,7 @@ class WriterOrchestrator:
         competitor_names: list[str],
         competitor_basics: list[dict],
         discovered_urls: list[str],
+        prior_report_data: Optional[dict] = None,
     ) -> str:
         """拼装 Phase 2 base user prompt（不含 LLM 调用，便于重试时复用）。"""
         # Profiles 摘要（与 phase 1 一致：basic_info 维度，控制 token）
@@ -785,13 +789,12 @@ class WriterOrchestrator:
                 )
             )
 
-        # [v3-R09] S4 prior 监控提示（具体 diff 由代码注入；这里只告知 LLM 是否首次）
+        # [v3-R09 / #3] S4 prior 监控提示：判 prior 是否真正可用（与 phase1 / inject 统一判空对象）
         if scenario == "S4":
-            mode_hint = (
-                "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
-                if scenario_input.prior_trace_id is None
-                else f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
-            )
+            if self._prior_is_usable(prior_report_data):
+                mode_hint = f"增量监控（prior_trace_id={scenario_input.prior_trace_id}，diff 由代码注入）"
+            else:
+                mode_hint = "首次监控（prior_trace_id 为空，所有 change 须 is_baseline=True，trends 全 None）"
             sections.append(("=== prior 监控信息（如有）===", mode_hint))
 
         parts: list[str] = []
@@ -1072,6 +1075,7 @@ class WriterOrchestrator:
             competitor_names,
             competitor_basics,
             discovered_urls,
+            prior_report_data=prior_report_data,
         )
         system_prompt = WRITER_PAYLOAD_PROMPTS[scenario]
         last_error_summary: str | None = None
@@ -1146,6 +1150,22 @@ class WriterOrchestrator:
         )
         return payload_model
 
+    @staticmethod
+    def _prior_is_usable(prior_report_data: Optional[dict]) -> bool:
+        """[#3] 判断 prior 报告是否真正可用（能做 diff）。
+
+        prior_report_data 为 None（文件丢失/JSON 失败）或 scenario/schema_version 不匹配 → False。
+        phase1/phase2 mode_hint 与 _inject_s4_prior_diff 三处统一用此判空，避免判错对象导致
+        「prompt 说增量但 schema 走首次」的失败循环。
+        """
+        if not prior_report_data or not isinstance(prior_report_data, dict):
+            return False
+        prior_meta = prior_report_data.get("metadata", {}) or {}
+        return (
+            prior_meta.get("scenario") == "S4"
+            and prior_meta.get("schema_version") == "2.0"
+        )
+
     def _inject_s4_prior_diff(
         self,
         payload_dict: dict,
@@ -1162,22 +1182,12 @@ class WriterOrchestrator:
         """
         review_period = payload_dict.setdefault("review_period", {})
 
-        # 首次监控模式：prior_report_data 为空 → 不写 prior_trace_id，直接返回
-        if not prior_report_data:
-            return payload_dict
-
-        prior_meta = (
-            prior_report_data.get("metadata", {})
-            if isinstance(prior_report_data, dict)
-            else {}
-        )
-        if (
-            prior_meta.get("scenario") != "S4"
-            or prior_meta.get("schema_version") != "2.0"
-        ):
-            logger.warning(
-                "[writer] S4 prior 报告 scenario/schema_version 不匹配，降级为首次监控"
-            )
+        # [#3] 首次监控模式：prior 不可用（丢失/损坏/schema 不匹配）→ 不写 prior_trace_id，直接返回
+        if not self._prior_is_usable(prior_report_data):
+            if prior_report_data:
+                logger.warning(
+                    "[writer] S4 prior 报告不可用（scenario/schema_version 不匹配），降级为首次监控"
+                )
             return payload_dict
 
         # 确认能做 diff，prior_trace_id 与 newly/dropped 同步注入

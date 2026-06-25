@@ -198,3 +198,42 @@ def test_t_imported_from_utils_not_frontend():
     from src.utils.translations import _t, _TRANSLATIONS
     assert _t("high") == "高 (high)"
     assert len(_TRANSLATIONS) > 50
+
+
+# ---------- [#8] 表格单元格 / 链接转义 ----------
+
+def test_markdown_table_cell_escapes_pipe_and_newline():
+    """[#8] 表格单元格含 | 或换行时必须转义，否则破坏表格列/行结构。"""
+    rep = _minimal_base_report("S1", {
+        "vendor_profiles": [
+            {"competitor_name": "甲|乙", "wave_position": "wave_leader",
+             "one_line_pitch": "卖点\n第二行", "best_fit_for": "中型",
+             "strengths": [], "cautions": []},
+        ],
+        "radar_scores": [],
+    })
+    out = render_markdown(rep, trace_id="t-esc")
+    # | 应被转义为 \|，不能裸出现在单元格值里破坏列
+    assert "甲\\|乙" in out, f"表格单元格的 | 应转义为 \\|，实际：{out}"
+    # 换行应被规整为空格，不能断行破坏表格行
+    assert "卖点\n第二行" not in out, "表格单元格的换行应被规整，不能断行"
+
+
+def test_markdown_link_escapes_title_and_url():
+    """[#8] 链接 title 含 ] 或 url 含 ) 时必须转义，否则截断/扭曲链接。"""
+    rep = _minimal_base_report("S1", {})
+    # data_sources_full 链接 + source_refs 链接
+    rep["appendix"]["data_sources_full"] = [
+        {"url": "https://example.com/a)b", "title": "标题]危险", "confidence": "high"},
+    ]
+    rep["key_findings"][0]["source_refs"] = [
+        {"url": "https://example.com/c)d", "title": "来源]名"},
+    ]
+    out = render_markdown(rep, trace_id="t-link")
+    # title 中的 ] 应被转义，不能裸出现破坏链接语法
+    assert "标题]危险" not in out or "标题\\]危险" in out, (
+        f"链接 title 中的 ] 应转义，实际：{out}"
+    )
+    # url 中的 ) 应被处理（尖括号包裹或转义），不能直接断链接
+    # 用 <url> 形式时 url 原样保留在尖括号内是安全的
+    assert "https://example.com/a)b" in out, "url 内容不应丢失"

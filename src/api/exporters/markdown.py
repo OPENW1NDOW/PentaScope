@@ -49,6 +49,18 @@ def _md_h3(title: str) -> str:
     return f"（{prefix}）{title}"
 
 
+def _md_cell(value) -> str:
+    """[#8] 转义表格单元格值：| 转义为 \\|，换行规整为空格，避免破坏表格列/行结构。"""
+    s = "" if value is None else str(value)
+    return s.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def _md_link(title: str, url: str) -> str:
+    """[#8] 构造 Markdown 链接：title 中 ] 转义，url 用 <...> 尖括号包裹防 ) 截断。"""
+    safe_title = (title or "").replace("\\", "\\\\").replace("]", "\\]")
+    return f"[{safe_title}](<{url}>)"
+
+
 # ============ 公共骨架渲染 ============
 
 def _render_at_a_glance(items: list) -> str:
@@ -220,9 +232,9 @@ def _render_appendix(appx: dict) -> str:
             conf = ds.get("confidence") or ""
             tag = f"[{conf}] " if conf else ""
             if url:
-                lines.append(f"- {tag}[{title}]({url})")
+                lines.append(f"- {tag}{_md_link(title, url)}")
             else:
-                lines.append(f"- {tag}{title}")
+                lines.append(f"- {tag}{_md_cell(title)}")
     return "\n".join(lines)
 
 
@@ -234,9 +246,9 @@ def _format_source_refs(refs: list) -> str:
         url = ref.get("url", "")
         title = ref.get("title", "") or (urlparse(url).netloc if url else "") or f"来源 {i}"
         if url:
-            parts.append(f"[{title}]({url})")
+            parts.append(_md_link(title, url))
         else:
-            parts.append(title)
+            parts.append(_md_cell(title))
     if not parts:
         return ""
     return f"**来源**：{' · '.join(parts)}"
@@ -253,8 +265,8 @@ def _render_s1_md(p: dict) -> str:
         out.append("|------|----------|--------|----------|")
         for v in vps:
             out.append(
-                f"| {v.get('competitor_name', '')} | {v.get('wave_position', '')} | "
-                f"{v.get('one_line_pitch', '')} | {v.get('best_fit_for', '')} |"
+                f"| {_md_cell(v.get('competitor_name', ''))} | {_md_cell(v.get('wave_position', ''))} | "
+                f"{_md_cell(v.get('one_line_pitch', ''))} | {_md_cell(v.get('best_fit_for', ''))} |"
             )
     rs = p.get("radar_scores") or []
     if rs:
@@ -266,9 +278,9 @@ def _render_s1_md(p: dict) -> str:
         out.append("|------|---|---|---|---|---|")
         for r in rs:
             out.append(
-                f"| {r.get('competitor_name', '')} | {r.get('feature_breadth', '')} | "
-                f"{r.get('usability', '')} | {r.get('cost_effectiveness', '')} | "
-                f"{r.get('stability', '')} | {r.get('design_quality', '')} |"
+                f"| {_md_cell(r.get('competitor_name', ''))} | {_md_cell(r.get('feature_breadth', ''))} | "
+                f"{_md_cell(r.get('usability', ''))} | {_md_cell(r.get('cost_effectiveness', ''))} | "
+                f"{_md_cell(r.get('stability', ''))} | {_md_cell(r.get('design_quality', ''))} |"
             )
     fgs = p.get("feature_gaps") or []
     if fgs:
@@ -277,9 +289,9 @@ def _render_s1_md(p: dict) -> str:
         out.append("|------|----------|------|------|")
         for g in fgs:
             out.append(
-                f"| {g.get('feature_name', '')} | "
-                f"{', '.join(g.get('competitors_have_it') or [])} | "
-                f"{g.get('estimated_effort', '')} | {g.get('estimated_impact', '')} |"
+                f"| {_md_cell(g.get('feature_name', ''))} | "
+                f"{_md_cell(', '.join(g.get('competitors_have_it') or []))} | "
+                f"{_md_cell(g.get('estimated_effort', ''))} | {_md_cell(g.get('estimated_impact', ''))} |"
             )
     out.append("\n> 注：可视化雷达图见 HTML 版本")
     return "\n".join(out)
@@ -295,8 +307,8 @@ def _render_s2_md(p: dict) -> str:
         for label, key in [("TAM", "tam"), ("SAM", "sam"), ("SOM", "som")]:
             mv = ms.get(key) or {}
             out.append(
-                f"| {label} | {mv.get('amount', '—')} | {mv.get('unit', '')} | "
-                f"{mv.get('currency', '')} | {mv.get('value_basis', '')} |"
+                f"| {label} | {_md_cell(mv.get('amount', '—'))} | {_md_cell(mv.get('unit', ''))} | "
+                f"{_md_cell(mv.get('currency', ''))} | {_md_cell(mv.get('value_basis', ''))} |"
             )
     ff = p.get("five_forces") or {}
     if ff:
@@ -309,7 +321,7 @@ def _render_s2_md(p: dict) -> str:
         for k, label in forces:
             data = ff.get(k) or {}
             out.append(
-                f"| {label} | {data.get('intensity', '')} | "
+                f"| {label} | {_md_cell(data.get('intensity', ''))} | "
                 f"{data.get('implication', '')} |"
             )
     players = p.get("players") or []
@@ -319,8 +331,8 @@ def _render_s2_md(p: dict) -> str:
         out.append("|------|------|----------|-------|--------|")
         for pl in players:
             out.append(
-                f"| {pl.get('name', '')} | {pl.get('company', '')} | "
-                f"{pl.get('market_role', '')} | {pl.get('market_share_pct', '')} | "
+                f"| {_md_cell(pl.get('name', ''))} | {_md_cell(pl.get('company', ''))} | "
+                f"{_md_cell(pl.get('market_role', ''))} | {_md_cell(pl.get('market_share_pct', ''))} | "
                 f"{pl.get('key_differentiator', '')} |"
             )
     es = p.get("entry_strategy") or {}
@@ -335,8 +347,8 @@ def _render_s2_md(p: dict) -> str:
         out.append("|------|------|----------|--------|")
         for r in rcs:
             out.append(
-                f"| {r.get('name', '')} | {r.get('company', '')} | "
-                f"{r.get('why_recommended', '')} | {r.get('confidence', '')} |"
+                f"| {_md_cell(r.get('name', ''))} | {_md_cell(r.get('company', ''))} | "
+                f"{_md_cell(r.get('why_recommended', ''))} | {_md_cell(r.get('confidence', ''))} |"
             )
     return "\n".join(out)
 
@@ -358,9 +370,9 @@ def _render_s3_md(p: dict) -> str:
         for t in tiers:
             rec = "★" if t.get("is_recommended") else ""
             out.append(
-                f"| {t.get('name', '')} | {t.get('position', '')} | "
-                f"{t.get('monthly_price', '')} | {t.get('annual_price', '')} | "
-                f"{t.get('currency', '')} | {rec} | {t.get('target_persona', '')} |"
+                f"| {_md_cell(t.get('name', ''))} | {_md_cell(t.get('position', ''))} | "
+                f"{_md_cell(t.get('monthly_price', ''))} | {_md_cell(t.get('annual_price', ''))} | "
+                f"{_md_cell(t.get('currency', ''))} | {rec} | {_md_cell(t.get('target_persona', ''))} |"
             )
     cpm = p.get("competitive_pricing_matrix") or []
     if cpm:
@@ -373,7 +385,7 @@ def _render_s3_md(p: dict) -> str:
                 out.append("|------|------|------|")
                 for t in ts:
                     out.append(
-                        f"| {t.get('name', '')} | {t.get('monthly_price', '')} | "
+                        f"| {_md_cell(t.get('name', ''))} | {_md_cell(t.get('monthly_price', ''))} | "
                         f"{t.get('annual_price', '')} |"
                     )
     rs = p.get("recommendations_summary") or {}
@@ -409,7 +421,7 @@ def _render_s4_md(p: dict) -> str:
             ct = it.get("change_type") or it.get("category") or it.get("action") or ""
             fact = (it.get("fia") or {}).get("fact", "")
             out.append(
-                f"| {it.get('competitor_name', '')} | {ct} | {fact} | "
+                f"| {_md_cell(it.get('competitor_name', ''))} | {ct} | {fact} | "
                 f"{it.get('severity', '')} |"
             )
     threats = p.get("threats") or []
@@ -419,8 +431,8 @@ def _render_s4_md(p: dict) -> str:
         out.append("|------|--------|--------|------|")
         for t in threats:
             out.append(
-                f"| {t.get('title', '')} | {t.get('severity', '')} | "
-                f"{t.get('likelihood', '')} | {t.get('recommended_response', '')} |"
+                f"| {_md_cell(t.get('title', ''))} | {_md_cell(t.get('severity', ''))} | "
+                f"{_md_cell(t.get('likelihood', ''))} | {_md_cell(t.get('recommended_response', ''))} |"
             )
     opps = p.get("opportunities") or []
     if opps:
@@ -429,9 +441,9 @@ def _render_s4_md(p: dict) -> str:
         out.append("|------|------|------|------|")
         for o in opps:
             out.append(
-                f"| {o.get('opportunity_type', '')} | "
-                f"{o.get('estimated_effort', '')} | "
-                f"{o.get('expected_impact', '')} | {o.get('description', '')} |"
+                f"| {_md_cell(o.get('opportunity_type', ''))} | "
+                f"{_md_cell(o.get('estimated_effort', ''))} | "
+                f"{_md_cell(o.get('expected_impact', ''))} | {_md_cell(o.get('description', ''))} |"
             )
     return "\n".join(out)
 
@@ -445,10 +457,10 @@ def _render_s5_md(p: dict) -> str:
         out.append("|------|--------|------------|------|------|")
         for v in vps:
             out.append(
-                f"| {v.get('competitor_name', '')} | "
-                f"{v.get('ability_to_execute_score', '')} | "
-                f"{v.get('completeness_of_vision_score', '')} | "
-                f"{v.get('mq_quadrant', '')} | {v.get('overview', '')} |"
+                f"| {_md_cell(v.get('competitor_name', ''))} | "
+                f"{_md_cell(v.get('ability_to_execute_score', ''))} | "
+                f"{_md_cell(v.get('completeness_of_vision_score', ''))} | "
+                f"{_md_cell(v.get('mq_quadrant', ''))} | {_md_cell(v.get('overview', ''))} |"
             )
     pm = p.get("perceptual_map") or {}
     if pm:
@@ -470,9 +482,9 @@ def _render_s5_md(p: dict) -> str:
             for b in brands:
                 self_mark = "✓" if b.get("is_self") else ""
                 out.append(
-                    f"| {b.get('competitor_name', '')} | {self_mark} | "
-                    f"{b.get('x_score', '')} | {b.get('y_score', '')} | "
-                    f"{b.get('confidence', '')} | {b.get('score_rationale', '')} |"
+                    f"| {_md_cell(b.get('competitor_name', ''))} | {self_mark} | "
+                    f"{_md_cell(b.get('x_score', ''))} | {_md_cell(b.get('y_score', ''))} | "
+                    f"{_md_cell(b.get('confidence', ''))} | {_md_cell(b.get('score_rationale', ''))} |"
                 )
     sc = p.get("strategy_canvas") or {}
     if sc:
@@ -484,10 +496,10 @@ def _render_s5_md(p: dict) -> str:
             for vc in sc.get("value_curves") or []:
                 self_mark = "✓" if vc.get("is_self") else ""
                 levels = [
-                    str((vc.get("factor_levels") or {}).get(f, "")) for f in factors
+                    _md_cell((vc.get("factor_levels") or {}).get(f, "")) for f in factors
                 ]
                 out.append(
-                    f"| {vc.get('competitor_name', '')} | {self_mark} | "
+                    f"| {_md_cell(vc.get('competitor_name', ''))} | {self_mark} | "
                     + " | ".join(levels) + " |"
                 )
     ps = p.get("positioning_statement") or {}

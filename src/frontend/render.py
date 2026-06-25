@@ -1385,7 +1385,8 @@ def _render_kpi_strip(report: dict) -> None:
     src_main, src_sub = _format_data_sources(report)
     _raw_conf = meta.get("confidence_level") or ""
     conf_level = _t(_raw_conf) if _raw_conf else "—"
-    conf_color = _confidence_color(conf_level)
+    # [#9] 颜色按原始 level（high/medium/low）取色，翻译后的 '高 (high)' 命中不了 key 会全灰
+    conf_color = _confidence_color(_raw_conf) if _raw_conf else None
 
     cols = st.columns(5)
     cards = [

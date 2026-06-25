@@ -30,12 +30,14 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
     - 11 个测试改预期/新增（先红后绿）
   - **#3 S4 prior 降级失败循环**：phase1/phase2 mode_hint 判空对象从 `scenario_input.prior_trace_id` 改为 `prior_report_data`（抽 `_prior_is_usable` helper 三处复用），prior 丢失/损坏时降级为首次监控提示，消除「prompt 说增量但 schema 走首次」的必然 ValidationError 循环；2 个新增测试 + 1 个现有测试改预期
   - **#7 collector_node 无异常处理**：套与 analyzer_node 同构的 try/except，collector.collect 抛异常（parse_goal ValueError / 网络异常）时注入 feedback agent='collector' 走反馈闭环回 collector 重采，而非崩溃终止整图；1 个新增测试
+  - **#8 MD 导出零转义**：新增 `_md_cell`（转义 `|`/换行）+ `_md_link`（转义 `]`、url 用 `<...>` 尖括号）helper，应用到全部 5 场景表格单元格 + data_sources_full/source_refs 链接；2 个新增测试
+  - **#9 KPI 可信度颜色失效**：`_render_kpi_strip` 颜色改用原始 `_raw_conf`（high/medium/low）取色，而非翻译后的 '高 (high)'；3 个参数化新增测试
   - **文档同步**：CLAUDE.md / PRD.md 更新配额 25 + retry 计数新语义
   - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，加入 `.gitignore`
   - **清理**：删除 `docs/trae-competition-showcase.html`
-  - **测试**：`tests/unit + tests/integration` 512 passed，零回归；ruff All checks passed
+  - **测试**：`tests/unit + tests/integration` 517 passed，零回归；ruff All checks passed
 - 下一步：
-  1. 按 severity 继续处理 #8（MD 导出转义）、#9（KPI 颜色）、#12（trace_id 熵）、#13（Tavily key 静默降级）及 minor/nit 项
+  1. 按 severity 继续处理 #12（trace_id 熵）、#13（Tavily key 静默降级）及 minor/nit 项
 - 阻塞：无
 
 ---

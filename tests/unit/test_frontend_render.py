@@ -793,3 +793,36 @@ def test_s2_segments_table_no_key_needs_column(st_spy):
         assert "核心需求" not in row
     cap_calls = [c.args[0] for c in st_spy.caption.call_args_list]
     assert any("API稳定" in c for c in cap_calls)
+
+
+# ============ [#9] KPI 可信度颜色编码 ============
+
+@pytest.mark.parametrize("level,expected_color", [
+    ("high", "#16A34A"),
+    ("medium", "#D97706"),
+    ("low", "#DC2626"),
+])
+def test_kpi_confidence_color_uses_raw_level(st_spy, level, expected_color):
+    """[#9] 可信度 KPI 卡颜色应按原始 confidence_level（high/medium/low）取色，
+    而非翻译后的 '高 (high)'。修前翻译后值永远命中不了 _confidence_color 的英文 key → 全灰。
+    """
+    from src.frontend.render import _render_kpi_strip
+    _render_kpi_strip({
+        "metadata": {
+            "scenario": "S1",
+            "quality_score": 0.8,
+            "confidence_level": level,
+        },
+        "scope": {"competitors": ["A"]},
+    })
+    md_calls = [c.args[0] for c in st_spy.markdown.call_args_list
+                if len(c.args) > 0 and isinstance(c.args[0], str)]
+    kpi_card_calls = [m for m in md_calls if "kpi-card" in m and "可信度" in m]
+    assert kpi_card_calls, "应渲染可信度 KPI 卡"
+    card = kpi_card_calls[0]
+    assert expected_color in card, (
+        f"confidence_level={level} 时 KPI 卡应含颜色 {expected_color}，实际：{card}"
+    )
+    assert "#475569" not in card, (
+        f"confidence_level={level} 时不应是默认灰色 #475569，实际：{card}"
+    )

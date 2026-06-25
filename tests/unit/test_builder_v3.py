@@ -520,6 +520,31 @@ async def test_analyzer_node_catches_exception_and_injects_feedback(monkeypatch)
     assert result.get("retry_count", 0) == 0
 
 
+@pytest.mark.asyncio
+async def test_collector_node_catches_exception_and_injects_feedback(monkeypatch):
+    """[#7] collector.collect 抛异常（如 parse_goal 重试后仍 ValidationError→ValueError）时
+    graph 不应崩溃，应注入 feedback agent='collector' 走反馈闭环回 collector 重采，
+    而非直接冒泡终止整图。
+    """
+    monkeypatch.setattr(
+        "src.agents.collector.CollectorAgent.collect",
+        AsyncMock(side_effect=ValueError("Collector parse_goal validation failed after retry")),
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    result = await graph.nodes["collector"].ainvoke(state)
+
+    assert "feedback" in result
+    fb = result["feedback"]
+    assert fb.passed is False
+    assert len(fb.issues) == 1
+    assert fb.issues[0].agent == "collector"
+    assert fb.issues[0].severity == "critical"
+    # 方案 A：collector 异常路由不 +1 retry_count（由 inspector skip 路径计）
+    assert result.get("retry_count", 0) == 0
+
+
 # ========== writer_node 基础设施错误不消耗 retry ==========
 
 @pytest.mark.asyncio

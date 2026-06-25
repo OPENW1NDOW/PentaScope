@@ -204,7 +204,30 @@ def build_graph(llm, http, parser, trace_writer=None):
             collect_input = ui.model_copy(update={"competitors": merged})
         else:
             collect_input = ui
-        profiles, goal, discovered_sources = await collector.collect(collect_input)
+        try:
+            profiles, goal, discovered_sources = await collector.collect(collect_input)
+        except Exception as e:
+            # [#7] collector.collect 抛异常（如 parse_goal 重试后仍 ValidationError→ValueError、
+            # Tavily 网络异常）时，注入 feedback agent='collector' 走反馈闭环回 collector 重采，
+            # 而非直接冒泡崩溃终止整图。与 analyzer_node 兜底同构。
+            logger.warning("[graph] collector 抛 %s: %s", type(e).__name__, str(e)[:200])
+            failed_feedback = RejectionFeedback(
+                passed=False,
+                issues=[FeedbackIssue(
+                    severity="critical",
+                    agent="collector",
+                    field="collector_runtime",
+                    reason=str(e)[:200],
+                    suggestion="采集异常，graph 重试 collector",
+                )],
+                retry_count=state.get("retry_count", 0),
+                max_retries=state.get("max_retries", 2),
+            )
+            # [方案 A] retry_count 统一在 inspector_node skip 路径计，collector 异常路由不 +1
+            return {
+                "feedback": failed_feedback,
+                "current_node": "collector",
+            }
         _save("01_profiles", profiles)
         return {
             "profiles": profiles,

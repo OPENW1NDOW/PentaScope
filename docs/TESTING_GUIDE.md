@@ -141,7 +141,7 @@ streamlit run src/frontend/app.py
 **适用场景**：还没产品，想看赛道格局
 
 > 推荐参考 trace_id：`20260620-144341-10b7e6`（quality_score=1.0, retries=0）
-
+streamlit run src/frontend/app.py
 ### 输入
 
 - **分析场景**：S2 市场进入（无产品调研）

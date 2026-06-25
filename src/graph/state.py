@@ -42,3 +42,6 @@ class AnalysisState(TypedDict, total=False):
 
     # v4 critic：采集阶段产出的搜索源信息（供 inspector evidence rubric 使用）
     discovered_sources: list[dict]  # [{"url", "title", "snippet"}]
+
+    # SSE 实时进度队列（前端订阅，节点执行前后写入事件）
+    progress_queue: object  # asyncio.Queue | None

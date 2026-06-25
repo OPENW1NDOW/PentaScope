@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from src.api.schemas import (
@@ -14,6 +15,8 @@ from src.api.schemas import (
     PickScenarioRequest,
     PickScenarioResponse,
     TraceResponse,
+    TraceSummary,
+    TracesResponse,
 )
 from src.api.exporters.markdown import render_markdown
 from src.schemas.report import BaseReport
@@ -29,6 +32,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 _BEIJING = timezone(timedelta(hours=8))
 _analyze_lock = asyncio.Lock()
+
+# SSE 进度队列注册表：trace_id → asyncio.Queue
+_progress_queues: dict[str, asyncio.Queue] = {}
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -70,6 +76,10 @@ async def analyze(request: AnalysisRequest):
     except Exception as e:  # noqa: BLE001
         logger.warning("[api] run.log handler 创建失败 trace=%s: %s", trace_id, e)
 
+    # 创建 SSE 进度队列
+    progress_queue: asyncio.Queue = asyncio.Queue()
+    _progress_queues[trace_id] = progress_queue
+
     http = HttpClient()
     node_trace: list = []
     async with _analyze_lock:
@@ -77,7 +87,10 @@ async def analyze(request: AnalysisRequest):
             user_input = request.to_scenario_input()
             llm = LLMClient()
             parser = HtmlParser()
-            graph, node_trace = build_graph(llm=llm, http=http, parser=parser, trace_writer=tw)
+            graph, node_trace = build_graph(
+                llm=llm, http=http, parser=parser, trace_writer=tw,
+                progress_queue=progress_queue,
+            )
             result = await graph.ainvoke({
                 "user_input": user_input, "retry_count": 0, "max_retries": 2, "trace_id": trace_id,
             })
@@ -96,6 +109,11 @@ async def analyze(request: AnalysisRequest):
                     "prior_trace_id": request.prior_trace_id,
                 },
             })
+            # 推送完成事件
+            await progress_queue.put({
+                "event": "analysis_complete",
+                "data": {"trace_id": trace_id, "status": "completed"},
+            })
             return AnalysisResponse(
                 trace_id=trace_id, status="completed",
                 report=report.model_dump() if report else None,
@@ -107,12 +125,18 @@ async def analyze(request: AnalysisRequest):
                 "started_at": started, "ended_at": datetime.now(_BEIJING).isoformat(),
                 "node_trace": node_trace, "error": str(e),
             })
+            await progress_queue.put({
+                "event": "analysis_failed",
+                "data": {"trace_id": trace_id, "error": str(e)[:200]},
+            })
             return AnalysisResponse(trace_id=trace_id, status="failed", error=str(e))
         finally:
             if run_handler is not None:
                 logging.getLogger().removeHandler(run_handler)
                 run_handler.close()
             await http.close()
+            # 清理队列注册表
+            _progress_queues.pop(trace_id, None)
 
 
 @router.post("/pick-scenario", response_model=PickScenarioResponse)
@@ -138,6 +162,87 @@ def _load_json(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
+
+
+@router.get("/analyze/{trace_id}/stream")
+async def stream_analysis_progress(trace_id: str):
+    """SSE 实时进度端点"""
+    if not _TRACE_RE.fullmatch(trace_id):
+        raise HTTPException(status_code=404, detail="trace not found")
+
+    queue = _progress_queues.get(trace_id)
+    if queue is None:
+        # 分析已完成或不存在，尝试读 meta 返回最终状态
+        base = runs_dir()
+        meta_path = base / trace_id / "meta.json"
+        if meta_path.is_file():
+            meta = _load_json(meta_path) or {}
+            status = meta.get("status", "unknown")
+            async def _final_status():
+                yield f"event: analysis_{'complete' if status == 'completed' else 'failed'}\n"
+                yield f"data: {json.dumps({'trace_id': trace_id, 'status': status}, ensure_ascii=False)}\n\n"
+            return StreamingResponse(_final_status(), media_type="text/event-stream")
+        raise HTTPException(status_code=404, detail="trace not found")
+
+    async def event_generator():
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # 心跳，防止连接断开
+                yield ": heartbeat\n\n"
+                continue
+            event_type = item.get("event", "message")
+            data = json.dumps(item.get("data", {}), ensure_ascii=False)
+            yield f"event: {event_type}\n"
+            yield f"data: {data}\n\n"
+            # 终结事件
+            if event_type in ("analysis_complete", "analysis_failed"):
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/traces", response_model=TracesResponse)
+async def list_traces(page: int = 1, page_size: int = 20):
+    """历史分析列表"""
+    base = runs_dir()
+    if not base.is_dir():
+        return TracesResponse(traces=[], total=0, page=page, page_size=page_size)
+
+    # 扫描所有 trace 目录，按时间倒序
+    dirs = sorted(
+        [d for d in base.iterdir() if d.is_dir() and _TRACE_RE.fullmatch(d.name)],
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    total = len(dirs)
+    start = (page - 1) * page_size
+    page_dirs = dirs[start : start + page_size]
+
+    traces = []
+    for d in page_dirs:
+        meta = _load_json(d / "meta.json") or {}
+        input_data = meta.get("input", {})
+        competitors = [c.get("name", "") for c in input_data.get("competitors", [])]
+        traces.append(TraceSummary(
+            trace_id=d.name,
+            scenario=input_data.get("scenario"),
+            status=meta.get("status"),
+            started_at=meta.get("started_at"),
+            ended_at=meta.get("ended_at"),
+            competitors=competitors,
+        ))
+
+    return TracesResponse(traces=traces, total=total, page=page, page_size=page_size)
 
 
 @router.get("/trace/{trace_id}", response_model=TraceResponse)

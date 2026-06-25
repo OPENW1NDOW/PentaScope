@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from langgraph.graph import StateGraph, END
@@ -35,6 +36,7 @@ from src.utils.config import settings
 from src.utils.paths import runs_dir
 
 logger = logging.getLogger(__name__)
+_BEIJING = timezone(timedelta(hours=8))
 
 
 # 暴露为模块级常量供测试 monkeypatch 用（runs_dir() 在导入时求值一次）
@@ -124,7 +126,7 @@ def _route_entry(state: AnalysisState) -> str:
     return "recommender" if ui.scenario == "S2" else "collector"
 
 
-def build_graph(llm, http, parser, trace_writer=None):
+def build_graph(llm, http, parser, trace_writer=None, progress_queue=None):
     """构建 LangGraph 状态图，返回 (compiled_graph, node_trace)。
 
     v3 改造：
@@ -134,6 +136,9 @@ def build_graph(llm, http, parser, trace_writer=None):
     - 删除旧 data_sources 覆盖代码（[v3-R16]）
     - 删除旧 quality_score 倒推回填（F 阶段重写 inspector）
     - inspector_node 加 report=None 兜底
+
+    Args:
+        progress_queue: asyncio.Queue，节点执行前后写入 SSE 事件（可选）
     """
     _ = parser  # 旧签名保留，pipeline 自带解析逻辑，parser 不再透传
 
@@ -158,11 +163,67 @@ def build_graph(llm, http, parser, trace_writer=None):
     # 记录节点执行与路由决策序列（可观测性追溯）
     node_trace: list = []
 
+    # SSE 进度队列
+    _progress_queue = progress_queue
+
+    # SSE 进度事件推送辅助
+    async def _emit_progress(event_type: str, data: dict):
+        if progress_queue is not None:
+            try:
+                await progress_queue.put({"event": event_type, "data": data})
+            except Exception:  # noqa: BLE001
+                pass  # 队列满或关闭不影响主流程
+
+    def _node_label(node_name: str) -> str:
+        """节点中文标签"""
+        return {
+            "recommender": "推荐竞品",
+            "collector": "采集数据",
+            "analyzer": "分析竞争格局",
+            "writer": "撰写报告",
+            "inspector": "质检审核",
+        }.get(node_name, node_name)
+
     async def _save(stage: str, data):
         # 落盘是辅助能力，trace_writer 为 None 时跳过
         # [#同步IO] 同步文件 IO 委托给线程池，避免阻塞事件循环（report JSON 可达数 MB）
         if trace_writer is not None:
             await asyncio.to_thread(trace_writer.save_stage, stage, data)
+
+    # ========== 节点进度包装 ==========
+
+    def _wrap_with_progress(node_name: str, node_fn):
+        """为节点函数注入 SSE 进度事件"""
+        async def wrapped(state: AnalysisState) -> dict:
+            import time
+            label = _node_label(node_name)
+            await _emit_progress("node_start", {
+                "node": node_name,
+                "label": label,
+                "timestamp": datetime.now(_BEIJING).isoformat(),
+            })
+            t0 = time.monotonic()
+            try:
+                result = await node_fn(state)
+                elapsed = int((time.monotonic() - t0) * 1000)
+                await _emit_progress("node_complete", {
+                    "node": node_name,
+                    "label": label,
+                    "duration_ms": elapsed,
+                    "timestamp": datetime.now(_BEIJING).isoformat(),
+                })
+                return result
+            except Exception as e:
+                elapsed = int((time.monotonic() - t0) * 1000)
+                await _emit_progress("node_error", {
+                    "node": node_name,
+                    "label": label,
+                    "error": str(e)[:200],
+                    "duration_ms": elapsed,
+                    "timestamp": datetime.now(_BEIJING).isoformat(),
+                })
+                raise
+        return wrapped
 
     # ========== recommender_node（S2 专用）==========
 
@@ -561,11 +622,11 @@ def build_graph(llm, http, parser, trace_writer=None):
     # ========== 构图 ==========
 
     graph = StateGraph(AnalysisState)
-    graph.add_node("recommender", recommender_node)
-    graph.add_node("collector", collector_node)
-    graph.add_node("analyzer", analyzer_node)
-    graph.add_node("writer", writer_node)
-    graph.add_node("inspector", inspector_node)
+    graph.add_node("recommender", _wrap_with_progress("recommender", recommender_node))
+    graph.add_node("collector", _wrap_with_progress("collector", collector_node))
+    graph.add_node("analyzer", _wrap_with_progress("analyzer", analyzer_node))
+    graph.add_node("writer", _wrap_with_progress("writer", writer_node))
+    graph.add_node("inspector", _wrap_with_progress("inspector", inspector_node))
 
     # [v3] scenario 路由：S2 走 recommender → collector；其他场景直接 collector
     graph.set_conditional_entry_point(_route_entry, {

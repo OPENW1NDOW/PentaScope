@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PentaScope — Stripe 式专业风格</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #F6F9FC;
+    --surface: #FFFFFF;
+    --text: #0A2540;
+    --text-secondary: #425466;
+    --text-tertiary: #6B7C93;
+    --border: #E3E8EE;
+    --accent: #635BFF;
+    --accent-light: #F0EEFF;
+    --success: #00D4AA;
+    --success-light: #E6FAF5;
+    --warning: #F5A623;
+    --warning-light: #FFF8EC;
+    --danger: #DF1B41;
+    --danger-light: #FFF0F3;
+    --radius: 8px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.06), 0 2px 4px -1px rgba(0,0,0,0.04);
+    --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.08), 0 4px 10px -5px rgba(0,0,0,0.04);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 48px 32px; }
+
+  /* Header */
+  .header { margin-bottom: 48px; }
+  .header h1 { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
+  .header .subtitle { font-size: 14px; color: var(--text-tertiary); margin-top: 6px; }
+
+  /* KPI Strip */
+  .kpi-strip { display: flex; gap: 16px; margin-bottom: 48px; }
+  .kpi-card {
+    flex: 1; background: var(--surface); border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 200ms ease, transform 200ms ease;
+  }
+  .kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .kpi-label { font-size: 12px; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .kpi-value { font-family: 'Fira Code', monospace; font-size: 28px; font-weight: 600; color: var(--text); }
+  .kpi-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+
+  /* Section */
+  .section { margin-bottom: 48px; }
+  .section-title {
+    font-size: 12px; font-weight: 600; color: var(--text-tertiary);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .section h2 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+  .section p { color: var(--text-secondary); line-height: 1.7; margin-bottom: 12px; }
+
+  /* Card */
+  .card {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 24px; margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 200ms ease;
+  }
+  .card:hover { box-shadow: var(--shadow-md); }
+
+  /* Finding */
+  .finding {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 20px 24px; margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+    border-left: 3px solid var(--accent);
+    transition: box-shadow 200ms ease;
+  }
+  .finding:hover { box-shadow: var(--shadow-md); }
+  .finding-title { font-weight: 600; font-size: 15px; margin-bottom: 6px; color: var(--text); }
+  .finding-evidence { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+  .sources { font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
+  .sources a { color: var(--accent); text-decoration: none; }
+  .sources a:hover { text-decoration: underline; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { background: var(--bg); }
+  th {
+    text-align: left; font-weight: 600; color: var(--text-secondary);
+    font-size: 12px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid #F0F3F7; color: var(--text-secondary); }
+  tr:hover td { background: rgba(99,91,255,0.02); }
+  .mono { font-family: 'Fira Code', monospace; font-size: 13px; }
+
+  /* Tags */
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+  }
+  .tag.purple { background: var(--accent-light); color: var(--accent); }
+  .tag.green { background: var(--success-light); color: #007A5A; }
+  .tag.red { background: var(--danger-light); color: var(--danger); }
+  .tag.yellow { background: var(--warning-light); color: #9A6700; }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* SWOT */
+  .swot-label { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+  .swot-label.s { color: #007A5A; }
+  .swot-label.w { color: var(--danger); }
+  .swot-label.o { color: var(--accent); }
+  .swot-label.t { color: #9A6700; }
+  .swot-list { padding-left: 18px; font-size: 13px; color: var(--text-secondary); }
+  .swot-list li { margin-bottom: 4px; }
+
+  /* Callout */
+  .callout {
+    padding: 16px 20px; border-radius: var(--radius);
+    background: var(--accent-light); margin: 16px 0;
+    font-size: 14px; color: var(--text-secondary); line-height: 1.7;
+    border-left: 3px solid var(--accent);
+  }
+  .callout strong { color: var(--text); }
+
+  /* Recommendation */
+  .rec-card { padding: 20px 24px; }
+  .rec-priority { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+  .rec-action { font-weight: 600; font-size: 15px; margin-bottom: 6px; color: var(--text); }
+  .rec-meta { font-size: 13px; color: var(--text-tertiary); }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 32px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>飞书文档 vs Notion vs Confluence</h1>
+    <div class="subtitle">功能迭代竞品分析 · S1 · 2026-06-25</div>
+  </div>
+
+  <!-- KPI Strip -->
+  <div class="kpi-strip">
+    <div class="kpi-card">
+      <div class="kpi-label">质检评分</div>
+      <div class="kpi-value">0.847</div>
+      <div class="kpi-sub">raw 0.847</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">场景</div>
+      <div class="kpi-value">S1</div>
+      <div class="kpi-sub">功能迭代</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">竞品</div>
+      <div class="kpi-value">3</div>
+      <div class="kpi-sub">家</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">参考资料</div>
+      <div class="kpi-value">47</div>
+      <div class="kpi-sub">条</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">可信度</div>
+      <div class="kpi-value" style="color:#007A5A">高</div>
+      <div class="kpi-sub">high</div>
+    </div>
+  </div>
+
+  <!-- At a Glance -->
+  <div class="section">
+    <div class="section-title">一 · 核心要点</div>
+    <div class="card">
+      <ul style="padding-left:18px; color:var(--text-secondary); line-height:2;">
+        <li>飞书文档在协作者实时性上领先，但离线能力弱于 Notion</li>
+        <li>Notion 的模块化 Block 架构提供了最高的自定义灵活性</li>
+        <li>Confluence 在企业级权限管理上仍具优势，但用户体验老化明显</li>
+        <li>三家均未实现 AI 原生的竞品分析工作流，存在差异化机会</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Callout -->
+  <div class="callout">
+    <strong>核心论断：</strong>协作工具市场正在从"功能堆叠"转向"AI 原生工作流"竞争。当前三家头部产品的 AI 集成仍停留在辅助层面，这为新进入者创造了 12-18 个月的差异化窗口。
+  </div>
+
+  <!-- Key Findings -->
+  <div class="section">
+    <div class="section-title">二 · 关键发现</div>
+    <div class="finding">
+      <div class="finding-title">1. 协作实时性存在代差</div>
+      <div class="finding-evidence">飞书文档基于自研 CRDT 引擎，多人协同延迟 &lt; 50ms；Notion 采用 OT 方案，典型延迟 200-500ms；Confluence 仍依赖锁机制，并发编辑体验最差。</div>
+      <div class="sources">来源：<a href="#">飞书技术博客</a> · <a href="#">Notion Engineering</a></div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">2. 模块化程度决定扩展天花板</div>
+      <div class="finding-evidence">Notion 的 Block 类型超过 50 种，支持嵌套和数据库联动；飞书文档的 Block 体系相对封闭，自定义能力有限；Confluence 的宏机制虽灵活但学习成本高。</div>
+      <div class="sources">来源：<a href="#">Notion API 文档</a></div>
+    </div>
+    <div class="finding">
+      <div class="finding-title">3. AI 集成仍处于功能叠加阶段</div>
+      <div class="finding-evidence">三家产品均将 AI 作为辅助功能（摘要、翻译、写作），尚未将 AI 深度嵌入核心工作流。这为 AI 原生竞品分析工具创造了差异化窗口。</div>
+    </div>
+  </div>
+
+  <!-- Feature Matrix -->
+  <div class="section">
+    <div class="section-title">三 · 功能矩阵</div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <table>
+        <thead>
+          <tr><th>功能</th><th>飞书文档</th><th>Notion</th><th>Confluence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>实时协同</td><td class="mono">2</td><td class="mono">2</td><td class="mono">1</td></tr>
+          <tr><td>离线编辑</td><td class="mono">0</td><td class="mono">2</td><td class="mono">0</td></tr>
+          <tr><td>模块化 Block</td><td class="mono">1</td><td class="mono">2</td><td class="mono">1</td></tr>
+          <tr><td>API 开放度</td><td class="mono">1</td><td class="mono">2</td><td class="mono">2</td></tr>
+          <tr><td>AI 原生集成</td><td class="mono">1</td><td class="mono">1</td><td class="mono">0</td></tr>
+          <tr><td>企业权限</td><td class="mono">2</td><td class="mono">1</td><td class="mono">2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:12px; color:var(--text-tertiary); margin-top:8px;">0 = 不支持 · 1 = 部分支持 · 2 = 完整支持</div>
+  </div>
+
+  <!-- Radar placeholder -->
+  <div class="section">
+    <div class="section-title">四 · 五维雷达对比</div>
+    <div class="card" style="height:300px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px;">
+      [Recharts RadarChart — 交互式，hover 显示详情]
+    </div>
+  </div>
+
+  <!-- SWOT -->
+  <div class="section">
+    <div class="section-title">五 · SWOT 分析</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="swot-label s">Strengths</div>
+        <ul class="swot-list"><li>飞书生态深度集成</li><li>AI 能力持续迭代</li></ul>
+      </div>
+      <div class="card">
+        <div class="swot-label w">Weaknesses</div>
+        <ul class="swot-list"><li>离线能力缺失</li><li>国际化程度不足</li></ul>
+      </div>
+      <div class="card">
+        <div class="swot-label o">Opportunities</div>
+        <ul class="swot-list"><li>AI 原生工作流差异化</li><li>中小企业数字化转型</li></ul>
+      </div>
+      <div class="card">
+        <div class="swot-label t">Threats</div>
+        <ul class="swot-list"><li>Notion 加速中国本地化</li><li>Microsoft Loop 入场</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="section">
+    <div class="section-title">六 · 行动建议</div>
+    <div class="card rec-card">
+      <div class="rec-priority"><span class="tag red">Critical</span> <span class="tag yellow">Immediate</span></div>
+      <div class="rec-action">构建 AI 原生的竞品监控工作流</div>
+      <div class="rec-meta">目标角色：产品经理 · 基于关键发现 #3</div>
+    </div>
+    <div class="card rec-card">
+      <div class="rec-priority"><span class="tag yellow">Important</span> <span class="tag purple">Short-term</span></div>
+      <div class="rec-action">补齐离线编辑能力，对齐 Notion</div>
+      <div class="rec-meta">目标角色：研发负责人 · 基于功能矩阵对比</div>
+    </div>
+    <div class="card rec-card">
+      <div class="rec-priority"><span class="tag purple">Consider</span> <span class="tag purple">Long-term</span></div>
+      <div class="rec-action">开放 Block API 生态，引入第三方开发者</div>
+      <div class="rec-meta">目标角色：平台策略 · 基于模块化分析</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

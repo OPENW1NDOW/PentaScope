@@ -46,3 +46,21 @@ class PickScenarioResponse(BaseModel):
     scenario: Literal["S1", "S2", "S3", "S4", "S5"]
     confidence: Literal["high", "medium", "low"]
     rationale: str
+
+
+class TraceSummary(BaseModel):
+    """历史分析摘要"""
+    trace_id: str
+    scenario: str | None = None
+    status: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    competitors: list[str] = Field(default_factory=list)
+
+
+class TracesResponse(BaseModel):
+    """历史分析列表响应"""
+    traces: list[TraceSummary] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20

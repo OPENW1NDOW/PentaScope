@@ -16,6 +16,41 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-25（前端迁移：Streamlit → Next.js Phase 1-2）
+- 完成：
+  - **后端改造（Phase 1）**：
+    - CORS 中间件（`src/api/main.py`，允许 localhost:3001）
+    - SSE 实时进度端点 `GET /api/v1/analyze/{trace_id}/stream`（`src/api/routes.py`）
+    - 历史分析列表端点 `GET /api/v1/traces`（分页，返回 trace 摘要）
+    - `src/graph/builder.py`：节点进度包装 `_wrap_with_progress`，每个节点前后推送 SSE 事件
+    - `src/graph/state.py`：新增 `progress_queue` 字段
+    - 后端测试 493/493 通过
+  - **前端骨架（Phase 2）**：
+    - Next.js 16 + Tailwind CSS v4 + shadcn/ui 初始化（`frontend/`）
+    - Notion 风格设计系统（globals.css：暖白底 #F7F6F3、棕黑文字 #37352F、9 色 pastel 标签、系统字体栈）
+    - TypeScript 全量类型定义（`src/types/index.ts`：BaseReport + S1-S5 payload + API 类型）
+    - API 客户端（`src/lib/api.ts`）、SSE hook（`src/hooks/useSSE.ts`）、Zustand store、SWR hook
+    - 240px 固定侧边栏布局 + 三页面路由（首页/分析页/历史页）
+    - 13 个报告渲染组件（KpiStrip、ExecutiveSummary、KeyFindings、SwotGrid、Recommendations、ScopeMethodology、Appendix、MetadataPanel 等）
+    - 4 个 Recharts 图表组件（RadarChart、ScatterChart、LineChart、FiveForcesRadar）
+    - 可排序表格组件（@tanstack/react-table）
+    - 翻译系统（`src/lib/translations.ts`）+ 数据格式化工具（`src/lib/formatters.ts`）
+    - S1-S5 场景 Payload 组件（S1 雷达+JTBD+路线图、S2 TAM+五力+趋势、S3 定价+套餐+矩阵、S4 占位、S5 MQ+感知地图+策略画布+ERRC）
+    - 首页新建分析表单（5 场景选择 + AI 推荐 + 动态字段）
+    - 分析页（SSE 实时进度 + 完整报告渲染）
+    - 历史页（表格列表 + 分页 + 状态筛选）
+    - `tsc --noEmit` 零错误，`next build` 5/5 页面生成
+  - **设计规范**：`docs/FRONTEND_SPEC.md`（完整迁移规格说明书）
+  - **设计预览**：`docs/design-previews/`（4 个 HTML 预览文件：Vercel/Notion/Linear/Stripe 风格对比）
+- 下一步：
+  1. 前端联调验证（启动前后端，走完整分析流程）
+  2. S4 场景组件实现（当前为占位）
+  3. 响应式适配 + 错误边界
+  4. 新增数据渲染（CriticScores 雷达图、PESTEL 卡片、PricingPageAudit 审计表）
+- 阻塞：无
+
+---
+
 ## 2026-06-25（全项目工程审查 + XSS 安全修复 + retry/熔断修复）
 - 完成：
   - **全项目工程审查**：10 个审查面并行 finder + 对抗式验证，确认 40 条真实问题（13 critical/major）

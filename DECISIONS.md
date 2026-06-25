@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-06-25: 前端迁移 Streamlit → Next.js
+
+- 选择：**React + Next.js 16 (App Router) + Tailwind CSS v4 + shadcn/ui + Recharts + @tanstack/react-table + Zustand + SWR**
+- 理由：
+  - Streamlit 三大硬限制：无实时进度（3600s 阻塞）、无路由/历史、图表不可交互
+  - Next.js App Router 文件路由 + RSC 灵活、社区活跃
+  - shadcn/ui 可复制可定制无运行时依赖
+  - Recharts React 原生声明式交互
+  - Zustand 轻量 TypeScript 友好
+- 设计风格：**Notion 风格**（暖白底 #F7F6F3、棕黑文字 #37352F、系统字体栈、pastel 标签色、圆角 3-6px、几乎无阴影）
+  - 用户从 Vercel/Linear/Stripe/Notion 四个方向中选择 Notion
+  - 与竞品分析工具的"内容优先"定位契合
+- 后端改造：CORS 中间件 + SSE 实时进度端点 + 历史列表端点
+- 备选：
+  - Vue 3 + Nuxt（中文社区强但 React 生态更成熟）
+  - 保留 Streamlit 深度优化（交互天花板无法突破）
+  - React + Vite 轻量 SPA（无 SSR 但灵活性低）
+  - Vercel/Linear 暗色风格（用户偏好暖调）
+- Streamlit 前端保留不删除，两套共用同一后端 API
+
 ## 2026-06-23: 翻译层抽取到 src/utils/translations.py
 
 - 选择：**将 `_t()` 函数和 `_TRANSLATIONS` 映射表从 `src/frontend/render.py` 抽取到 `src/utils/translations.py`**，前端/HTML exporter/Markdown exporter 三方统一 import

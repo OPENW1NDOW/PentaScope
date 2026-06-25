@@ -101,9 +101,10 @@ ruff check --fix src tests               # 自动修复
 - `LLM_MODEL` 必填——模型标识 / endpoint ID
 - `TAVILY_API_KEY` 选填——搜索主线 Tavily 的鉴权 key；缺 key 则跳过搜索主线、走占位降级（completeness=0.0）
 - `MODEL_FAST` / `MODEL_PRO` 选填——分层模型，不配则统一用 `LLM_MODEL`
-- 其余配置见 `src/utils/config.py` 默认值，writer 相关两项重点：
-  - `WRITER_MAX_LLM_CALLS=18` — writer 4 阶段总 LLM 调用熔断阈值
+- 其余配置见 `src/utils/config.py` 默认值，writer 相关三项重点：
+  - `WRITER_MAX_LLM_CALLS=25` — writer 4 阶段总 LLM 调用熔断阈值（覆盖 S5 最坏 21 次 + 余量）
   - `WRITER_NARRATIVE_CONCURRENCY=3` — Phase 3 narrative 并发上限
+  - `INFRA_MAX_RETRIES=3` — infra error（timeout/connect）独立重试上限，超限强制终止防死循环
 
 ## 代码架构
 
@@ -121,7 +122,7 @@ ruff check --fix src tests               # 自动修复
 
 - **场景路由**（v3）：`set_conditional_entry_point` 按 `ScenarioInput.scenario` 分流——S2「市场进入」先走 `recommender` 推荐 Top 3-5 玩家，再 union 到 `collector`；其余 4 个场景直接进 `collector`。
 - **共享状态** `src/graph/state.py::AnalysisState`：TypedDict，节点间通过返回 dict 增量更新（`profiles`/`analysis`/`report`/`feedback`/`competitor_recommendations`/`retry_count` 等）。所有跨 Agent 数据都是 Pydantic 模型，而非裸 dict。
-- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`；inspector 打回时 `retry_count +1`（06-09 修复，否则永远不触发上限），`retry_count >= max_retries`（默认 2）则强制结束。这是产品要求的「质检→上游反馈闭环」实现点。
+- **反馈闭环** `builder.py::should_continue`：质检不通过时，按 `feedback.issues[].agent` 字段决定打回 `collector` / `analyzer` / `writer`；`retry_count >= max_retries`（默认 2）则强制结束。**retry 计数语义（方案 A）**：`retry_count` 统一在 `inspector_node` 单一计数点计「异常重试事件」——writer/analyzer 异常路由分支不再自身 +1（消除双重计数），由 inspector skip 路径（report=None）或质检打回路径统一 +1；critic_failed（`agent="end"`）不消耗名额；infra error（timeout/connect）走独立 `infra_retry_count`，达 `INFRA_MAX_RETRIES`（默认 3）强制终止防死循环。这是产品要求的「质检→上游反馈闭环」实现点。
 - **Agent**（`src/agents/`）：
   - `RecommenderAgent.recommend`（S2 入口）— 搜索行业头部玩家 + LLM 推理产出 ≥3 条 `CompetitorRecommendations`
   - `CollectorAgent.collect` — 持有 `CollectionPipeline`（`src/agents/collection_pipeline.py`），编排「Tavily 搜索 → 质量闸门 → 全空兜底」主线；Tavily 一次调用直返带正文 SourceResult，跳过传统三步走

@@ -29,8 +29,11 @@ class Settings:
     SEARCH_TOP_N: int = _int_env("SEARCH_TOP_N", 5)
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     # Writer 4 阶段编排（v3 spec）
-    WRITER_MAX_LLM_CALLS: int = _int_env("WRITER_MAX_LLM_CALLS", 18)
+    # [B1] 18→25：覆盖 S5 最坏 21 次调用（phase1 3 + phase2a 3 + phase2b 3 + phase3 12）+ 余量
+    WRITER_MAX_LLM_CALLS: int = _int_env("WRITER_MAX_LLM_CALLS", 25)
     WRITER_NARRATIVE_CONCURRENCY: int = _int_env("WRITER_NARRATIVE_CONCURRENCY", 3)
+    # [方案 A1] infra error（timeout/connect）独立计数上限，超限强制终止防死循环
+    INFRA_MAX_RETRIES: int = _int_env("INFRA_MAX_RETRIES", 3)
 
 
 settings = Settings()

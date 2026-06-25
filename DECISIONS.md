@@ -55,6 +55,23 @@
 
 ---
 
+## 2026-06-25: retry_count 计「异常重试事件」+ infra 独立计数器（方案 A + A1）
+
+- 选择：
+  1. **retry_count 语义 = 异常重试事件**，统一在 `inspector_node` 单一计数点 +1：writer/analyzer 异常路由分支不再自身 +1（消除 #5 双重计数），由 inspector skip 路径（report=None）或质检打回路径统一计；critic_failed（`agent="end"`）不消耗名额（#11）
+  2. **infra error（timeout/connect）走独立 `infra_retry_count`**，不消耗 retry_count，达 `INFRA_MAX_RETRIES=3` 强制终止（#4 防死循环）
+  3. **`WRITER_MAX_LLM_CALLS` 18→25**（B1），覆盖 S5 最坏 21 次调用 + 余量（#6 防误杀）
+- 理由：
+  1. 原设计 writer 异常路由 +1 与随后 inspector 打回 +1 在同一条回路上串联累加，max_retries=2 实际可用重试远低于表观值
+  2. 单一计数点（inspector_node）消除双重计数，且 graph 拓扑 `writer→inspector` 固定边保证每轮重试必经 inspector，计数不漏
+  3. infra error 在生产常见（网络抖动/限流），若计入 retry 会挤占质检重试预算；独立计数器 + 硬上限既不挤占又能防死循环
+- 备选：
+  - 方案 B（计事件 + 调高 max_retries 到 4-5）：改动最小但语义仍混，max_retries 表观值失真
+  - 方案 C（双计数器 quality_retry + infra_retry 全分离）：最精细但 state 结构改动大，过度设计
+- 关联：Phase 3 `gather(return_exceptions=True)` 不再吞路由异常（#1），`WriterRouteToEnd/Collector/Writer` 立即 re-raise 冒泡到 builder
+
+---
+
 ## 2026-06-19: 字符 min_length 约束全面退役，质量保障交给 critic
 
 - 选择：**删除所有字符串字段的 min_length 约束**（report.py + s1-s5.py），只保留列表结构性约束 + URL 防空 + max_length 防爆

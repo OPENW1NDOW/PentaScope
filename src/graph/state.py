@@ -35,6 +35,8 @@ class AnalysisState(TypedDict, total=False):
     # 控制流
     retry_count: int
     max_retries: int
+    # [方案 A1] infra error（timeout/connect）独立计数，超 INFRA_MAX_RETRIES 强制终止
+    infra_retry_count: int
     trace_id: str
     current_node: str  # 当前执行到的节点名称
 

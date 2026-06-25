@@ -162,7 +162,11 @@ def _make_minimal_state(scenario: str = "S1"):
 
 @pytest.mark.asyncio
 async def test_writer_node_runtime_error_routes_to_collector(monkeypatch):
-    """[v3-R02] writer raise WriterRouteToCollector → feedback.issues[0].agent='collector' + retry_count+1。"""
+    """[v3-R02] writer raise WriterRouteToCollector → feedback.issues[0].agent='collector'。
+
+    [方案 A] retry_count 计「质检打回轮数」，writer 异常路由不再 +1，
+    仅设 feedback 让本轮 inspector 兜底计数。
+    """
     from src.agents.writer_orchestrator import WriterRouteToCollector
 
     async def _raise(*args, **kwargs):
@@ -188,12 +192,16 @@ async def test_writer_node_runtime_error_routes_to_collector(monkeypatch):
     assert fb.issues[0].agent == "collector"
     assert fb.issues[0].severity == "critical"
     assert fb.issues[0].field == "writer_runtime"
-    assert result["retry_count"] == 1
+    # 方案 A：writer 异常路由不 +1 retry_count（由 inspector 本轮计）
+    assert result.get("retry_count", 0) == 0
 
 
 @pytest.mark.asyncio
 async def test_writer_node_runtime_error_routes_to_writer(monkeypatch):
-    """[v3-R02] writer raise WriterRouteToWriter → feedback.issues[0].agent='writer'。"""
+    """[v3-R02] writer raise WriterRouteToWriter → feedback.issues[0].agent='writer'。
+
+    [方案 A] retry_count 不在 writer 异常路由 +1。
+    """
     from src.agents.writer_orchestrator import WriterRouteToWriter
 
     async def _raise(*args, **kwargs):
@@ -211,7 +219,8 @@ async def test_writer_node_runtime_error_routes_to_writer(monkeypatch):
     fb = result["feedback"]
     assert fb.issues[0].agent == "writer"
     assert fb.issues[0].field == "writer_runtime"
-    assert result["retry_count"] == 1
+    # 方案 A：writer 异常路由不 +1 retry_count
+    assert result.get("retry_count", 0) == 0
 
 
 @pytest.mark.asyncio
@@ -264,12 +273,16 @@ async def test_writer_node_routes_to_collector_on_url_rejection(monkeypatch):
     fb = result["feedback"]
     assert fb.passed is False
     assert fb.issues[0].agent == "collector"
-    assert result["retry_count"] == 1
+    # 方案 A：writer 异常路由不 +1 retry_count
+    assert result.get("retry_count", 0) == 0
 
 
 @pytest.mark.asyncio
 async def test_writer_node_validation_error_routes_to_writer(monkeypatch):
-    """非 RuntimeError（如 ValidationError）→ feedback agent=writer + field=writer_validation。"""
+    """非 RuntimeError（如 ValidationError）→ feedback agent=writer + field=writer_validation。
+
+    [方案 A] retry_count 不在 writer 异常路由 +1。
+    """
     async def _raise(*args, **kwargs):
         raise ValueError("pretend pydantic validation error")
 
@@ -285,7 +298,8 @@ async def test_writer_node_validation_error_routes_to_writer(monkeypatch):
     fb = result["feedback"]
     assert fb.issues[0].agent == "writer"
     assert fb.issues[0].field == "writer_validation"
-    assert result["retry_count"] == 1
+    # 方案 A：writer 异常路由不 +1 retry_count
+    assert result.get("retry_count", 0) == 0
 
 
 @pytest.mark.asyncio
@@ -502,7 +516,8 @@ async def test_analyzer_node_catches_exception_and_injects_feedback(monkeypatch)
     assert "feedback" in result
     assert result["feedback"].passed is False
     assert result["feedback"].issues[0].agent == "analyzer"
-    assert result["retry_count"] == 1  # 0 → 1
+    # 方案 A：analyzer 异常路由不 +1 retry_count（由 inspector 本轮计）
+    assert result.get("retry_count", 0) == 0
 
 
 # ========== writer_node 基础设施错误不消耗 retry ==========
@@ -548,5 +563,90 @@ async def test_writer_node_timeout_does_not_increment_retry():
     result = await graph.nodes["writer"].ainvoke(state)
 
     assert "feedback" in result
-    # 基础设施错误不应递增 retry_count
-    assert result["retry_count"] == 0, f"timeout 不应递增 retry_count，实际值={result['retry_count']}"
+    # 基础设施错误不应递增 retry_count（方案 A1：走独立 infra_retry_count）
+    assert result.get("retry_count", 0) == 0, f"timeout 不应递增 retry_count，实际值={result.get('retry_count')}"
+    # infra_retry_count 应 +1（首次 infra 错误，未达上限 3，仍回 writer 重试）
+    assert result.get("infra_retry_count", 0) == 1, f"infra_retry_count 应为 1，实际={result.get('infra_retry_count')}"
+    # 首次 infra 错误不强制终止：feedback.passed 仍为 False（回 writer 重试）
+    assert result["feedback"].passed is False
+
+
+# ========== [方案 A1] infra error 连续达上限强制终止 ==========
+
+@pytest.mark.asyncio
+async def test_writer_node_infra_error_terminates_after_max():
+    """[#4] 连续 infra error 达 INFRA_MAX_RETRIES(3) → feedback.passed=True 强制终止，
+    不再无限回 writer 重试（消除死循环）。
+    """
+    from httpx import ConnectTimeout
+    from src.schemas.input import ScenarioInput, CompetitorBasic
+    from src.schemas.profile import CompetitorProfile, BasicInfo, Classification, ProfileMetadata
+
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=ConnectTimeout("timeout"))
+
+    graph, _ = build_graph(llm=mock_llm, http=MagicMock(), parser=MagicMock())
+
+    profile = CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="test"),
+        basic_info=BasicInfo(name="TestComp", company=""),
+        metadata=ProfileMetadata(
+            collected_at="2026-06-22T00:00:00",
+            data_sources=["https://example.com/a"],
+            completeness_score=0.7,
+            pipeline_trace=[],
+        ),
+    )
+
+    # 已累积 2 次 infra（再 1 次即达上限 3）
+    state = {
+        "user_input": ScenarioInput(
+            scenario="S1",
+            competitors=[CompetitorBasic(name="TestComp")],
+            analysis_context="测试",
+            our_product_name="MyProduct",
+        ),
+        "analysis": MagicMock(),
+        "profiles": [profile],
+        "retry_count": 0,
+        "infra_retry_count": 2,
+        "max_retries": 2,
+        "trace_id": "test-infra-exhaust",
+    }
+
+    result = await graph.nodes["writer"].ainvoke(state)
+
+    fb = result["feedback"]
+    # 达上限 → 强制终止（passed=True 让 should_continue 走 end）
+    assert fb.passed is True
+    assert fb.issues[0].field == "writer_infra_exhausted"
+    assert fb.issues[0].severity == "critical"
+    # 不消耗 retry_count（infra 走独立计数器）
+    assert result.get("retry_count", 0) == 0
+
+
+# ========== [#11] critic_failed 不消耗 retry ==========
+
+@pytest.mark.asyncio
+async def test_inspector_node_critic_failed_does_not_increment_retry(monkeypatch):
+    """[#11] critic_failed（agent='end'）时 retry_count 不 +1，与 should_continue 注释一致。"""
+    from src.schemas.feedback import FeedbackIssue, RejectionFeedback
+
+    fb = RejectionFeedback(
+        passed=False,
+        issues=[FeedbackIssue(agent="end", field="critic_failed", severity="critical", reason="r")],
+        retry_count=1, max_retries=2,
+    )
+    monkeypatch.setattr(
+        "src.agents.inspector.InspectorAgent.inspect",
+        AsyncMock(return_value=fb),
+    )
+
+    graph, _ = build_graph(llm=MagicMock(), http=MagicMock(), parser=MagicMock())
+    state = _make_minimal_state("S1")
+    state["report"] = MagicMock()
+    state["retry_count"] = 1
+    result = await graph.nodes["inspector"].ainvoke(state)
+
+    # critic_failed 不消耗 retry 名额
+    assert result["retry_count"] == 1, f"critic_failed 不应 +1，实际={result['retry_count']}"

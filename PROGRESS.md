@@ -16,22 +16,24 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
-## 2026-06-25（全项目工程审查 + XSS 安全修复）
+## 2026-06-25（全项目工程审查 + XSS 安全修复 + retry/熔断修复）
 - 完成：
   - **全项目工程审查**：10 个审查面并行 finder + 对抗式验证，确认 40 条真实问题（13 critical/major）
-  - **第一组 XSS 修复（#2 + #10）**：
-    - HTML 导出新增 `_safe_url` Jinja 过滤器，过滤 `javascript:` 等非法协议
-    - `report.html.j2` 中 `source_refs` 的 href 走 `safe_url`、显示文本走 `| e` 转义
-    - 前端 `render.py` Recommendations 卡片对 `action`/`target`/`rationale`/`title` 统一 `html.escape()`，URL 做 http/https 协议过滤
-    - 新增 3 个 XSS 回归测试（HTML 导出 2 个 + 前端 1 个），先红后绿
-  - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，并加入 `.gitignore`
-  - **清理**：删除 `docs/trae-competition-showcase.html`（用户要求物理删除）
-  - **测试**：`tests/unit` 489 passed，`tests/integration/test_export_e2e.py` + `test_graph.py` 11 passed
-- 进行中：
-  - 第二组 retry/熔断核心问题（#1 + #4 + #5 + #6 + #11）待处理
+  - **第一组 XSS 修复（#2 + #10）**：HTML 导出 `_safe_url` 过滤器 + 前端 Recommendations 显式 escape，3 个回归测试
+  - **第二组 retry/熔断修复（#1 + #4 + #5 + #6 + #11）**：
+    - **#1** Phase 3 `gather(return_exceptions=True)` + 重试循环不再吞路由异常，遇 `WriterRouteToEnd/Collector/Writer` 立即 re-raise
+    - **#5 双重计数**：retry_count 统一在 `inspector_node` 单一计数点计「异常重试事件」，writer/analyzer 异常路由不再自身 +1
+    - **#11 critic_failed**：inspector_node 对 `agent="end"` 不 +1，与 should_continue 注释一致
+    - **#4 infra 死循环**：infra error（timeout/connect）走独立 `infra_retry_count`，达 `INFRA_MAX_RETRIES=3` 强制终止
+    - **#6 配额误杀**：`WRITER_MAX_LLM_CALLS` 18→25，覆盖 S5 最坏 21 次 + 余量
+    - state.py 新增 `infra_retry_count` 字段；config.py 新增 `INFRA_MAX_RETRIES=3`
+    - 11 个测试改预期/新增（先红后绿）
+  - **文档同步**：CLAUDE.md / PRD.md 更新配额 25 + retry 计数新语义
+  - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，加入 `.gitignore`
+  - **清理**：删除 `docs/trae-competition-showcase.html`
+  - **测试**：`tests/unit + tests/integration` 509 passed，零回归；ruff All checks passed
 - 下一步：
-  1. 换模型后继续处理第二组 retry/熔断问题
-  2. 后续按 severity 逐步处理 #3、#7、#8、#9、#12 及 minor/nit 项
+  1. 按 severity 继续处理 #3（S4 prior 降级）、#7（collector_node 无异常处理）、#8（MD 导出转义）、#9（KPI 颜色）、#12（trace_id 熵）及 minor/nit 项
 - 阻塞：无
 
 ---

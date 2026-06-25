@@ -134,17 +134,20 @@ async def test_write_raises_when_no_discovered_urls():
 
 @pytest.mark.asyncio
 async def test_llm_quota_breached_raises():
-    """连续调用 19 次 _llm_call_with_quota（mock LLM 返回任意 dict），第 19 次抛 RuntimeError。"""
+    """连续调用 26 次 _llm_call_with_quota（mock LLM 返回任意 dict），第 26 次抛 RuntimeError。
+
+    [B1] WRITER_MAX_LLM_CALLS 默认 25（覆盖 S5 最坏 21 次 + 余量）。
+    """
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.call_json = AsyncMock(return_value={"ok": 1})
     orch = WriterOrchestrator(llm=mock_llm)
 
-    # 前 18 次正常
-    for _ in range(18):
+    # 前 25 次正常
+    for _ in range(25):
         result = await orch._llm_call_with_quota("sys", "user")
         assert result == {"ok": 1}
 
-    # 第 19 次（_call_counter 升到 19，> 18）触发熔断
+    # 第 26 次（_call_counter 升到 26，> 25）触发熔断
     with pytest.raises(RuntimeError, match="LLM 调用超限"):
         await orch._llm_call_with_quota("sys", "user")
 
@@ -771,6 +774,84 @@ async def test_phase3_half_failure_raises():
 
     # 3 个 section 首次+重试都失败 → 阈值 ⌈5/2⌉=3，failed_n=3 ≥ 3 → raise
     with pytest.raises(RuntimeError, match="触发半数闸门"):
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+        )
+
+
+# ---------- [#1] phase 3 不吞路由异常：WriterRouteToEnd/Collector 必须冒泡 ----------
+
+@pytest.mark.asyncio
+async def test_phase3_reraises_writer_route_to_end():
+    """[#1] Phase 3 首跑某 section 触发 WriterRouteToEnd（配额超限）→ 不被 gather 吞，
+    必须冒泡到 builder 走强制终止，而非静默占位降级。
+    """
+    from src.agents.writer_orchestrator import WriterRouteToEnd
+
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+    phase1_outline = _make_valid_outline_dict("测试 outline")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_section_types = [
+        "overview", "vendor_profile_analysis", "feature_matrix_analysis",
+        "jtbd_analysis", "roadmap_analysis",
+    ]
+
+    side_effects = [
+        phase1_outline,
+        phase2_payload,
+        _make_valid_narrative_json(s1_section_types[0]),
+        WriterRouteToEnd("配额超限"),  # narrative 2 首跑触发熔断
+        _make_valid_narrative_json(s1_section_types[2]),
+        _make_valid_narrative_json(s1_section_types[3]),
+        _make_valid_narrative_json(s1_section_types[4]),
+    ]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    # 应直接抛 WriterRouteToEnd（冒泡），而非占位降级后正常返回
+    with pytest.raises(WriterRouteToEnd, match="配额超限"):
+        await orch.write(
+            scenario_input=scenario_input,
+            analysis=analysis,
+            profiles=profiles,
+        )
+
+
+@pytest.mark.asyncio
+async def test_phase3_reraises_writer_route_to_collector():
+    """[#1] Phase 3 重试循环中触发 WriterRouteToCollector → 不被 except Exception 吞，
+    必须冒泡到 builder 走回 collector 路由。
+    """
+    from src.agents.writer_orchestrator import WriterRouteToCollector
+
+    scenario_input, analysis, profiles = _make_phase3_full_run_inputs()
+    phase1_outline = _make_valid_outline_dict("测试 outline")
+    phase2_payload = _s1_payload_dict_with_weighted_scores()
+    s1_section_types = [
+        "overview", "vendor_profile_analysis", "feature_matrix_analysis",
+        "jtbd_analysis", "roadmap_analysis",
+    ]
+
+    side_effects = [
+        phase1_outline,
+        phase2_payload,
+        _make_valid_narrative_json(s1_section_types[0]),
+        RuntimeError("首次失败"),  # narrative 2 首跑失败，进重试
+        _make_valid_narrative_json(s1_section_types[2]),
+        _make_valid_narrative_json(s1_section_types[3]),
+        _make_valid_narrative_json(s1_section_types[4]),
+        WriterRouteToCollector("重试时触发回采集"),  # narrative 2 重试触发路由异常
+    ]
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.call_json = AsyncMock(side_effect=side_effects)
+    orch = WriterOrchestrator(llm=mock_llm)
+
+    with pytest.raises(WriterRouteToCollector, match="重试时触发回采集"):
         await orch.write(
             scenario_input=scenario_input,
             analysis=analysis,

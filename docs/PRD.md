@@ -458,7 +458,7 @@ writer 阶段错误用三类自定义异常路由（避免依赖中文措辞子�
 |---|---|---|
 | `WriterRouteToCollector` | profiles 0 个 URL / phase 3 半数闸门触发（≥50% section 失败） / final_urls 空 | 注入 feedback agent=collector，回采集 |
 | `WriterRouteToWriter` | phase 2 ValidationError 重试耗尽 / payload 校验失败 | 注入 feedback agent=writer，重写 |
-| `WriterRouteToEnd` | LLM quota 熔断（WRITER_MAX_LLM_CALLS=18） / S2 scope 全空 / scope 无法构造 | feedback.passed=True 强制 end |
+| `WriterRouteToEnd` | LLM quota 熔断（WRITER_MAX_LLM_CALLS=25） / S2 scope 全空 / scope 无法构造 | feedback.passed=True 强制 end |
 
 ### 5.4 Agent 间状态传递
 
@@ -490,7 +490,7 @@ WriterOrchestrator 替代旧 WriterAgent，分 4 阶段产出 `BaseReport`，突
 | **4. assemble** | 0 LLM 代码合成 BaseReport（SWOT 透传 + URL 双通道收集 + scope.competitors S2 union + ReportMetadata 构造） | 0 次 | 全部代码逻辑，不赌 LLM |
 
 **配置项**：
-- `WRITER_MAX_LLM_CALLS=18`：总 LLM 调用熔断阈值（4 阶段累加），超限触发 `WriterRouteToEnd`
+- `WRITER_MAX_LLM_CALLS=25`：总 LLM 调用熔断阈值（4 阶段累加），超限触发 `WriterRouteToEnd`
 - `WRITER_NARRATIVE_CONCURRENCY=3`：Phase 3 narrative 并发上限
 
 ### 5.6 quality_score 计算规则
@@ -580,7 +580,7 @@ inspector 检测 `metadata.warnings` 含以下任一前缀即强制 cap quality_
 | **撰写** | profiles 0 个有效 URL | 上游采集全空 | `WriterRouteToCollector` 抛出，回 collector 重采 |
 | **撰写** | phase 2 ValidationError 耗尽重试 | LLM 反复字段错位 | `WriterRouteToWriter`，重写 |
 | **撰写** | phase 3 半数 section 失败 | 并发占位降级 ≥50% | `WriterRouteToCollector`，回 collector |
-| **撰写** | LLM 调用超 WRITER_MAX_LLM_CALLS=18 | LLM quota 熔断 | `WriterRouteToEnd`，feedback.passed=True 强制 end |
+| **撰写** | LLM 调用超 WRITER_MAX_LLM_CALLS=25 | LLM quota 熔断 | `WriterRouteToEnd`，feedback.passed=True 强制 end |
 | **质检** | placeholder warnings 出现 | writer 占位降级残留 | quality_score 强制 cap 至 0.5，原始分保留在 raw_quality_score |
 | **闭环** | retry_count ≥ max_retries | 修正不收敛 | 强制 END + metadata.warnings 标注 retry_exceeded |
 | **系统** | LLM 服务不可用 | Doubao API 故障 / 超时 | OpenAI client max_retries=0（关闭内部重试），LLMClient 外层 retry 3 次（嵌套放大避免）；最终失败返回错误响应 |
@@ -694,7 +694,7 @@ V3.0 清单中仍未做的：自定义维度 / 跨场景历史对比 / 多语言
 | 5 竞品对比分析端到端时间 | ≤ 10 分钟 | S1 / S3 / S5 |
 | 前端页面加载时间 | ≤ 2 秒 | — |
 
-**注**：不同场景的复杂度差异较大——S2 含 recommender 阶段会略慢；S4 增量模式（已有 prior_report_data）会比首次模式快；writer 4 阶段总 LLM 调用熔断阈值 `WRITER_MAX_LLM_CALLS=18`，phase 3 narrative 并发上限 `WRITER_NARRATIVE_CONCURRENCY=3`，超出会终止避免雪崩。
+**注**：不同场景的复杂度差异较大——S2 含 recommender 阶段会略慢；S4 增量模式（已有 prior_report_data）会比首次模式快；writer 4 阶段总 LLM 调用熔断阈值 `WRITER_MAX_LLM_CALLS=25`，phase 3 narrative 并发上限 `WRITER_NARRATIVE_CONCURRENCY=3`，超出会终止避免雪崩。
 
 ### 9.2 可靠性要求
 

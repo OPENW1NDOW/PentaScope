@@ -1352,6 +1352,10 @@ class WriterOrchestrator:
         retry_indices: list[int] = []
         first_pass_results: list[AnalysisSection | Exception] = []
         for i, (st, r) in enumerate(zip(section_types, results)):
+            # [#1] 路由异常（WriterRouteToEnd/Collector/Writer）必须冒泡到 builder，
+            # 不能被 gather(return_exceptions=True) 当普通 section 失败吞掉降级
+            if isinstance(r, (WriterRouteToEnd, WriterRouteToCollector, WriterRouteToWriter)):
+                raise r
             if isinstance(r, Exception):
                 retry_indices.append(i)
                 logger.info("[writer] phase 3 section %s 首次失败，排队重试: %s", st, type(r).__name__)
@@ -1376,6 +1380,13 @@ class WriterOrchestrator:
                 )
                 first_pass_results[i] = retry_result
                 logger.info("[writer] phase 3 section %s 重试成功", st)
+            except (WriterRouteToEnd, WriterRouteToCollector, WriterRouteToWriter) as retry_err:
+                # [#1] 重试中触发路由异常也必须冒泡，不被 except Exception 吞
+                logger.warning(
+                    "[writer] phase 3 section %s 重试触发路由异常，冒泡: %s",
+                    st, type(retry_err).__name__,
+                )
+                raise
             except Exception as retry_err:
                 logger.warning("[writer] phase 3 section %s 重试仍失败: %s", st, type(retry_err).__name__)
 

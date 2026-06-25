@@ -243,10 +243,11 @@ def build_graph(llm, http, parser, trace_writer=None):
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
+            # [方案 A] retry_count 计「质检打回轮数」：analyzer 异常路由不 +1，
+            # 仅设 feedback 让本轮 inspector 兜底计数（回 analyzer→writer→inspector）
             return {
                 "feedback": failed_feedback,
                 "current_node": "analyzer",
-                "retry_count": state.get("retry_count", 0) + 1,
             }
         _save("02_analysis", analysis)
         return {"analysis": analysis, "current_node": "analyzer"}
@@ -331,10 +332,10 @@ def build_graph(llm, http, parser, trace_writer=None):
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
+            # [方案 A] retry_count 统一在 inspector_node skip 路径计，writer 异常路由不 +1
             return {
                 "feedback": feedback,
                 "current_node": "writer",
-                "retry_count": state.get("retry_count", 0) + 1,
             }
         except WriterRouteToWriter as e:
             logger.warning("[graph] writer raised WriterRouteToWriter → 回 writer")
@@ -350,10 +351,10 @@ def build_graph(llm, http, parser, trace_writer=None):
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
+            # [方案 A] retry_count 统一在 inspector_node skip 路径计，writer 异常路由不 +1
             return {
                 "feedback": feedback,
                 "current_node": "writer",
-                "retry_count": state.get("retry_count", 0) + 1,
             }
         except RuntimeError as e:
             # last resort：未来如果有遗漏的 RuntimeError 子类，兜底回 writer 重试一次
@@ -372,10 +373,10 @@ def build_graph(llm, http, parser, trace_writer=None):
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
+            # [方案 A] retry_count 统一在 inspector_node skip 路径计，writer 异常路由不 +1
             return {
                 "feedback": feedback,
                 "current_node": "writer",
-                "retry_count": state.get("retry_count", 0) + 1,
             }
         except Exception as e:
             # Pydantic ValidationError 等其他异常 → feedback agent=writer
@@ -387,9 +388,53 @@ def build_graph(llm, http, parser, trace_writer=None):
             )
             if trace_writer is not None:
                 trace_writer.save_raw("04_writer_error", err_dict)
-            # 基础设施错误（timeout/connect）不消耗 retry 名额
+            # [方案 A1] 基础设施错误（timeout/connect）走独立 infra_retry_count，不消耗 retry_count
             err_name = type(e).__name__
             is_infra_error = "Timeout" in err_name or "Connect" in err_name
+            if is_infra_error:
+                infra_count = state.get("infra_retry_count", 0) + 1
+                # 达上限 → 强制终止，消除 infra 死循环（#4）
+                if infra_count >= settings.INFRA_MAX_RETRIES:
+                    logger.warning(
+                        "[graph] writer infra error 达上限 %d，强制终止",
+                        infra_count,
+                    )
+                    feedback = RejectionFeedback(
+                        passed=True,
+                        issues=[FeedbackIssue(
+                            severity="critical",
+                            agent="writer",
+                            field="writer_infra_exhausted",
+                            reason=str(e)[:200],
+                            suggestion="基础设施错误连续超限，图直接终止",
+                        )],
+                        retry_count=state.get("retry_count", 0),
+                        max_retries=state.get("max_retries", 2),
+                    )
+                    return {
+                        "feedback": feedback,
+                        "current_node": "writer",
+                        "infra_retry_count": infra_count,
+                    }
+                # 未达上限：回 writer 重试，infra_retry_count 累加，retry_count 不增
+                feedback = RejectionFeedback(
+                    passed=False,
+                    issues=[FeedbackIssue(
+                        severity="critical",
+                        agent="writer",
+                        field="writer_validation",
+                        reason=str(e)[:200],
+                        suggestion="基础设施错误（超时/网络），自动重试",
+                    )],
+                    retry_count=state.get("retry_count", 0),
+                    max_retries=state.get("max_retries", 2),
+                )
+                return {
+                    "feedback": feedback,
+                    "current_node": "writer",
+                    "infra_retry_count": infra_count,
+                }
+            # 非 infra（ValidationError 等）：回 writer 重试，retry_count 交 inspector skip 计
             feedback = RejectionFeedback(
                 passed=False,
                 issues=[FeedbackIssue(
@@ -397,32 +442,41 @@ def build_graph(llm, http, parser, trace_writer=None):
                     agent="writer",
                     field="writer_validation",
                     reason=str(e)[:200],
-                    suggestion="LLM 输出不符合 schema，建议 graph 重试 writer" if not is_infra_error else "基础设施错误（超时/网络），自动重试",
+                    suggestion="LLM 输出不符合 schema，建议 graph 重试 writer",
                 )],
                 retry_count=state.get("retry_count", 0),
                 max_retries=state.get("max_retries", 2),
             )
-            next_retry = state.get("retry_count", 0)
-            if not is_infra_error:
-                next_retry += 1
             return {
                 "feedback": feedback,
                 "current_node": "writer",
-                "retry_count": next_retry,
             }
 
     async def inspector_node(state: AnalysisState) -> dict:
         """质检节点。[v3] report 为 None 时（writer 抛错走 feedback）skip 质检。
 
-        [06-09 修复] inspector 打回（passed=False）时 retry_count +1，
-        否则 inspector 反复打回 analyzer/writer 永远不会触发 max_retries 强制结束。
+        [方案 A] retry_count 统一在此计「异常重试事件」：
+        - skip 路径（report=None，writer 已路由）：passed=False 且非 critic_failed → +1
+        - 运行路径（质检打回）：passed=False 且非 critic_failed → +1
+        - critic_failed（agent="end"）→ 不 +1（#11，与 should_continue 注释一致）
+        writer/analyzer 异常路由分支不再自身 +1，消除 #5 双重计数。
         """
         logger.info("[graph] → inspector")
         node_trace.append("inspector")
         report = state.get("report")
         if report is None:
             logger.info("[graph] inspector skip：report 为 None（writer 已转 feedback）")
-            return {"current_node": "inspector"}
+            # [方案 A] skip 路径也是一轮重试事件：writer 异常路由在此计 retry_count
+            feedback = state.get("feedback")
+            next_retry = state.get("retry_count", 0)
+            if feedback is not None and not feedback.passed:
+                is_critic_failed = any(i.agent == "end" for i in feedback.issues)
+                if not is_critic_failed:
+                    next_retry += 1
+            return {
+                "current_node": "inspector",
+                "retry_count": next_retry,
+            }
 
         ui = state["user_input"]
         competitors_names = [c.name for c in ui.competitors]
@@ -437,10 +491,12 @@ def build_graph(llm, http, parser, trace_writer=None):
         _save("04_feedback", feedback)
         # inspector 回填 quality_score 后重新落盘 report（writer 先于 inspector 落盘，初始 score=None）
         _save("03_report", report)
-        # 打回时 +1 retry_count；passed=True 不增（直接 end）
+        # [方案 A] 打回 +1；critic_failed（agent="end"）不 +1（#11）；passed=True 不增（直接 end）
         next_retry = state.get("retry_count", 0)
         if not feedback.passed:
-            next_retry += 1
+            is_critic_failed = any(i.agent == "end" for i in feedback.issues)
+            if not is_critic_failed:
+                next_retry += 1
         return {
             "feedback": feedback,
             "current_node": "inspector",

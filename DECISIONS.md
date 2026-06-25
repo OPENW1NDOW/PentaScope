@@ -42,6 +42,19 @@
 
 ---
 
+## 2026-06-25: XSS 修复采用「safe_url 过滤器 + 前端显式 escape」双路径
+
+- 选择：
+  1. **HTML 导出侧**：新增 `_safe_url` Jinja 过滤器，仅允许 `http://`/`https://` 协议，非法协议返回空字符串并由模板跳过渲染；同时用 `| e` 转义显示文本
+  2. **前端 Streamlit 侧**：`_render_recommendations` 中对用户/LLM 来源字段显式 `html.escape()`，URL 经 `_safe_href_url()` 协议过滤
+- 理由：
+  1. 项目已有 `nh3` + `_safe_markdown` 处理 narrative 文本，但 `source_refs` 直插 `<a href>` 和前端 `unsafe_allow_html=True` 卡片绕过了该防护层
+  2. `safe_url` 与 `safe_md` 对称，统一放在 `html.py` 中注册为 Jinja filter，维护者容易发现
+  3. 前端用 `unsafe_allow_html=True` 是必要手段（自定义 CSS 卡片），必须显式 escape 不可依赖 Streamlit 默认行为
+- 备选（仅依赖 Jinja autoescape / Streamlit 默认 markdown）：无法拦截 `javascript:` 协议注入，防护不完整
+
+---
+
 ## 2026-06-19: 字符 min_length 约束全面退役，质量保障交给 critic
 
 - 选择：**删除所有字符串字段的 min_length 约束**（report.py + s1-s5.py），只保留列表结构性约束 + URL 防空 + max_length 防爆

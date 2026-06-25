@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import html
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -76,12 +77,26 @@ def _safe_markdown(text: str) -> Markup:
     return Markup(cleaned)
 
 
+def _safe_url(url: str) -> Markup:
+    """过滤 href 用 URL：仅允许 http/https 协议，并做 HTML escape。
+
+    返回 Markup，让 Jinja2 不再二次转义；非法协议返回空字符串，模板侧应跳过渲染。
+    """
+    if not isinstance(url, str):
+        return Markup("")
+    parsed = _urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return Markup("")
+    return Markup(html.escape(url))
+
+
 # Jinja2 environment（autoescape 强开 = C5 双层防护）
 _jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
     autoescape=jinja2.select_autoescape(["html", "j2"]),
 )
 _jinja_env.filters["safe_md"] = _safe_markdown
+_jinja_env.filters["safe_url"] = _safe_url
 _jinja_env.filters["t"] = _t
 
 

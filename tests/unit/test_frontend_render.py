@@ -164,6 +164,40 @@ def test_render_recommendations_with_priority_emoji(st_spy):
     assert any("紧急 (critical)" in m for m in md_calls)
 
 
+def test_render_recommendations_escape_html_and_filter_url(st_spy):
+    """Recommendations 卡片应对用户/LLM 字段做 HTML 转义，并过滤危险 URL 协议。"""
+    from src.frontend.render import _render_recommendations
+    _render_recommendations([
+        {
+            "action": "<script>alert('action')</script>",
+            "priority": "critical",
+            "timeline": "immediate",
+            "target_role": "<img src=x onerror=alert(1)>",
+            "rationale": "<b>理由</b>",
+            "source_refs": [
+                {"url": "javascript:alert(1)", "title": "恶意标题"},
+                {"url": "https://example.com?a=1&b=2", "title": "<script>alert(1)</script>"},
+                {"url": "https://safe.example.com", "title": "安全链接"},
+            ],
+        },
+    ])
+    md_calls = [c.args[0] for c in st_spy.markdown.call_args_list]
+    combined = "\n".join(md_calls)
+    assert "<script>alert('action')</script>" not in combined
+    assert "&lt;script&gt;alert(&#x27;action&#x27;)&lt;/script&gt;" in combined
+    assert "<img src=x onerror=alert(1)>" not in combined
+    assert "&lt;img src=x onerror=alert(1)&gt;" in combined
+    assert "<b>理由</b>" not in combined
+    assert "&lt;b&gt;理由&lt;/b&gt;" in combined
+    # javascript: URL 整条来源被过滤
+    assert "javascript:alert(1)" not in combined
+    assert "恶意标题" not in combined
+    # 合法 URL 被保留，危险 title 被转义
+    assert "https://example.com?a=1&amp;b=2" in combined
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in combined
+    assert "安全链接" in combined
+
+
 # ============ scope + methodology ============
 
 def test_render_scope_displays_competitors(st_spy):

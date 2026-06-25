@@ -109,3 +109,31 @@ def test_html_export_jinja_autoescape_for_metadata():
     assert "<script>alert(1)</script>" not in out
     # 应包含转义后形态
     assert "&lt;script&gt;" in out or "&lt;script" in out
+
+
+def test_html_export_source_refs_filter_javascript_uri():
+    """source_refs.url 含 javascript: 协议时应被过滤，不进入 href。"""
+    rep = _minimal_base_report("S1", {})
+    rep["key_findings"][0]["source_refs"] = [
+        {"url": "javascript:alert(1)", "title": "恶意链接"},
+    ]
+    rep["analysis_sections"][0]["source_refs"] = [
+        {"url": "javascript:alert(2)", "title": "恶意链接2"},
+        {"url": "https://example.com", "title": "正常链接"},
+    ]
+    out = render_html(rep, trace_id="t-src-xss")
+    assert "javascript:alert(1)" not in out
+    assert "javascript:alert(2)" not in out
+    assert "https://example.com" in out
+
+
+def test_html_export_source_refs_escape_title_and_url():
+    """source_refs 的 title/url 含 HTML 特殊字符时应被转义。"""
+    rep = _minimal_base_report("S1", {})
+    rep["key_findings"][0]["source_refs"] = [
+        {"url": "https://example.com?a=1&b=2", "title": "<script>alert(1)</script>"},
+    ]
+    out = render_html(rep, trace_id="t-src-esc")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;" in out
+    assert "https://example.com?a=1&amp;b=2" in out

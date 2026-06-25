@@ -47,4 +47,7 @@ docs/competition-materials/
 docs/defense/
 .frontend-slides/
 
+# 演示视频脚本（本地保留，不对外分发）
+docs/video-script.md
+
 # Claude Code worktrees 落在 .claude/worktrees/，已被上面的 .claude/ 规则覆盖

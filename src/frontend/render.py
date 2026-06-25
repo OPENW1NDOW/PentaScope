@@ -7,6 +7,7 @@ F2/F3 后续在 render_scenario_payload + Plotly 图表中扩展。
 """
 from __future__ import annotations
 
+import html as _html
 from urllib.parse import urlparse
 
 import streamlit as st
@@ -353,6 +354,14 @@ def _render_swot(swot: dict) -> None:
                 _render_source_refs(e.get("source_refs"))
 
 
+def _safe_href_url(url: str) -> str:
+    """过滤前端 href 用 URL：仅允许 http/https，非法协议返回空字符串。"""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return ""
+    return _html.escape(url)
+
+
 def _render_recommendations(recs: list[dict]) -> None:
     if not recs:
         return
@@ -392,25 +401,30 @@ def _render_recommendations(recs: list[dict]) -> None:
                         for ref in refs:
                             if isinstance(ref, dict):
                                 url = ref.get("url", "")
-                                title = ref.get("title", "") or "链接"
-                                if url:
-                                    parts.append(f'<a href="{url}" target="_blank">{title}</a>')
+                                title = _html.escape(ref.get("title", "") or "链接")
+                                safe_url = _safe_href_url(url) if url else ""
+                                if safe_url:
+                                    parts.append(
+                                        f'<a href="{safe_url}" target="_blank">{title}</a>'
+                                    )
                         if parts:
                             refs_html = (
                                 f'<small style="color:var(--color-text-secondary)">'
                                 f'来源：{" · ".join(parts)}</small>'
                             )
                     target_html = (
-                        f'<small style="color:var(--color-text-secondary)">对象：{target}</small><br>'
+                        f'<small style="color:var(--color-text-secondary)">'
+                        f'对象：{_html.escape(target)}</small><br>'
                         if target else ''
                     )
                     rationale_html = (
-                        f'<small style="color:var(--color-text-secondary)">依据：{rationale}</small><br>'
+                        f'<small style="color:var(--color-text-secondary)">'
+                        f'依据：{_html.escape(rationale)}</small><br>'
                         if rationale else ''
                     )
                     st.markdown(
                         f"""<div class="action-card {priority_class}">
-  <div style="font-size:14px;font-weight:600">[{_t(priority)}] {action}</div>
+  <div style="font-size:14px;font-weight:600">[{_t(priority)}] {_html.escape(action)}</div>
   {target_html}
   {rationale_html}
   {refs_html}

@@ -216,7 +216,7 @@
         {% if f.implication %}<br><small><strong>启示</strong>：{{ f.implication }}</small>{% endif %}
         {% if f.source_refs %}
           <div class="source-refs">来源：
-            {% for ref in f.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+            {% for ref in f.source_refs %}{% set safe_href = ref.url | safe_url %}{% if safe_href %}<a href="{{ safe_href }}">{{ (ref.title or ref.url) | e }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
           </div>
         {% endif %}
       </div>
@@ -233,7 +233,7 @@
       <div>{{ section.narrative | safe_md }}</div>
       {% if section.source_refs %}
         <div class="source-refs">来源：
-          {% for ref in section.source_refs %}{% if ref.url %}<a href="{{ ref.url }}">{{ ref.title or ref.url }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+          {% for ref in section.source_refs %}{% set safe_href = ref.url | safe_url %}{% if safe_href %}<a href="{{ safe_href }}">{{ (ref.title or ref.url) | e }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
         </div>
       {% endif %}
     {% endfor %}

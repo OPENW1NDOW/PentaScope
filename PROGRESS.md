@@ -16,6 +16,26 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-25（全项目工程审查 + XSS 安全修复）
+- 完成：
+  - **全项目工程审查**：10 个审查面并行 finder + 对抗式验证，确认 40 条真实问题（13 critical/major）
+  - **第一组 XSS 修复（#2 + #10）**：
+    - HTML 导出新增 `_safe_url` Jinja 过滤器，过滤 `javascript:` 等非法协议
+    - `report.html.j2` 中 `source_refs` 的 href 走 `safe_url`、显示文本走 `| e` 转义
+    - 前端 `render.py` Recommendations 卡片对 `action`/`target`/`rationale`/`title` 统一 `html.escape()`，URL 做 http/https 协议过滤
+    - 新增 3 个 XSS 回归测试（HTML 导出 2 个 + 前端 1 个），先红后绿
+  - **视频脚本取消追踪**：`docs/video-script.md` 从 git 移除但本地保留，并加入 `.gitignore`
+  - **清理**：删除 `docs/trae-competition-showcase.html`（用户要求物理删除）
+  - **测试**：`tests/unit` 489 passed，`tests/integration/test_export_e2e.py` + `test_graph.py` 11 passed
+- 进行中：
+  - 第二组 retry/熔断核心问题（#1 + #4 + #5 + #6 + #11）待处理
+- 下一步：
+  1. 换模型后继续处理第二组 retry/熔断问题
+  2. 后续按 severity 逐步处理 #3、#7、#8、#9、#12 及 minor/nit 项
+- 阻塞：无
+
+---
+
 ## 2026-06-23（前端报告渲染全面优化）
 - 完成：
   - **翻译基础设施**：新增 `src/utils/translations.py`，`_t()` 函数将 83 个英文枚举值翻译为"中文 (英文)"格式，前端/HTML/MD 三端共用

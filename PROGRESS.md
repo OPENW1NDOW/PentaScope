@@ -16,6 +16,22 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-06-26（新 Next.js 前端回归修复）
+- 完成：
+  - **新前端输入表单修复**：竞品 textarea placeholder 改真实换行；S2 市场进入恢复「竞品名称」选填字段；非 S2 增加竞品/我方产品前端提交校验，S2 必填行业
+  - **历史记录表优化**：主内容宽度从 820→1120；历史表固定列宽 + 横向 overflow；场景/状态/时间列 nowrap；竞品列 truncate + title；running 状态增加 tooltip 解释（历史任务前端断连或进程中断导致 meta 未写终态）
+  - **报告页渲染修复**：analysis_sections/background/conclusions 改用 ReactMarkdown 渲染，恢复 markdown 加粗/列表/标题；MarkdownContent 补中文三级编号（一、/（一）/1.）样式
+  - **附录参考资料修复**：Appendix 在 `appendix.data_sources_full` 为空时 fallback 到 `metadata.data_sources`，标题改「参考资料」
+  - **导出与 trace 展示修复**：报告页传入后端 `/trace/{id}/export?format=md|html` 下载链接；header trace_id 改完整展示，不再截断
+  - **附带 lint error 清理**：修 `useSSE` 重连闭包/React Compiler 报错、S5 蓝海策略未转义引号、错误页首页链接改 Next `Link`
+  - **验证**：`npm --prefix frontend run lint` 0 error / 6 existing warnings；`npm --prefix frontend run build` 通过
+- 下一步：
+  1. 手动启动新前端，用历史 trace 逐页走查截图中 8 项是否符合预期
+  2. 后续可继续清理 lint warning（S5Payload 未用变量、TanStack React Compiler warning、useTraces/formatters 未用 import）
+- 阻塞：无
+
+---
+
 ## 2026-06-25（前端迁移：Streamlit → Next.js Phase 1-2）
 - 完成：
   - **后端改造（Phase 1）**：

@@ -5,6 +5,7 @@ import { ChevronRight, ExternalLink } from 'lucide-react'
 
 interface AppendixProps {
   appendix: AppendixType
+  dataSources?: DataSource[]
 }
 
 const CONFIDENCE_DOT: Record<ConfidenceLevel, string> = {
@@ -13,9 +14,10 @@ const CONFIDENCE_DOT: Record<ConfidenceLevel, string> = {
   low: 'bg-[var(--danger)]',
 }
 
-export function Appendix({ appendix }: AppendixProps) {
+export function Appendix({ appendix, dataSources }: AppendixProps) {
+  const sources = appendix.data_sources_full?.length ? appendix.data_sources_full : dataSources
   const hasGlossary = appendix.glossary && Object.keys(appendix.glossary).length > 0
-  const hasSources = appendix.data_sources_full && appendix.data_sources_full.length > 0
+  const hasSources = sources && sources.length > 0
   const hasExhibits = appendix.additional_exhibits && appendix.additional_exhibits.length > 0
 
   if (!hasGlossary && !hasSources && !hasExhibits) return null
@@ -67,16 +69,16 @@ export function Appendix({ appendix }: AppendixProps) {
               className="text-[var(--text-tertiary)] transition-transform details-open:rotate-90"
             />
             <span className="text-[13px] font-semibold text-[var(--text-primary)]">
-              数据源完整列表
+              参考资料
             </span>
             <span className="text-[11px] text-[var(--text-tertiary)]">
-              ({appendix.data_sources_full!.length})
+              ({sources!.length})
             </span>
           </summary>
 
           <div className="px-4 pb-4 border-t border-[var(--border-divider)]">
             <ul className="flex flex-col gap-2 pt-3">
-              {appendix.data_sources_full!.map((ds, i) => (
+              {sources!.map((ds, i) => (
                 <SourceItem key={i} source={ds} />
               ))}
             </ul>

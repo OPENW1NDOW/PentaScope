@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { use, useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import type { BaseReport } from '@/types'
@@ -16,6 +17,7 @@ import {
   Appendix,
   MetadataPanel,
   ScenarioPayload,
+  MarkdownContent,
 } from '@/components/report'
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
 
@@ -65,7 +67,7 @@ export default function AnalyzePage({
   }, [traceId])
 
   useEffect(() => {
-    fetchTrace()
+    void Promise.resolve().then(fetchTrace)
   }, [fetchTrace])
 
   // SSE for live progress when status is running
@@ -76,7 +78,7 @@ export default function AnalyzePage({
   // Refetch when SSE signals completion
   useEffect(() => {
     if (sse.status === 'disconnected' && trace?.meta?.status === 'running') {
-      fetchTrace()
+      void Promise.resolve().then(fetchTrace)
     }
   }, [sse.status, trace?.meta?.status, fetchTrace])
 
@@ -118,7 +120,7 @@ export default function AnalyzePage({
     )
   }
 
-  return <ReportView report={report} />
+  return <ReportView report={report} traceId={traceId} />
 }
 
 // ============================================================
@@ -165,12 +167,12 @@ function ErrorState({
           </button>
         )}
         {traceId && (
-          <a
+          <Link
             href="/"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
           >
             返回首页
-          </a>
+          </Link>
         )}
       </div>
     </div>
@@ -260,8 +262,12 @@ function RunningState({
   )
 }
 
-function ReportView({ report }: { report: BaseReport }) {
+function ReportView({ report, traceId }: { report: BaseReport; traceId: string }) {
   const scenario = report.metadata.scenario
+  const exportUrls = {
+    md: api.exportUrl(traceId, 'md'),
+    html: api.exportUrl(traceId, 'html'),
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -270,6 +276,7 @@ function ReportView({ report }: { report: BaseReport }) {
         title={report.title}
         subtitle={report.subtitle}
         metadata={report.metadata}
+        exportUrls={exportUrls}
       />
 
       {/* KPI Strip */}
@@ -314,7 +321,7 @@ function ReportView({ report }: { report: BaseReport }) {
       />
 
       {/* Appendix */}
-      {report.appendix && <Appendix appendix={report.appendix} />}
+      {report.appendix && <Appendix appendix={report.appendix} dataSources={report.metadata.data_sources} />}
 
       {/* Metadata Panel */}
       <MetadataPanel metadata={report.metadata} />
@@ -338,9 +345,7 @@ function AnalysisSections({
             <h4 className="text-[14px] font-semibold text-[var(--text-primary)] border-b border-[var(--border-divider)] pb-2">
               {section.heading}
             </h4>
-            <div className="text-[14px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
-              {section.narrative}
-            </div>
+            <MarkdownContent content={section.narrative} />
           </div>
         ))}
       </div>
@@ -362,9 +367,7 @@ function MarkdownSection({
       <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
         {title}
       </h3>
-      <div className="text-[14px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
-        {content}
-      </div>
+      <MarkdownContent content={content} />
     </div>
   )
 }

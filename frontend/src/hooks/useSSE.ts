@@ -25,6 +25,7 @@ export function useSSE(traceId: string | null): UseSSEReturn {
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectCountRef = useRef(0)
+  const connectRef = useRef<() => void>(() => undefined)
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -103,7 +104,7 @@ export function useSSE(traceId: string | null): UseSSEReturn {
         const delay = Math.min(1000 * Math.pow(2, reconnectCountRef.current), 30000)
         reconnectCountRef.current++
         reconnectTimerRef.current = setTimeout(() => {
-          connect()
+          connectRef.current()
         }, delay)
       } else {
         setError('Connection lost. Please refresh the page.')
@@ -112,7 +113,11 @@ export function useSSE(traceId: string | null): UseSSEReturn {
   }, [traceId, cleanup])
 
   useEffect(() => {
-    connect()
+    connectRef.current = connect
+  }, [connect])
+
+  useEffect(() => {
+    void Promise.resolve().then(connect)
     return cleanup
   }, [connect, cleanup])
 

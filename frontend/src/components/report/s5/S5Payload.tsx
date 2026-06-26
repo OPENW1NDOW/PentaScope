@@ -137,7 +137,7 @@ export function S5Payload({ payload }: S5PayloadProps) {
         <section>
           <h3 className="text-[15px] font-semibold text-[var(--text-primary)] mb-3">蓝海策略</h3>
           <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 space-y-2">
-            <p className="text-[16px] font-semibold text-[var(--text-primary)]">"{blue_ocean_move.compelling_tagline}"</p>
+            <p className="text-[16px] font-semibold text-[var(--text-primary)]">“{blue_ocean_move.compelling_tagline}”</p>
             {blue_ocean_move.new_value_curve_summary && <p className="text-[14px] text-[var(--text-secondary)]">{blue_ocean_move.new_value_curve_summary}</p>}
             {blue_ocean_move.target_noncustomers?.length > 0 && (
               <div>

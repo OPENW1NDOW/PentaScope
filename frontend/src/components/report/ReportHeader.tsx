@@ -9,10 +9,13 @@ interface ReportHeaderProps {
   title?: string
   subtitle?: string | null
   metadata?: ReportMetadata
-  exportBaseUrl?: string
+  exportUrls?: {
+    md: string
+    html: string
+  }
 }
 
-export function ReportHeader({ title, subtitle, metadata, exportBaseUrl }: ReportHeaderProps) {
+export function ReportHeader({ title, subtitle, metadata, exportUrls }: ReportHeaderProps) {
   const scenarioLabel = metadata?.scenario
     ? SCENARIO_LABELS[metadata.scenario as Scenario] ?? metadata.scenario
     : null
@@ -34,17 +37,17 @@ export function ReportHeader({ title, subtitle, metadata, exportBaseUrl }: Repor
           {scenarioLabel && <span>{scenarioLabel}</span>}
           {metadata?.trace_id && (
             <span className="font-[var(--font-mono)] text-[11px]">
-              trace: {metadata.trace_id.slice(0, 12)}
+              trace: {metadata.trace_id}
             </span>
           )}
         </div>
       </div>
 
       {/* Export buttons */}
-      {exportBaseUrl && (
+      {exportUrls && (
         <div className="flex items-center gap-2 shrink-0">
           <a
-            href={`${exportBaseUrl}/md`}
+            href={exportUrls.md}
             download
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] rounded-[var(--radius-md)] hover:bg-[var(--bg-hover)] transition-colors"
           >
@@ -52,7 +55,7 @@ export function ReportHeader({ title, subtitle, metadata, exportBaseUrl }: Repor
             MD
           </a>
           <a
-            href={`${exportBaseUrl}/html`}
+            href={exportUrls.html}
             download
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] rounded-[var(--radius-md)] hover:bg-[var(--bg-hover)] transition-colors"
           >

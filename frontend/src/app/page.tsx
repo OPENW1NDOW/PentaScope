@@ -82,9 +82,18 @@ export default function HomePage() {
     }
   }, [scenario, analysisContext, competitorNames, ourProductName, ourProductBrief, industry, priorTraceId, router])
 
+  const hasCompetitors = competitorNames
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean).length > 0
   const needsCompetitors = scenario && scenario !== 'S2'
   const needsIndustry = scenario === 'S2'
   const needsPriorTrace = scenario === 'S4'
+  const canSubmit = Boolean(
+    scenario &&
+    analysisContext.trim() &&
+    (scenario === 'S2' ? industry.trim() : ourProductName.trim() && hasCompetitors)
+  )
 
   return (
     <div className="flex flex-col gap-8 max-w-[640px]">
@@ -159,19 +168,18 @@ export default function HomePage() {
       {/* Conditional Fields */}
       {scenario && (
         <div className="flex flex-col gap-4">
-          {needsCompetitors && (
-            <div className="flex flex-col gap-2">
-              <label className="text-[13px] font-medium text-[var(--text-primary)]">
-                竞品名称 <span className="text-[var(--text-tertiary)]">(每行一个)</span>
-              </label>
-              <textarea
-                value={competitorNames}
-                onChange={(e) => setCompetitorNames(e.target.value)}
-                placeholder="Notion&#10;Confluence&#10;飞书文档"
-                className="min-h-[80px] px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)] resize-y"
-              />
-            </div>
-          )}
+          <div className="flex flex-col gap-2">
+            <label className="text-[13px] font-medium text-[var(--text-primary)]">
+              竞品名称 <span className="text-[var(--text-tertiary)]">({scenario === 'S2' ? '可选，' : ''}每行一个)</span>
+              {needsCompetitors && <span className="text-[var(--danger)]"> *</span>}
+            </label>
+            <textarea
+              value={competitorNames}
+              onChange={(e) => setCompetitorNames(e.target.value)}
+              placeholder={'Notion\nConfluence\n飞书文档'}
+              className="min-h-[80px] px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)] resize-y"
+            />
+          </div>
 
           <div className="flex flex-col gap-2">
             <label className="text-[13px] font-medium text-[var(--text-primary)]">
@@ -240,7 +248,7 @@ export default function HomePage() {
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={!scenario || !analysisContext.trim() || isSubmitting}
+        disabled={!canSubmit || isSubmitting}
         className="self-start inline-flex items-center gap-2 px-5 py-2.5 text-[14px] font-semibold rounded-[var(--radius-md)] bg-[var(--text-primary)] text-[var(--bg-surface)] hover:opacity-90 transition-opacity disabled:opacity-40"
       >
         {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : null}

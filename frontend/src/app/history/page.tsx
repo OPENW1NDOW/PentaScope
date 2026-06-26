@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { api } from '@/lib/api'
 import { SCENARIO_LABELS } from '@/types'
 import type { TraceSummary, TracesResponse, Scenario } from '@/types'
-import { Loader2, Clock, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
 
 export default function HistoryPage() {
   const [traces, setTraces] = useState<TraceSummary[]>([])
@@ -67,8 +67,16 @@ export default function HistoryPage() {
           </Link>
         </div>
       ) : (
-        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
-          <table className="w-full text-[13px]">
+        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] overflow-x-auto">
+          <table className="w-full min-w-[980px] table-fixed text-[13px]">
+            <colgroup>
+              <col className="w-[190px]" />
+              <col className="w-[150px]" />
+              <col className="w-[110px]" />
+              <col />
+              <col className="w-[180px]" />
+              <col className="w-[92px]" />
+            </colgroup>
             <thead>
               <tr className="bg-[var(--bg-page)]">
                 <th className="text-left font-medium text-[var(--text-secondary)] px-4 py-2.5 border-b border-[var(--border)] text-[12px] uppercase tracking-wider">Trace ID</th>
@@ -82,12 +90,12 @@ export default function HistoryPage() {
             <tbody>
               {traces.map((trace) => (
                 <tr key={trace.trace_id} className="hover:bg-[var(--bg-hover)] transition-colors">
-                  <td className="px-4 py-3 border-b border-[var(--divider)] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-secondary)]">
+                  <td className="px-4 py-3 border-b border-[var(--divider)] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-secondary)] whitespace-nowrap">
                     {trace.trace_id}
                   </td>
                   <td className="px-4 py-3 border-b border-[var(--divider)]">
                     {trace.scenario ? (
-                      <span className="tag-blue text-[12px] font-medium px-2 py-0.5 rounded-[var(--radius-sm)]">
+                      <span className="tag-blue inline-flex whitespace-nowrap text-[12px] font-medium px-2 py-0.5 rounded-[var(--radius-sm)]">
                         {trace.scenario} · {SCENARIO_LABELS[trace.scenario as Scenario] ?? ''}
                       </span>
                     ) : '—'}
@@ -95,13 +103,13 @@ export default function HistoryPage() {
                   <td className="px-4 py-3 border-b border-[var(--divider)]">
                     <StatusBadge status={trace.status} />
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[var(--text-secondary)]">
+                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[var(--text-secondary)] truncate" title={trace.competitors?.join(', ') || undefined}>
                     {trace.competitors?.length > 0 ? trace.competitors.join(', ') : '—'}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[12px] text-[var(--text-tertiary)]">
-                    {trace.started_at ? new Date(trace.started_at).toLocaleString('zh-CN') : '—'}
+                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[12px] text-[var(--text-tertiary)] whitespace-nowrap">
+                    {trace.started_at ? new Date(trace.started_at).toLocaleString('zh-CN', { hour12: false }) : '—'}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)]">
+                  <td className="px-4 py-3 border-b border-[var(--divider)] text-right">
                     <Link
                       href={`/analyze/${trace.trace_id}`}
                       className="inline-flex items-center gap-1 text-[12px] text-[var(--info)] hover:underline"
@@ -159,7 +167,10 @@ function StatusBadge({ status }: { status?: string | null }) {
   }
   if (status === 'running') {
     return (
-      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--tag-blue-text)]">
+      <span
+        title="该记录的 meta.json 仍标记为 running；通常是历史任务执行时前端断连或进程中断，未写入 completed/failed 终态。"
+        className="inline-flex items-center gap-1 whitespace-nowrap text-[12px] font-medium text-[var(--tag-blue-text)]"
+      >
         <Loader2 size={13} className="animate-spin" /> 运行中
       </span>
     )

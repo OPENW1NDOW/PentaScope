@@ -229,14 +229,30 @@ async def list_traces(page: int = 1, page_size: int = 20):
     page_dirs = dirs[start : start + page_size]
 
     traces = []
+    now = datetime.now(timezone.utc)
     for d in page_dirs:
         meta = _load_json(d / "meta.json") or {}
         input_data = meta.get("input", {})
         competitors = [c.get("name", "") for c in input_data.get("competitors", [])]
+        status = meta.get("status")
+        # 自动修正：running 超过 2 小时视为异常终止，回写 meta.json
+        if status == "running" and meta.get("started_at"):
+            try:
+                started = datetime.fromisoformat(meta["started_at"])
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                if (now - started).total_seconds() > 7200:
+                    meta["status"] = "failed"
+                    meta["ended_at"] = now.isoformat()
+                    meta["failure_reason"] = "process interrupted: status not updated within 2h"
+                    (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+                    status = "failed"
+            except (ValueError, TypeError):
+                pass
         traces.append(TraceSummary(
             trace_id=d.name,
             scenario=input_data.get("scenario"),
-            status=meta.get("status"),
+            status=status,
             started_at=meta.get("started_at"),
             ended_at=meta.get("ended_at"),
             competitors=competitors,

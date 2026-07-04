@@ -1,12 +1,20 @@
 'use client'
 
-import { Children, isValidElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { stripNumberPrefix } from './stripNumberPrefix'
+
+export interface HeadingCounter {
+  h2: number
+  h3: number
+  h4: number
+}
 
 interface MarkdownContentProps {
   content?: string
   className?: string
+  /** 外部共享的标题计数器，跨 section 连续编号。不传则内部自建（独立计数）。 */
+  headingCounter?: HeadingCounter
 }
 
 const CN_NUMBERS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
@@ -14,21 +22,14 @@ function cnNumber(index: number): string {
   return CN_NUMBERS[index - 1] ?? String(index)
 }
 
-function plainText(node: React.ReactNode): string {
-  return Children.toArray(node).map((child) => {
-    if (typeof child === 'string' || typeof child === 'number') return String(child)
-    if (isValidElement<{ children?: React.ReactNode }>(child)) return plainText(child.props.children)
-    return ''
-  }).join('')
-}
-
-function hasNumberPrefix(node: React.ReactNode): boolean {
-  return /^(?:[一二三四五六七八九十]+、|（[一二三四五六七八九十]+）|\d+[.．、])/.test(plainText(node).trim())
-}
-
-export function MarkdownContent({ content, className }: MarkdownContentProps) {
+export function MarkdownContent({ content, className, headingCounter: externalCounter }: MarkdownContentProps) {
   if (!content) return null
-  const headingCounter = { h2: 0, h3: 0, h4: 0 }
+
+  // 剥离 LLM 已写的编号前缀，由前端统一重新编号
+  const cleaned = stripNumberPrefix(content)
+
+  // 外部不传 counter 时内部自建（向后兼容，独立计数）
+  const counter = externalCounter ?? { h2: 0, h3: 0, h4: 0 }
 
   return (
     <div className={`prose-notion text-[14px] leading-relaxed text-[var(--text-primary)] ${className ?? ''}`}>
@@ -39,22 +40,31 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
             <h1 className="text-[20px] font-bold mt-6 mb-3 text-[var(--text-primary)]">{children}</h1>
           ),
           h2: ({ children }) => {
-            headingCounter.h2 += 1
-            headingCounter.h3 = 0
-            headingCounter.h4 = 0
-            const prefix = hasNumberPrefix(children) ? '' : `${cnNumber(headingCounter.h2)}、`
-            return <h2 className="text-[17px] font-semibold mt-5 mb-2 pb-1 border-b border-[var(--border-divider)] text-[var(--text-primary)]">{prefix}{children}</h2>
+            counter.h2 += 1
+            counter.h3 = 0
+            counter.h4 = 0
+            return (
+              <h2 className="text-[18px] font-bold mt-6 mb-3 pl-3 border-l-[3px] border-[var(--border-active)] pb-1 border-b border-[var(--border-divider)] text-[var(--text-primary)]">
+                {cnNumber(counter.h2)}、{children}
+              </h2>
+            )
           },
           h3: ({ children }) => {
-            headingCounter.h3 += 1
-            headingCounter.h4 = 0
-            const prefix = hasNumberPrefix(children) ? '' : `（${cnNumber(headingCounter.h3)}）`
-            return <h3 className="text-[15px] font-semibold mt-4 mb-2 pl-2 border-l-2 border-[var(--border-active)] text-[var(--text-primary)]">{prefix}{children}</h3>
+            counter.h3 += 1
+            counter.h4 = 0
+            return (
+              <h3 className="text-[16px] font-semibold mt-5 mb-2 pl-3 border-l-2 border-[var(--border-active)] text-[var(--text-primary)]">
+                （{cnNumber(counter.h3)}）{children}
+              </h3>
+            )
           },
           h4: ({ children }) => {
-            headingCounter.h4 += 1
-            const prefix = hasNumberPrefix(children) ? '' : `${headingCounter.h4}. `
-            return <h4 className="text-[14px] font-semibold mt-3 mb-1.5 text-[var(--text-primary)]">{prefix}{children}</h4>
+            counter.h4 += 1
+            return (
+              <h4 className="text-[14px] font-semibold mt-3 mb-1.5 text-[var(--text-primary)]">
+                {counter.h4}. {children}
+              </h4>
+            )
           },
           p: ({ children }) => (
             <p className="mb-3 leading-relaxed">{children}</p>
@@ -124,7 +134,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
           ),
         }}
       >
-        {content}
+        {cleaned}
       </ReactMarkdown>
     </div>
   )

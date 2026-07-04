@@ -96,7 +96,7 @@ export default function HomePage() {
   )
 
   return (
-    <div className="flex flex-col gap-8 max-w-[640px]">
+    <div className="flex flex-col gap-8 max-w-[640px] mx-auto">
       {/* Hero */}
       <div>
         <h1 className="text-[28px] font-bold text-[var(--text-primary)] leading-tight">
@@ -181,30 +181,34 @@ export default function HomePage() {
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-[13px] font-medium text-[var(--text-primary)]">
-              我方产品名称 {needsCompetitors && <span className="text-[var(--danger)]">*</span>}
-            </label>
-            <input
-              type="text"
-              value={ourProductName}
-              onChange={(e) => setOurProductName(e.target.value)}
-              placeholder="例如：飞书文档"
-              className="px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)]"
-            />
-          </div>
+          {scenario !== 'S2' && (
+            <>
+              <div className="flex flex-col gap-2">
+                <label className="text-[13px] font-medium text-[var(--text-primary)]">
+                  我方产品名称 <span className="text-[var(--danger)]">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={ourProductName}
+                  onChange={(e) => setOurProductName(e.target.value)}
+                  placeholder="例如：飞书文档"
+                  className="px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)]"
+                />
+              </div>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-[13px] font-medium text-[var(--text-primary)]">
-              产品简介 <span className="text-[var(--text-tertiary)]">(可选)</span>
-            </label>
-            <textarea
-              value={ourProductBrief}
-              onChange={(e) => setOurProductBrief(e.target.value)}
-              placeholder="简要描述你的产品..."
-              className="min-h-[60px] px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)] resize-y"
-            />
-          </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[13px] font-medium text-[var(--text-primary)]">
+                  产品简介 <span className="text-[var(--text-tertiary)]">(可选)</span>
+                </label>
+                <textarea
+                  value={ourProductBrief}
+                  onChange={(e) => setOurProductBrief(e.target.value)}
+                  placeholder="简要描述你的产品..."
+                  className="min-h-[60px] px-3 py-2 text-[14px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)] resize-y"
+                />
+              </div>
+            </>
+          )}
 
           {needsIndustry && (
             <div className="flex flex-col gap-2">

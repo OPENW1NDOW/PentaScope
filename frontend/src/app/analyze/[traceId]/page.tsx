@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { use, useEffect, useState, useCallback } from 'react'
+import { use, useEffect, useState, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
 import type { BaseReport } from '@/types'
 import { useSSE } from '@/hooks/useSSE'
@@ -334,8 +334,10 @@ function AnalysisSections({
 }: {
   sections: { heading: string; narrative: string; section_id: string }[]
 }) {
+  const counter = useRef({ h2: 0, h3: 0, h4: 0 })
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-5 flex flex-col gap-6">
       <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
         详细分析
       </h3>
@@ -345,7 +347,7 @@ function AnalysisSections({
             <h4 className="text-[14px] font-semibold text-[var(--text-primary)] border-b border-[var(--border-divider)] pb-2">
               {section.heading}
             </h4>
-            <MarkdownContent content={section.narrative} />
+            <MarkdownContent content={section.narrative} headingCounter={counter.current} />
           </div>
         ))}
       </div>
@@ -363,7 +365,7 @@ function MarkdownSection({
   if (!content) return null
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-5 flex flex-col gap-4">
       <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
         {title}
       </h3>

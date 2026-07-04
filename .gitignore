@@ -22,8 +22,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Claude Code local config (个人配置，不共享)
+# Claude Code / Cursor local config (个人配置，不共享)
 .claude/
+.cursor/
 
 # Testing / Linting
 .pytest_cache/

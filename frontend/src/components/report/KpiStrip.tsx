@@ -42,7 +42,7 @@ export function KpiStrip({ metadata }: KpiStripProps) {
           质检评分
         </span>
         <span
-          className={`text-[20px] font-semibold font-[var(--font-mono)] tabular-nums ${qualityColor(quality)}`}
+          className={`text-[20px] font-semibold font-[family-name:var(--font-mono)] tabular-nums ${qualityColor(quality)}`}
         >
           {quality != null ? quality.toFixed(2) : '--'}
         </span>

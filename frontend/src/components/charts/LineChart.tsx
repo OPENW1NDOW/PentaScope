@@ -32,7 +32,7 @@ export function LineChart({ data, xKey, lines, yMax = 10, height = 420 }: LineCh
     <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <ResponsiveContainer width="100%" height={height}>
         <ReLineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--divider)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-divider)" />
           <XAxis
             dataKey={xKey}
             tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}

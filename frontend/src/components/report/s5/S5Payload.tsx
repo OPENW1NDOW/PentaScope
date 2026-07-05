@@ -2,8 +2,6 @@
 
 import type { S5PositioningPayload } from '@/types'
 import { ScatterChart, LineChart } from '@/components/charts'
-import { SortableTable } from '@/components/ui/SortableTable'
-import { t } from '@/lib/translations'
 
 interface S5PayloadProps {
   payload: S5PositioningPayload
@@ -49,12 +47,6 @@ export function S5Payload({ payload }: S5PayloadProps) {
       proposed_level: item.proposed_level != null ? String(item.proposed_level) : '—',
       buyer_value: item.buyer_value ?? '—',
     }))
-  const errcCols = [
-    { key: 'factor', label: '因素' },
-    { key: 'rationale', label: '理由' },
-    { key: 'proposed_level', label: '建议水平' },
-    { key: 'buyer_value', label: '买方价值' },
-  ]
 
   return (
     <div className="flex flex-col gap-8">

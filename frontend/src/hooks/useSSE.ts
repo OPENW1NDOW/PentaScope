@@ -8,10 +8,15 @@ export interface SSEEvent {
   data: Record<string, unknown>
 }
 
+export interface CompletedNode {
+  node: string
+  durationMs?: number
+}
+
 export interface UseSSEReturn {
   status: 'connecting' | 'connected' | 'disconnected' | 'error'
   currentNode: string | null
-  completedNodes: string[]
+  completedNodes: CompletedNode[]
   logs: SSEEvent[]
   error: string | null
 }
@@ -19,7 +24,7 @@ export interface UseSSEReturn {
 export function useSSE(traceId: string | null): UseSSEReturn {
   const [status, setStatus] = useState<UseSSEReturn['status']>('disconnected')
   const [currentNode, setCurrentNode] = useState<string | null>(null)
-  const [completedNodes, setCompletedNodes] = useState<string[]>([])
+  const [completedNodes, setCompletedNodes] = useState<CompletedNode[]>([])
   const [logs, setLogs] = useState<SSEEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -66,7 +71,13 @@ export function useSSE(traceId: string | null): UseSSEReturn {
               setCurrentNode(data.node as string)
               break
             case 'node_complete':
-              setCompletedNodes(prev => [...prev, data.node as string])
+              setCompletedNodes(prev => [
+                ...prev,
+                {
+                  node: data.node as string,
+                  durationMs: typeof data.duration_ms === 'number' ? data.duration_ms : undefined,
+                },
+              ])
               setCurrentNode(null)
               break
             case 'node_error':
@@ -107,7 +118,7 @@ export function useSSE(traceId: string | null): UseSSEReturn {
           connectRef.current()
         }, delay)
       } else {
-        setError('Connection lost. Please refresh the page.')
+        setError('实时进度连接中断（任务可能已在后端结束或中断）。')
       }
     }
   }, [traceId, cleanup])

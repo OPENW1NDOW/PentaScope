@@ -5,6 +5,7 @@ import { FiveForcesRadar } from '@/components/charts'
 import { SortableTable } from '@/components/ui/SortableTable'
 import { t } from '@/lib/translations'
 import { formatMarketValue, formatPct } from '@/lib/formatters'
+import { PESTELSection } from './PESTELSection'
 
 interface S2PayloadProps {
   payload: S2MarketEntryPayload
@@ -110,6 +111,8 @@ export function S2Payload({ payload }: S2PayloadProps) {
           </div>
         </section>
       )}
+
+      <PESTELSection pestel={payload.pestel} />
     </div>
   )
 }

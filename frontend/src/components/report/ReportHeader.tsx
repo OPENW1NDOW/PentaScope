@@ -36,7 +36,7 @@ export function ReportHeader({ title, subtitle, metadata, exportUrls }: ReportHe
         <div className="flex items-center gap-3 text-[12px] text-[var(--text-tertiary)]">
           {scenarioLabel && <span>{scenarioLabel}</span>}
           {metadata?.trace_id && (
-            <span className="font-[var(--font-mono)] text-[11px]">
+            <span className="font-[family-name:var(--font-mono)] text-[11px]">
               trace: {metadata.trace_id}
             </span>
           )}

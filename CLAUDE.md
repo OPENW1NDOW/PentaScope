@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **编排框架**: LangGraph（StateGraph）
 - **Agent 构建**: 纯 Python 函数 + LangGraph 节点（手写，不用 LangChain 封装）
 - **后端**: FastAPI + uvicorn
-- **前端**: Streamlit + Plotly（调用后端 API，前后端分离）
+- **前端**: Next.js 16（App Router）+ Tailwind CSS v4 + Recharts + SWR，位于 `frontend/`，调用后端 API（含 SSE 实时进度）；旧 Streamlit 前端（`src/frontend/`）保留为 legacy 备用
 - **数据校验**: Pydantic v2；HTTP 用 httpx；HTML 解析用 BeautifulSoup4
 
 ## 设计取向
@@ -79,7 +79,10 @@ pip install -r requirements.txt
 # 后端 API（默认 http://127.0.0.1:8000，健康检查 /health）
 uvicorn src.api.main:app --reload
 
-# 前端
+# 前端（Next.js，默认 http://localhost:3001；API 地址可用 frontend/.env.local 的 NEXT_PUBLIC_API_URL 覆盖）
+npm --prefix frontend run dev
+
+# legacy 前端（Streamlit，备用）
 streamlit run src/frontend/app.py
 ```
 
@@ -93,6 +96,10 @@ pytest tests/integration                 # 端到端集成测试（5 场景 grap
 pytest -k collector                      # 按关键字筛选
 ruff check src tests                     # lint
 ruff check --fix src tests               # 自动修复
+
+npm --prefix frontend run lint           # 前端 lint（eslint）
+npm --prefix frontend run test           # 前端测试（vitest）
+npm --prefix frontend run build          # 前端构建检查
 ```
 
 运行需在项目根目录配置 `.env`：
@@ -147,12 +154,15 @@ ruff check --fix src tests               # 自动修复
   - `trace_writer` — 中间产物落盘
   - `html_parser`、`validators`
 
-- **入口**：后端 `src/api/main.py` 暴露 3 个路由（`src/api/routes.py`）：
-  - `POST /api/v1/analyze` — 主分析入口，每请求生成 `trace_id` 并构图执行
+- **入口**：后端 `src/api/main.py` 暴露路由（`src/api/routes.py`）：
+  - `POST /api/v1/analyze` — 主分析入口，每请求生成 `trace_id` 并构图执行（阻塞直至完成；进度经 SSE 推送）
+  - `GET /api/v1/analyze/{trace_id}/stream` — SSE 实时进度（node_start / node_complete / analysis_complete 等事件）
   - `POST /api/v1/pick-scenario` — 用户填了 `analysis_context` 后让 AI 选场景
   - `GET /api/v1/trace/{trace_id}` — 中间产物追溯（含路径穿越双重防护，`?version=` 取历史版本）
+  - `GET /api/v1/traces` — 历史分析列表（分页）
+  - `GET /api/v1/trace/{trace_id}/export?format=md|html` — 报告导出
 
-  前端 `src/frontend/app.py` + `src/frontend/render.py`（5 场景 BaseReport 渲染 + Plotly 图表：S1 5 维雷达、S2 五力蜘蛛网、S5 Perceptual Map / Magic Quadrant / Strategy Canvas）。
+  前端 `frontend/`（Next.js 16 App Router）：`src/app/` 三页面（首页新建分析 / `analyze/[traceId]` 进度+报告 / `history` 历史列表），`src/components/report/` 报告渲染组件（含 s1-s5 场景 payload），`src/components/charts/` Recharts 图表（S1 5 维雷达、S2 五力蜘蛛网、S5 感知地图 / MQ / 策略画布），`src/lib/api.ts` 统一 API 客户端，`src/hooks/useSSE.ts` 实时进度。legacy Streamlit 前端在 `src/frontend/app.py` + `src/frontend/render.py`。
 
 - **可观测性**：日志统一走 `src/utils/logger.py`，图节点切换打 `[graph] → <node>` 日志，配合 `trace_id` 串联一次分析的全链路（核心设计取向之一，勿移除）。
 - **中间产物追溯**：`src/tools/trace_writer.py::TraceWriter` 把每次分析的四阶段产物（profile/analysis/report/feedback）、meta 和 `run.log` 落盘到 `runs/<trace_id>/`（路径见 `src/utils/paths.py`，不依赖 CWD）；反馈闭环重试时旧产物存为 `_vN` 快照。前端「执行追溯」面板按 tab 展示。改追溯数据结构时连同 `src/schemas` 与该面板一起改。

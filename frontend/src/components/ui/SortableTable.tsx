@@ -38,6 +38,8 @@ export function SortableTable({ data, columns }: SortableTableProps) {
     [columns]
   )
 
+  // TanStack Table API 与 React Compiler 不兼容，官方已知限制
+  // eslint-disable-next-line react-hooks/incompatible-library -- useReactTable returns non-memoizable fns
   const table = useReactTable({
     data,
     columns: columnDefs,
@@ -94,7 +96,7 @@ export function SortableTable({ data, columns }: SortableTableProps) {
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
-                    className="px-3 py-2 border-b border-[var(--divider)] text-[var(--text-primary)]"
+                    className="px-3 py-2 border-b border-[var(--border-divider)] text-[var(--text-primary)]"
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>

@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { use, useEffect, useState, useCallback, useRef } from 'react'
+import { use, useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { BaseReport } from '@/types'
+import { NODE_LABELS } from '@/lib/constants'
+import type { BaseReport, TraceResponse } from '@/types'
 import { useSSE } from '@/hooks/useSSE'
+import { PipelineStepper } from '@/components/analysis/PipelineStepper'
 import {
   ReportHeader,
   KpiStrip,
@@ -18,25 +20,13 @@ import {
   MetadataPanel,
   ScenarioPayload,
   MarkdownContent,
+  AnalysisSections,
+  TracePanel,
+  ReportToc,
+  buildReportToc,
+  SectionWrap,
 } from '@/components/report'
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
-
-interface TraceData {
-  trace_id: string
-  meta?: {
-    status?: string
-    started_at?: string
-    ended_at?: string
-    input?: {
-      scenario?: string
-      competitors?: { name: string }[]
-    }
-  } | null
-  stages?: {
-    report?: BaseReport | null
-  }
-  log?: string
-}
 
 export default function AnalyzePage({
   params,
@@ -44,7 +34,7 @@ export default function AnalyzePage({
   params: Promise<{ traceId: string }>
 }) {
   const { traceId } = use(params)
-  const [trace, setTrace] = useState<TraceData | null>(null)
+  const [trace, setTrace] = useState<TraceResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,12 +42,7 @@ export default function AnalyzePage({
     try {
       setLoading(true)
       setError(null)
-      const res = await api.getTrace(traceId)
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.detail || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
+      const data = await api.getTrace(traceId)
       setTrace(data)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load trace')
@@ -97,14 +82,21 @@ export default function AnalyzePage({
 
   // ── Running (SSE streaming) ──────────────────────────────
   if (status === 'running') {
-    return <RunningState traceId={traceId} sse={sse} />
+    return (
+      <RunningState
+        traceId={traceId}
+        sse={sse}
+        scenario={trace?.meta?.input?.scenario}
+        onRefresh={fetchTrace}
+      />
+    )
   }
 
   // ── Failed ───────────────────────────────────────────────
   if (status === 'failed') {
     return (
       <ErrorState
-        message={trace?.meta && 'error' in trace.meta ? String((trace.meta as Record<string, unknown>).error) : '分析失败'}
+        message={trace?.meta?.error ?? '分析失败'}
         traceId={traceId}
       />
     )
@@ -120,7 +112,7 @@ export default function AnalyzePage({
     )
   }
 
-  return <ReportView report={report} traceId={traceId} />
+  return <ReportView report={report} trace={trace} traceId={traceId} />
 }
 
 // ============================================================
@@ -182,26 +174,21 @@ function ErrorState({
 function RunningState({
   traceId,
   sse,
+  scenario,
+  onRefresh,
 }: {
   traceId: string
   sse: ReturnType<typeof useSSE>
+  scenario?: string
+  onRefresh?: () => void
 }) {
-  const nodeLabels: Record<string, string> = {
-    set_entry: '场景路由',
-    recommender: '竞品推荐',
-    collector: '信息采集',
-    analyzer: '竞品分析',
-    writer: '报告撰写',
-    inspector: '质检审核',
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-[28px] font-semibold text-[var(--text-primary)]">
           分析进行中
         </h1>
-        <p className="mt-1 text-[13px] text-[var(--text-tertiary)] font-[var(--font-mono)]">
+        <p className="mt-1 text-[13px] text-[var(--text-tertiary)] font-[family-name:var(--font-mono)]">
           {traceId}
         </p>
       </div>
@@ -212,31 +199,35 @@ function RunningState({
           <Loader2 size={16} className="animate-spin text-[var(--info)]" />
           <span className="text-[14px] font-medium text-[var(--text-primary)]">
             {sse.currentNode
-              ? `${nodeLabels[sse.currentNode] ?? sse.currentNode} 执行中...`
+              ? `${NODE_LABELS[sse.currentNode] ?? sse.currentNode} 执行中...`
               : sse.status === 'connecting'
                 ? '正在连接...'
                 : '等待节点调度...'}
           </span>
         </div>
 
-        {/* Completed nodes */}
-        {sse.completedNodes.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {sse.completedNodes.map((node, i) => (
-              <span
-                key={`${node}-${i}`}
-                className="tag-green text-[12px] font-medium px-2 py-0.5 rounded-[var(--radius-sm)]"
-              >
-                {nodeLabels[node] ?? node}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Pipeline stepper */}
+        <PipelineStepper
+          scenario={scenario}
+          currentNode={sse.currentNode}
+          completedNodes={sse.completedNodes}
+        />
 
         {sse.error && (
-          <p className="text-[13px] text-[var(--danger)]">
-            {sse.error}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-[13px] text-[var(--danger)]">
+              {sse.error}
+            </p>
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-[12px] font-medium rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+              >
+                <RefreshCw size={12} />
+                刷新状态
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -247,14 +238,14 @@ function RunningState({
             实时日志 ({sse.logs.length})
           </summary>
           <div className="px-4 pb-4 border-t border-[var(--border-divider)]">
-            <pre className="text-[12px] font-[var(--font-mono)] text-[var(--text-secondary)] max-h-[300px] overflow-y-auto whitespace-pre-wrap pt-3">
+            <div className="text-[12px] font-[family-name:var(--font-mono)] text-[var(--text-secondary)] max-h-[300px] overflow-y-auto pt-3 flex flex-col gap-1">
               {sse.logs.map((log, i) => (
-                <div key={i}>
-                  <span className="text-[var(--text-tertiary)]">[{log.event}]</span>{' '}
-                  {JSON.stringify(log.data)}
+                <div key={i} className="flex items-baseline gap-2">
+                  <span className="text-[var(--text-tertiary)] shrink-0">[{log.event}]</span>
+                  <span>{formatSSELog(log)}</span>
                 </div>
               ))}
-            </pre>
+            </div>
           </div>
         </details>
       )}
@@ -262,94 +253,119 @@ function RunningState({
   )
 }
 
-function ReportView({ report, traceId }: { report: BaseReport; traceId: string }) {
+/** SSE 事件日志 → 人类可读文本 */
+function formatSSELog(log: { event: string; data: Record<string, unknown> }): string {
+  const node = typeof log.data.node === 'string' ? (NODE_LABELS[log.data.node] ?? log.data.node) : ''
+  switch (log.event) {
+    case 'node_start':
+      return `${node} 开始${typeof log.data.message === 'string' ? ` — ${log.data.message}` : ''}`
+    case 'node_complete': {
+      const ms = typeof log.data.duration_ms === 'number' ? ` (${(log.data.duration_ms / 1000).toFixed(1)}s)` : ''
+      return `${node} 完成${ms}`
+    }
+    case 'node_error':
+      return `${node} 失败 — ${typeof log.data.error === 'string' ? log.data.error : '未知错误'}`
+    case 'analysis_complete':
+      return '分析完成'
+    case 'analysis_failed':
+      return `分析失败 — ${typeof log.data.error === 'string' ? log.data.error : '未知错误'}`
+    default:
+      return JSON.stringify(log.data)
+  }
+}
+
+function ReportView({
+  report,
+  trace,
+  traceId,
+}: {
+  report: BaseReport
+  trace: TraceResponse
+  traceId: string
+}) {
   const scenario = report.metadata.scenario
   const exportUrls = {
     md: api.exportUrl(traceId, 'md'),
     html: api.exportUrl(traceId, 'html'),
   }
+  const tocItems = buildReportToc(report)
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <ReportHeader
-        title={report.title}
-        subtitle={report.subtitle}
-        metadata={report.metadata}
-        exportUrls={exportUrls}
-      />
+    <div className="flex gap-8 xl:gap-10">
+      <ReportToc items={tocItems} />
+      <div className="flex-1 min-w-0 flex flex-col gap-8">
+        <SectionWrap id="report-header">
+          <ReportHeader
+            title={report.title}
+            subtitle={report.subtitle}
+            metadata={report.metadata}
+            exportUrls={exportUrls}
+          />
+        </SectionWrap>
 
-      {/* KPI Strip */}
-      <KpiStrip metadata={report.metadata} />
+        <SectionWrap id="kpi">
+          <KpiStrip metadata={report.metadata} />
+        </SectionWrap>
 
-      {/* At a Glance */}
-      <AtAGlance items={report.at_a_glance} />
+        <SectionWrap id="at-a-glance">
+          <AtAGlance items={report.at_a_glance} />
+        </SectionWrap>
 
-      {/* Executive Summary */}
-      <ExecutiveSummary summary={report.executive_summary} />
+        <SectionWrap id="executive-summary">
+          <ExecutiveSummary summary={report.executive_summary} />
+        </SectionWrap>
 
-      {/* Key Findings */}
-      <KeyFindings findings={report.key_findings} />
+        {report.background && (
+          <SectionWrap id="background">
+            <MarkdownSection title="背景" content={report.background} />
+          </SectionWrap>
+        )}
 
-      {/* SWOT */}
-      <SwotGrid swot={report.swot} />
+        <SectionWrap id="scope">
+          <ScopeMethodology scope={report.scope} methodology={report.methodology} />
+        </SectionWrap>
 
-      {/* Analysis sections */}
-      {report.analysis_sections.length > 0 && (
-        <AnalysisSections sections={report.analysis_sections} />
-      )}
+        <SectionWrap id="key-findings">
+          <KeyFindings findings={report.key_findings} />
+        </SectionWrap>
 
-      {/* Conclusions */}
-      <MarkdownSection title="结论" content={report.conclusions} />
+        {report.analysis_sections.length > 0 && (
+          <SectionWrap id="analysis">
+            <AnalysisSections sections={report.analysis_sections} />
+          </SectionWrap>
+        )}
 
-      {/* Background */}
-      <MarkdownSection title="背景" content={report.background} />
+        <SectionWrap id="scenario">
+          <ScenarioPayload payload={report.scenario_payload} scenario={scenario} />
+        </SectionWrap>
 
-      {/* Recommendations */}
-      <Recommendations recommendations={report.recommendations} />
+        <SectionWrap id="swot">
+          <SwotGrid swot={report.swot} />
+        </SectionWrap>
 
-      {/* Scope & Methodology */}
-      <ScopeMethodology
-        scope={report.scope}
-        methodology={report.methodology}
-      />
+        {report.conclusions && (
+          <SectionWrap id="conclusions">
+            <MarkdownSection title="结论" content={report.conclusions} />
+          </SectionWrap>
+        )}
 
-      {/* Scenario-specific payload */}
-      <ScenarioPayload
-        payload={report.scenario_payload}
-        scenario={scenario}
-      />
+        <SectionWrap id="recommendations">
+          <Recommendations recommendations={report.recommendations} />
+        </SectionWrap>
 
-      {/* Appendix */}
-      {report.appendix && <Appendix appendix={report.appendix} dataSources={report.metadata.data_sources} />}
+        {report.appendix && (
+          <SectionWrap id="appendix">
+            <Appendix appendix={report.appendix} dataSources={report.metadata.data_sources} />
+          </SectionWrap>
+        )}
 
-      {/* Metadata Panel */}
-      <MetadataPanel metadata={report.metadata} />
-    </div>
-  )
-}
+        <SectionWrap id="metadata">
+          <MetadataPanel metadata={report.metadata} />
+        </SectionWrap>
 
-function AnalysisSections({
-  sections,
-}: {
-  sections: { heading: string; narrative: string; section_id: string }[]
-}) {
-  const counter = useRef({ h2: 0, h3: 0, h4: 0 })
-
-  return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--bg-surface)] p-5 flex flex-col gap-6">
-      <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
-        详细分析
-      </h3>
-      <div className="flex flex-col gap-6">
-        {sections.map((section, i) => (
-          <div key={section.section_id || i} className="flex flex-col gap-2">
-            <h4 className="text-[14px] font-semibold text-[var(--text-primary)] border-b border-[var(--border-divider)] pb-2">
-              {section.heading}
-            </h4>
-            <MarkdownContent content={section.narrative} headingCounter={counter.current} />
-          </div>
-        ))}
+        <SectionWrap id="trace">
+          <TracePanel trace={trace} />
+        </SectionWrap>
       </div>
     </div>
   )

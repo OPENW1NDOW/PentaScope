@@ -34,9 +34,7 @@ export default function HomePage() {
     setIsPicking(true)
     setPickResult(null)
     try {
-      const res = await api.pickScenario(analysisContext)
-      if (!res.ok) throw new Error('AI 推荐失败')
-      const data: PickScenarioResponse = await res.json()
+      const data = await api.pickScenario(analysisContext)
       setPickResult(data)
       setScenario(data.scenario as Scenario)
     } catch (e) {
@@ -68,12 +66,7 @@ export default function HomePage() {
     }
 
     try {
-      const res = await api.analyze(body)
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}))
-        throw new Error(errBody.detail || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
+      const data = await api.analyze(body)
       router.push(`/analyze/${data.trace_id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '提交失败')

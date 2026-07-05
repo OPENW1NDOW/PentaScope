@@ -706,10 +706,183 @@ export interface S3PricingStrategyPayload {
 // S4 — Competitive Monitoring
 // ============================================================
 
-// S4 schema not provided in task; placeholder for discriminated union
+/** 监控时间窗 */
+export interface ReviewPeriod {
+  last_review_date?: string | null;
+  current_review_date: string;
+  review_period_label?: string;
+  monitored_competitors: string[];
+  prior_trace_id?: string | null; // 缺失则为「首次监控」模式
+  newly_added_competitors?: string[];
+  dropped_competitors?: string[];
+}
+
+/** Klue FIA 三元组（fact 必填，impact + act Optional） */
+export interface FIATuple {
+  fact: string;
+  impact?: string | null;
+  act?: string | null;
+}
+
+export type ChangeSeverity = "low" | "medium" | "high";
+
+/** 所有变更条目共享的基础字段 */
+export interface BaseChange extends ArtifactBase {
+  competitor_name: string;
+  detected_date?: string | null;
+  fia: FIATuple;
+  severity: ChangeSeverity;
+  source_refs: SourceRef[];
+  is_baseline: boolean; // 首次监控模式时为 true
+}
+
+export interface FeatureChange extends BaseChange {
+  artifact_type: "feature_change";
+  change_type: "new_feature" | "removed_feature" | "feature_updated";
+  feature_name: string;
+}
+
+export interface PricingChange extends BaseChange {
+  artifact_type: "pricing_change";
+  change_type:
+    | "tier_added"
+    | "tier_removed"
+    | "price_increased"
+    | "price_decreased"
+    | "packaging_restructured"
+    | "discount_changed";
+  before: string;
+  after: string;
+}
+
+export interface MessagingChange extends BaseChange {
+  artifact_type: "messaging_change";
+  change_type:
+    | "headline_changed"
+    | "positioning_shift"
+    | "brand_update"
+    | "campaign_launch";
+  before_text: string;
+  after_text: string;
+}
+
+export interface NewsEvent extends BaseChange {
+  artifact_type: "news_event";
+  category:
+    | "funding"
+    | "partnership"
+    | "leadership"
+    | "legal"
+    | "product_launch"
+    | "acquisition"
+    | "ipo"
+    | "layoff"
+    | "other";
+  headline: string;
+}
+
+export interface OrgChange extends BaseChange {
+  artifact_type: "org_change";
+  role: string;
+  person_name?: string | null;
+  action:
+    | "hired"
+    | "departed"
+    | "promoted"
+    | "demoted"
+    | "joined_board"
+    | "title_changed"
+    | "founder_exit";
+}
+
+/** 威胁评估（quadrant 由后端 severity×likelihood 派生，随 JSON 下发） */
+export interface MonitoringThreat extends ArtifactBase {
+  artifact_type: "monitoring_threat";
+  title: string;
+  severity: ChangeSeverity;
+  likelihood: ChangeSeverity;
+  description: string;
+  recommended_response: string;
+  source_refs?: SourceRef[];
+  quadrant: "act_now" | "contingency" | "monitor" | "deprioritize";
+}
+
+/** 机会识别（OSCOM 4 类） */
+export interface MonitoringOpportunity extends ArtifactBase {
+  artifact_type: "monitoring_opportunity";
+  opportunity_type:
+    | "abandoned_segment"
+    | "product_gap"
+    | "messaging_white_space"
+    | "operational_weakness";
+  description: string;
+  estimated_effort: ChangeSeverity;
+  expected_impact: ChangeSeverity;
+  first_step: string;
+  source_refs?: SourceRef[];
+}
+
+export type TrendDirection = "up" | "flat" | "down";
+
+/** 趋势方向（首次监控模式下全 null） */
+export interface MonitoringTrends {
+  sentiment_trend?: TrendDirection | null;
+  pricing_trend?: TrendDirection | null;
+  release_velocity_trend?: TrendDirection | null;
+  threat_level_trend?: TrendDirection | null;
+  rationale?: string;
+}
+
+/** 推荐行动 */
+export interface MonitoringAction {
+  description: string;
+  owner_team: "product" | "marketing" | "sales" | "exec" | "engineering" | "support";
+  priority_tier: "critical" | "important" | "consider";
+  due_date_estimate?: string | null;
+  supporting_intel_refs?: string[];
+}
+
+export type BattlecardSectionName =
+  | "quick_summary"
+  | "primary_threat"
+  | "messaging_positioning"
+  | "pricing_packaging"
+  | "product_strategy"
+  | "customer_sentiment"
+  | "win_loss_themes"
+  | "monitoring_priorities";
+
+export type BattlecardCompleteness = "full" | "partial" | "empty";
+
+export interface BattlecardSection {
+  section_name: BattlecardSectionName;
+  content: string;
+  completeness: BattlecardCompleteness;
+  source_refs?: SourceRef[];
+}
+
+/** 单竞品活体 Battlecard（last_updated_at 由后端派生） */
+export interface Battlecard extends ArtifactBase {
+  artifact_type: "battlecard";
+  competitor_name: string;
+  sections: BattlecardSection[];
+  overall_completeness: BattlecardCompleteness;
+  last_updated_at?: string | null;
+}
+
 export interface S4MonitoringPayload {
   scenario_type: "S4";
-  [key: string]: unknown;
+  review_period: ReviewPeriod;
+  feature_changes: FeatureChange[];
+  pricing_changes: PricingChange[];
+  messaging_changes: MessagingChange[];
+  news_events: NewsEvent[];
+  org_changes: OrgChange[];
+  threats: MonitoringThreat[];
+  opportunities: MonitoringOpportunity[];
+  trends: MonitoringTrends;
+  monitoring_actions: MonitoringAction[];
+  battlecards: Battlecard[];
 }
 
 // ============================================================
@@ -904,6 +1077,37 @@ export interface TracesResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+/** Trace meta.json 摘要（后端为自由 dict，仅列前端消费的字段） */
+export interface TraceMeta {
+  status?: string;
+  started_at?: string;
+  ended_at?: string;
+  error?: string;
+  input?: {
+    scenario?: string;
+    competitors?: { name: string }[];
+    our_product_name?: string;
+    industry?: string;
+    prior_trace_id?: string;
+  };
+  [key: string]: unknown;
+}
+
+/** 追溯 API 响应（GET /trace/{trace_id}） */
+export interface TraceResponse {
+  trace_id: string;
+  meta?: TraceMeta | null;
+  stages: {
+    profiles?: unknown;
+    analysis?: unknown;
+    report?: BaseReport | null;
+    feedback?: unknown;
+    [key: string]: unknown;
+  };
+  snapshots: string[];
+  log: string;
 }
 
 // ============================================================

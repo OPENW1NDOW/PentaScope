@@ -97,13 +97,13 @@ export function MarkdownContent({ content, className, headingCounter: externalCo
             const isInline = !codeClassName
             if (isInline) {
               return (
-                <code className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] text-[13px] font-[var(--font-mono)]">
+                <code className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] text-[13px] font-[family-name:var(--font-mono)]">
                   {children}
                 </code>
               )
             }
             return (
-              <code className={`${codeClassName} block p-3 rounded-[var(--radius-md)] bg-[var(--bg-hover)] text-[13px] font-[var(--font-mono)] overflow-x-auto my-3`}>
+              <code className={`${codeClassName} block p-3 rounded-[var(--radius-md)] bg-[var(--bg-hover)] text-[13px] font-[family-name:var(--font-mono)] overflow-x-auto my-3`}>
                 {children}
               </code>
             )

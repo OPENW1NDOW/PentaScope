@@ -3,14 +3,15 @@
 import type { S3PricingStrategyPayload } from '@/types'
 import { SortableTable } from '@/components/ui/SortableTable'
 import { t } from '@/lib/translations'
-import { formatPct } from '@/lib/formatters'
+import { formatPct, currencySymbol } from '@/lib/formatters'
+import { PricingAuditSection } from './PricingAuditSection'
 
 interface S3PayloadProps {
   payload: S3PricingStrategyPayload
 }
 
 export function S3Payload({ payload }: S3PayloadProps) {
-  const { pricing_baseline, value_drivers, packaging, competitive_pricing_matrix, recommendations_summary, rollout_plan } = payload
+  const { pricing_baseline, value_drivers, packaging, competitive_pricing_matrix, recommendations_summary, rollout_plan, pricing_page_audit } = payload
 
   // 价值驱动因素表
   const driverCols = [
@@ -84,7 +85,7 @@ export function S3Payload({ payload }: S3PayloadProps) {
               )}
               <h4 className="text-[15px] font-semibold text-[var(--text-primary)]">{tier.name ?? tier.position}</h4>
               <div className="text-[20px] font-semibold text-[var(--text-primary)] font-[family-name:var(--font-mono)] mt-1">
-                {tier.monthly_price != null ? `¥${tier.monthly_price}` : '—'}
+                {tier.monthly_price != null ? `${currencySymbol(tier.currency)}${tier.monthly_price}` : '—'}
                 <span className="text-[12px] text-[var(--text-tertiary)] font-normal">/月</span>
               </div>
               {tier.target_persona && (
@@ -113,7 +114,7 @@ export function S3Payload({ payload }: S3PayloadProps) {
               <SortableTable
                 data={cp.tiers.map((tier) => ({
                   name: tier.name ?? '—',
-                  price: tier.monthly_price != null ? `¥${tier.monthly_price}` : '—',
+                  price: tier.monthly_price != null ? `${currencySymbol(tier.currency)}${tier.monthly_price}` : '—',
                   popular: tier.observed_is_most_popular ? '✓' : '',
                   features: tier.observed_features?.join(', ') ?? '—',
                 }))}
@@ -145,6 +146,8 @@ export function S3Payload({ payload }: S3PayloadProps) {
           </div>
         </section>
       )}
+
+      <PricingAuditSection audits={pricing_page_audit} />
 
       {/* 路线图 */}
       <section>

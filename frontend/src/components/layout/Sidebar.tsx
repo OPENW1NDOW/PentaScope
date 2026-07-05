@@ -18,7 +18,7 @@ export function Sidebar() {
   const { traces } = useTraces(1, 10)
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-[240px] bg-[var(--bg-page)] border-r border-[var(--border-default)] flex flex-col">
+    <aside className="fixed left-0 top-0 bottom-0 w-[240px] bg-[var(--bg-page)] border-r border-[var(--border-default)] hidden lg:flex flex-col">
       {/* Logo */}
       <div className="h-14 flex items-center px-5 border-b border-[var(--border-divider)]">
         <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">

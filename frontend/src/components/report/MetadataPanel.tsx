@@ -124,7 +124,7 @@ function MetaField({
         {label}
       </span>
       <span
-        className={`text-[13px] text-[var(--text-secondary)] truncate ${mono ? 'font-[var(--font-mono)] text-[12px]' : ''}`}
+        className={`text-[13px] text-[var(--text-secondary)] truncate ${mono ? 'font-[family-name:var(--font-mono)] text-[12px]' : ''}`}
       >
         {value}
       </span>
@@ -155,7 +155,7 @@ function CriticScoresChart({ scores }: { scores: CriticScores }) {
                   style={{ width: `${pct}%`, backgroundColor: color }}
                 />
               </div>
-              <span className="text-[12px] font-[var(--font-mono)] tabular-nums text-[var(--text-tertiary)] w-6 text-right">
+              <span className="text-[12px] font-[family-name:var(--font-mono)] tabular-nums text-[var(--text-tertiary)] w-6 text-right">
                 {value}
               </span>
             </div>

@@ -2,7 +2,7 @@
  * 数据格式化工具函数
  */
 
-import type { MarketValue, Trend } from "@/types";
+import type { MarketValue } from "@/types";
 
 const UNIT_MAP: Record<string, string> = {
   billion: "B",
@@ -18,6 +18,12 @@ const CURRENCY_SYMBOL: Record<string, string> = {
   JPY: "¥",
   unknown: "",
 };
+
+/** 货币符号（未知/缺省回退 ¥，与历史行为一致） */
+export function currencySymbol(currency?: string | null): string {
+  if (!currency || currency === "unknown") return "¥";
+  return CURRENCY_SYMBOL[currency] ?? "¥";
+}
 
 /** 格式化市场价值为 "{amount}{unit}{currency}" */
 export function formatMarketValue(val: MarketValue | null | undefined): string {

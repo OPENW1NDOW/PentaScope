@@ -1,43 +1,43 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { api } from '@/lib/api'
+import { useTraces } from '@/hooks/useTraces'
 import { SCENARIO_LABELS } from '@/types'
-import type { TraceSummary, TracesResponse, Scenario } from '@/types'
+import type { Scenario } from '@/types'
 import { Loader2, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
 
+const PAGE_SIZE = 20
+
+const SCENARIO_OPTIONS = ['', 'S1', 'S2', 'S3', 'S4', 'S5'] as const
+const STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'completed', label: '完成' },
+  { value: 'failed', label: '失败' },
+  { value: 'running', label: '运行中' },
+] as const
+
 export default function HistoryPage() {
-  const [traces, setTraces] = useState<TraceSummary[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [scenarioFilter, setScenarioFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-    async function fetchTraces() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.getTraces(page)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data: TracesResponse = await res.json()
-        if (!cancelled) {
-          setTraces(data.traces)
-          setTotal(data.total)
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    fetchTraces()
-    return () => { cancelled = true }
-  }, [page])
+  const filters = {
+    scenario: scenarioFilter || undefined,
+    status: statusFilter || undefined,
+  }
+  const { traces, total, isLoading, error } = useTraces(page, PAGE_SIZE, filters)
 
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  const handleScenarioChange = (value: string) => {
+    setScenarioFilter(value)
+    setPage(1)
+  }
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value)
+    setPage(1)
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -48,13 +48,48 @@ export default function HistoryPage() {
         </p>
       </div>
 
-      {loading ? (
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
+          场景
+          <select
+            value={scenarioFilter}
+            onChange={(e) => handleScenarioChange(e.target.value)}
+            className="px-2 py-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-[13px]"
+          >
+            <option value="">全部场景</option>
+            {SCENARIO_OPTIONS.filter(Boolean).map((s) => (
+              <option key={s} value={s}>
+                {s} · {SCENARIO_LABELS[s as Scenario]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
+          状态
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            className="px-2 py-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-[13px]"
+          >
+            {STATUS_OPTIONS.map(({ value, label }) => (
+              <option key={value || 'all'} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 size={24} className="animate-spin text-[var(--text-tertiary)]" />
         </div>
       ) : error ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--danger)] bg-[var(--tag-red)] p-4 text-center">
-          <p className="text-[13px] text-[var(--tag-red-text)]">{error}</p>
+          <p className="text-[13px] text-[var(--tag-red-text)]">
+            {error instanceof Error ? error.message : '加载失败'}
+          </p>
         </div>
       ) : traces.length === 0 ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-12 text-center">
@@ -90,26 +125,26 @@ export default function HistoryPage() {
             <tbody>
               {traces.map((trace) => (
                 <tr key={trace.trace_id} className="hover:bg-[var(--bg-hover)] transition-colors">
-                  <td className="px-4 py-3 border-b border-[var(--divider)] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-secondary)] whitespace-nowrap">
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)] font-[family-name:var(--font-mono)] text-[12px] text-[var(--text-secondary)] whitespace-nowrap">
                     {trace.trace_id}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)]">
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)]">
                     {trace.scenario ? (
                       <span className="tag-blue inline-flex whitespace-nowrap text-[12px] font-medium px-2 py-0.5 rounded-[var(--radius-sm)]">
                         {trace.scenario} · {SCENARIO_LABELS[trace.scenario as Scenario] ?? ''}
                       </span>
                     ) : '—'}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)]">
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)]">
                     <StatusBadge status={trace.status} />
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[var(--text-secondary)] truncate" title={trace.competitors?.join(', ') || undefined}>
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)] text-[var(--text-secondary)] truncate" title={trace.competitors?.join(', ') || undefined}>
                     {trace.competitors?.length > 0 ? trace.competitors.join(', ') : '—'}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)] text-[12px] text-[var(--text-tertiary)] whitespace-nowrap">
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)] text-[12px] text-[var(--text-tertiary)] whitespace-nowrap">
                     {trace.started_at ? new Date(trace.started_at).toLocaleString('zh-CN', { hour12: false }) : '—'}
                   </td>
-                  <td className="px-4 py-3 border-b border-[var(--divider)] text-right">
+                  <td className="px-4 py-3 border-b border-[var(--border-divider)] text-right">
                     <Link
                       href={`/analyze/${trace.trace_id}`}
                       className="inline-flex items-center gap-1 text-[12px] text-[var(--info)] hover:underline"

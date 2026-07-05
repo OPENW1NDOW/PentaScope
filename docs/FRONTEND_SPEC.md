@@ -255,23 +255,26 @@ const CHART_COLORS = ['#2EAADC', '#4DAB9A', '#E9973F', '#D44C47', '#9A6DD7', '#E
 
 左侧 sticky 目录导航，右侧滚动内容区。
 
+区块顺序与 Streamlit `render.py::render_base_report` 对齐（2026-06-23 拍板：scenario_payload 在 analysis_sections 之后、SWOT 之前）：
+
+区块顺序与 Streamlit `render.py::render_base_report` 对齐（2026-06-23 拍板：scenario_payload 在 analysis_sections 之后、SWOT 之前）：
+
 | 序号 | 区块 | 组件 |
 |------|------|------|
-| 0 | 导出栏 | ExportBar |
+| 0 | 标题 + 导出 | ReportHeader（含导出双按钮） |
 | 1 | KPI 指标条 | KpiStrip（属性表风格，无阴影） |
-| 2 | 标题 | ReportHeader |
-| 3 | 核心要点 | AtAGlance |
-| 4 | 执行摘要 | ExecutiveSummary |
-| 5 | 背景 | Background |
-| 6 | 范围 & 方法论 | ScopeMethodology（折叠面板） |
-| 7 | 关键发现 | KeyFindings（左边框卡片） |
-| 8 | 详细章节 | AnalysisSections |
-| 9 | 场景负载 | ScenarioPayload（S1-S5 动态分发） |
-| 10 | SWOT | SwotGrid（2×2 网格） |
-| 11 | 结论 | Conclusions |
-| 12 | 行动建议 | Recommendations（边框卡片 + 标签色标） |
-| 13 | 附录 | Appendix（折叠面板） |
-| 14 | 元数据 | MetadataPanel（含 CriticScores 雷达图） |
+| 2 | 核心要点 | AtAGlance |
+| 3 | 执行摘要 | ExecutiveSummary |
+| 4 | 背景 | Background |
+| 5 | 范围 & 方法论 | ScopeMethodology（折叠面板） |
+| 6 | 关键发现 | KeyFindings（左边框卡片） |
+| 7 | 详细章节 | AnalysisSections |
+| 8 | 场景负载 | ScenarioPayload（S1-S5 动态分发） |
+| 9 | SWOT | SwotGrid（2×2 网格） |
+| 10 | 结论 | Conclusions |
+| 11 | 行动建议 | Recommendations（边框卡片 + 标签色标） |
+| 12 | 附录 | Appendix（折叠面板） |
+| 13 | 元数据 | MetadataPanel（含 CriticScores 评分条） |
 
 ### 5.4 历史页 — `/history`
 

@@ -15,6 +15,38 @@
 
 ---
 
+## 2026-07-06: Next.js 报告区块顺序沿用 06-23 Streamlit 拍板
+
+- 选择：**scenario_payload 放在 analysis_sections 之后、SWOT 之前**；背景在 executive_summary 之后、scope 之前；结论在 SWOT 之后、recommendations 之前——与 `src/frontend/render.py::render_base_report` 一致
+- 理由：Cooper 在优化计划阶段明确拍板沿用 06-23 决策，而非 FRONTEND_SPEC 初稿顺序（后者已将 spec 同步修正）
+- 备选（FRONTEND_SPEC 原顺序：SWOT 在 payload 后、背景在摘要后）：与已跑通的 Streamlit 渲染和用户习惯不一致
+
+---
+
+## 2026-07-06: 前端 API 客户端统一 request helper
+
+- 选择：**`api.ts` 内 `request<T>()` + `ApiError`，所有端点返回解析后的 JSON 而非裸 `Response`**
+- 理由：首页/分析页/历史页/SWR hook 四处重复 `res.ok` + `detail` 解析样板；类型安全（`TraceResponse` 等）一次定义
+- 备选（保留 fetch 裸 Response + 各页面自行解析）：样板重复、易漏错误路径
+
+---
+
+## 2026-07-06: GET /traces 分页前 AND 筛选
+
+- 选择：**可选 query 参数 `scenario`（S1-S5 Literal）和 `status`（completed/failed/running Literal），筛选在分页前生效，`total` 为筛选后总数；非法值 FastAPI 自动 422**
+- 理由：历史页产品 spec 要求场景/状态筛选；Literal 约束比手写 if 更稳
+- 备选（前端客户端过滤）：分页 total 语义错误、大数据量浪费带宽
+
+---
+
+## 2026-07-06: 报告页 sticky 目录仅 ≥1280px 显示
+
+- 选择：**`ReportToc` + `SectionWrap` 锚点 + IntersectionObserver 滚动高亮；小屏隐藏目录、内容区全宽**
+- 理由：报告很长时桌面端导航价值高；移动端侧栏+目录会挤压阅读区
+- 备选（全屏宽始终显示目录）：移动端体验差
+
+---
+
 ## 2026-06-25: 前端迁移 Streamlit → Next.js
 
 - 选择：**React + Next.js 16 (App Router) + Tailwind CSS v4 + shadcn/ui + Recharts + @tanstack/react-table + Zustand + SWR**

@@ -62,7 +62,7 @@ export function ScatterChart({
     <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <ResponsiveContainer width="100%" height={height}>
         <ReScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--divider)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-divider)" />
           <XAxis
             type="number"
             dataKey="x"

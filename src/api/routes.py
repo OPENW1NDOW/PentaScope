@@ -164,6 +164,26 @@ def _load_json(path):
         return None
 
 
+def _resolve_status(meta: dict, trace_dir, now: datetime) -> str | None:
+    status = meta.get("status")
+    if status == "running" and meta.get("started_at"):
+        try:
+            started = datetime.fromisoformat(meta["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if (now - started).total_seconds() > 7200:
+                meta["status"] = "failed"
+                meta["ended_at"] = now.isoformat()
+                meta["failure_reason"] = "process interrupted: status not updated within 2h"
+                (trace_dir / "meta.json").write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                status = "failed"
+        except (ValueError, TypeError):
+            pass
+    return status
+
+
 @router.get("/analyze/{trace_id}/stream")
 async def stream_analysis_progress(trace_id: str):
     """SSE 实时进度端点"""
@@ -212,47 +232,46 @@ async def stream_analysis_progress(trace_id: str):
 
 
 @router.get("/traces", response_model=TracesResponse)
-async def list_traces(page: int = 1, page_size: int = 20):
+async def list_traces(
+    page: int = 1,
+    page_size: int = 20,
+    scenario: Literal["S1", "S2", "S3", "S4", "S5"] | None = None,
+    status: Literal["completed", "failed", "running"] | None = None,
+):
     """历史分析列表"""
     base = runs_dir()
     if not base.is_dir():
         return TracesResponse(traces=[], total=0, page=page, page_size=page_size)
 
-    # 扫描所有 trace 目录，按时间倒序
-    dirs = sorted(
-        [d for d in base.iterdir() if d.is_dir() and _TRACE_RE.fullmatch(d.name)],
-        key=lambda d: d.name,
-        reverse=True,
-    )
+    now = datetime.now(timezone.utc)
+    all_dirs = [d for d in base.iterdir() if d.is_dir() and _TRACE_RE.fullmatch(d.name)]
+
+    if scenario is not None or status is not None:
+        filtered = []
+        for d in all_dirs:
+            meta = _load_json(d / "meta.json") or {}
+            input_data = meta.get("input", {})
+            if scenario is not None and input_data.get("scenario") != scenario:
+                continue
+            if status is not None and _resolve_status(meta, d, now) != status:
+                continue
+            filtered.append(d)
+        all_dirs = filtered
+
+    dirs = sorted(all_dirs, key=lambda d: d.name, reverse=True)
     total = len(dirs)
     start = (page - 1) * page_size
     page_dirs = dirs[start : start + page_size]
 
     traces = []
-    now = datetime.now(timezone.utc)
     for d in page_dirs:
         meta = _load_json(d / "meta.json") or {}
         input_data = meta.get("input", {})
         competitors = [c.get("name", "") for c in input_data.get("competitors", [])]
-        status = meta.get("status")
-        # 自动修正：running 超过 2 小时视为异常终止，回写 meta.json
-        if status == "running" and meta.get("started_at"):
-            try:
-                started = datetime.fromisoformat(meta["started_at"])
-                if started.tzinfo is None:
-                    started = started.replace(tzinfo=timezone.utc)
-                if (now - started).total_seconds() > 7200:
-                    meta["status"] = "failed"
-                    meta["ended_at"] = now.isoformat()
-                    meta["failure_reason"] = "process interrupted: status not updated within 2h"
-                    (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-                    status = "failed"
-            except (ValueError, TypeError):
-                pass
         traces.append(TraceSummary(
             trace_id=d.name,
             scenario=input_data.get("scenario"),
-            status=status,
+            status=_resolve_status(meta, d, now),
             started_at=meta.get("started_at"),
             ended_at=meta.get("ended_at"),
             competitors=competitors,

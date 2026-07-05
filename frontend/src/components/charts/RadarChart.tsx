@@ -26,7 +26,7 @@ export function RadarChart({ data, keys, labels, height = 380, max = 5 }: RadarC
     <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <ResponsiveContainer width="100%" height={height}>
         <ReRadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
-          <PolarGrid stroke="var(--divider)" />
+          <PolarGrid stroke="var(--border-divider)" />
           <PolarAngleAxis
             dataKey="dimension"
             tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}

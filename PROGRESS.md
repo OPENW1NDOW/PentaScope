@@ -16,24 +16,24 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
-## 2026-07-06（Next.js 前端全面优化 Phase 0-9）
+## 2026-07-06（Next.js 前端全面优化 Phase 0-9 + 回归修复）
 - 完成：
   - **A 类真 bug 修复**：`useTraces` 改走 `api.getTraces`（修 Sidebar「最近分析」永远为空）；`AnalysisSections` 编号 `useRef`→普通对象（修 re-render 累加 + lint error）；`var(--divider)`→`var(--border-divider)`；mono 字体统一 `font-[family-name:var(--font-mono)]`；S3 价格用 `currencySymbol(tier.currency)` 替代硬编码 ¥
   - **B 类工程收敛**：`api.ts` 统一 `request<T>()` + `ApiError`；历史页改用 `useTraces`；删除零引用 `useAnalysis` Zustand store；`NODE_LABELS` 抽到 `lib/constants.ts`；SSE 日志人类可读 + 僵尸 running 友好提示
   - **报告体验（Cooper 拍板 PD-1~9）**：
     - 区块顺序对齐 06-23 拍板 + Streamlit `render.py`（payload 在 analysis_sections 后、SWOT 前）
-    - S4 完整渲染（7 区块：监控窗/趋势/5 类变更/威胁矩阵/机会/行动/战卡）
-    - 进行中页 `PipelineStepper` 流水线步骤条
-    - `TracePanel` 执行追溯 6 tab + 报告页集成
-    - S2 `PESTELSection`、S3 `PricingAuditSection` 新增数据渲染
-    - 历史页场景/状态筛选（后端 `GET /traces?scenario=&status=` + 前端下拉）
-    - 报告页 `ReportToc` sticky 目录（≥1280px）
-    - `error.tsx`/`global-error.tsx` + `MobileNav` 响应式顶栏
-  - **文档**：`CLAUDE.md` 技术栈/命令/架构更新为 Next.js 主前端；`FRONTEND_SPEC.md` 区块顺序表对齐
-  - **测试**：前端 24 tests（含 AnalysisSections 编号红测试）；后端 traces 筛选 5 tests + 全量 pytest 536 passed；`next build` / lint 0 error 通过
-  - **收尾**：SortableTable React Compiler warning 已加 eslint-disable；改动已 commit
+    - S4 完整渲染（7 区块）、PipelineStepper、TracePanel 6 tab、S2 PESTEL / S3 PricingAudit
+    - 历史页场景/状态筛选、ReportToc sticky 目录、error 边界 + MobileNav
+  - **同日跟进修复**（`a9cb3f2` / `523e627`）：
+    - 历史页 `Failed to fetch`：API 默认走 Next `/api/v1` rewrite；后端需用 venv 启动
+    - SSE 进度「等待节点调度」：EventSource 直连后端 + `ProgressSnapshotQueue` 快照回放 + `run.log` 5s 轮询兜底
+    - 详细分析编号错位（二）（四）（六）：`section.heading` 用（一）（二）编号，`narrative` 不再跨 section 累加（对齐 Streamlit `_hc.h3` + `st.markdown`）
+  - **文档**：`CLAUDE.md`、`FRONTEND_SPEC.md` 更新；`e209c0c` / `a9cb3f2` / `523e627` 已 push
+  - **测试**：前端 27 tests；后端 pytest 536+ passed；lint / build 通过
 - 下一步：
-  1. 手动启动前后端，用历史 trace 走查 S1-S5 报告页 + 追溯面板 + 历史筛选
+  1. 手动走查：历史 trace S1-S5 报告 + 追溯面板 + 筛选 + 进行中页 PipelineStepper
+  2. 后端启动习惯：`.\\venv\\Scripts\\Activate.ps1` 后再 `uvicorn`（系统 Python 缺 bs4）
+  3. 可选：关 Cursor Agent 署名（`~/.cursor/cli-config.json` attribution → false；Claude Code 已关）
 - 阻塞：无
 
 ---

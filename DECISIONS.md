@@ -47,6 +47,22 @@
 
 ---
 
+## 2026-07-06: analysis_sections 章节编号对齐 Streamlit
+
+- 选择：**`section.heading` 前端加（一）（二）…；`narrative` markdown 仅 strip 旧编号、不再跨 section 注入新编号**
+- 理由：Streamlit 用 `_hc.h3(heading)` + `st.markdown(narrative)` 原样渲染；Next.js 曾给 narrative 内 `###` 跨节累加编号，导致用户看到（二）（四）（六）等错位「章节名」
+- 备选（narrative 继续全局编号）：与 Streamlit 不一致，且与 section.heading 语义冲突
+
+---
+
+## 2026-07-06: SSE 进度 EventSource 直连后端 + 快照回放
+
+- 选择：**REST 走 Next `/api/v1` rewrite；SSE 直连 `127.0.0.1:8000`；`ProgressSnapshotQueue` 晚连接回放；进行中页 5s 拉 trace 解析 `run.log` 兜底**
+- 理由：Next rewrite 不保证 SSE 流式；用户晚进分析页会错过历史 `node_start` 事件
+- 备选（仅 SSE、无快照/log）：connected 但长期显示「等待节点调度」
+
+---
+
 ## 2026-06-25: 前端迁移 Streamlit → Next.js
 
 - 选择：**React + Next.js 16 (App Router) + Tailwind CSS v4 + shadcn/ui + Recharts + @tanstack/react-table + Zustand + SWR**

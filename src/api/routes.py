@@ -33,8 +33,50 @@ router = APIRouter()
 _BEIJING = timezone(timedelta(hours=8))
 _analyze_lock = asyncio.Lock()
 
-# SSE 进度队列注册表：trace_id → asyncio.Queue
-_progress_queues: dict[str, asyncio.Queue] = {}
+# SSE 进度队列注册表：trace_id → ProgressSnapshotQueue
+_progress_queues: dict[str, "ProgressSnapshotQueue"] = {}
+
+
+class ProgressSnapshotQueue(asyncio.Queue):
+    """带进度快照的 SSE 队列：晚加入的客户端可回放当前节点状态。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.current_node: str | None = None
+        self.completed_nodes: list[dict] = []
+
+    async def put(self, item: dict) -> None:
+        event_type = item.get("event")
+        data = item.get("data") or {}
+        if event_type == "node_start":
+            self.current_node = data.get("node")
+        elif event_type == "node_complete":
+            self.completed_nodes.append({
+                "node": data.get("node"),
+                "duration_ms": data.get("duration_ms"),
+            })
+            self.current_node = None
+        elif event_type in ("analysis_complete", "analysis_failed"):
+            self.current_node = None
+        await super().put(item)
+
+    def snapshot_events(self) -> list[dict]:
+        """供 SSE 连接时回放的事件列表（不含终结事件）。"""
+        events: list[dict] = []
+        for item in self.completed_nodes:
+            events.append({
+                "event": "node_complete",
+                "data": {
+                    "node": item.get("node"),
+                    "duration_ms": item.get("duration_ms"),
+                },
+            })
+        if self.current_node:
+            events.append({
+                "event": "node_start",
+                "data": {"node": self.current_node},
+            })
+        return events
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -77,7 +119,7 @@ async def analyze(request: AnalysisRequest):
         logger.warning("[api] run.log handler 创建失败 trace=%s: %s", trace_id, e)
 
     # 创建 SSE 进度队列
-    progress_queue: asyncio.Queue = asyncio.Queue()
+    progress_queue = ProgressSnapshotQueue()
     _progress_queues[trace_id] = progress_queue
 
     http = HttpClient()
@@ -205,6 +247,11 @@ async def stream_analysis_progress(trace_id: str):
         raise HTTPException(status_code=404, detail="trace not found")
 
     async def event_generator():
+        for snap in queue.snapshot_events():
+            event_type = snap.get("event", "message")
+            data = json.dumps(snap.get("data", {}), ensure_ascii=False)
+            yield f"event: {event_type}\n"
+            yield f"data: {data}\n\n"
         while True:
             try:
                 item = await asyncio.wait_for(queue.get(), timeout=30.0)

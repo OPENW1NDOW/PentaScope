@@ -9,6 +9,20 @@ import type {
 /** 默认走 Next.js rewrite 同源代理，避免 CORS；生产可设 NEXT_PUBLIC_API_URL 指向真实后端 */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1'
 
+/** EventSource 需直连后端：Next.js rewrite 不保证 SSE 流式转发 */
+function resolveSseBase(): string {
+  if (process.env.NEXT_PUBLIC_SSE_URL) {
+    return process.env.NEXT_PUBLIC_SSE_URL.replace(/\/$/, '')
+  }
+  if (API_BASE.startsWith('http')) {
+    return API_BASE.replace(/\/$/, '')
+  }
+  const backend = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://127.0.0.1:8000'
+  return `${backend.replace(/\/$/, '')}/api/v1`
+}
+
+const SSE_BASE = resolveSseBase()
+
 /** API 错误：携带 HTTP 状态码与后端 detail 消息 */
 export class ApiError extends Error {
   constructor(
@@ -76,7 +90,7 @@ export const api = {
     `${API_BASE}/trace/${traceId}/export?format=${format}`,
 
   sseUrl: (traceId: string): string =>
-    `${API_BASE}/analyze/${traceId}/stream`,
+    `${SSE_BASE}/analyze/${traceId}/stream`,
 }
 
 export type { AnalysisResponse, PickScenarioResponse, TracesResponse, TraceResponse }

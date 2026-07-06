@@ -2,7 +2,7 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { stripNumberPrefix } from './stripNumberPrefix'
+import { stripNumberPrefix, cnNumber } from './stripNumberPrefix'
 
 export interface HeadingCounter {
   h2: number
@@ -15,21 +15,27 @@ interface MarkdownContentProps {
   className?: string
   /** 外部共享的标题计数器，跨 section 连续编号。不传则内部自建（独立计数）。 */
   headingCounter?: HeadingCounter
+  /** 为 false 时仅剥离 LLM 旧编号，不再注入前端编号（对齐 Streamlit analysis_sections narrative） */
+  renumberHeadings?: boolean
 }
 
-const CN_NUMBERS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
-function cnNumber(index: number): string {
-  return CN_NUMBERS[index - 1] ?? String(index)
-}
-
-export function MarkdownContent({ content, className, headingCounter: externalCounter }: MarkdownContentProps) {
+export function MarkdownContent({
+  content,
+  className,
+  headingCounter: externalCounter,
+  renumberHeadings = true,
+}: MarkdownContentProps) {
   if (!content) return null
 
-  // 剥离 LLM 已写的编号前缀，由前端统一重新编号
   const cleaned = stripNumberPrefix(content)
-
-  // 外部不传 counter 时内部自建（向后兼容，独立计数）
   const counter = externalCounter ?? { h2: 0, h3: 0, h4: 0 }
+
+  const headingClass = {
+    h1: 'text-[20px] font-bold mt-6 mb-3 text-[var(--text-primary)]',
+    h2: 'text-[18px] font-bold mt-6 mb-3 pl-3 border-l-[3px] border-[var(--border-active)] pb-1 border-b border-[var(--border-divider)] text-[var(--text-primary)]',
+    h3: 'text-[16px] font-semibold mt-5 mb-2 pl-3 border-l-2 border-[var(--border-active)] text-[var(--text-primary)]',
+    h4: 'text-[14px] font-semibold mt-3 mb-1.5 text-[var(--text-primary)]',
+  }
 
   return (
     <div className={`prose-notion text-[14px] leading-relaxed text-[var(--text-primary)] ${className ?? ''}`}>
@@ -37,31 +43,40 @@ export function MarkdownContent({ content, className, headingCounter: externalCo
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="text-[20px] font-bold mt-6 mb-3 text-[var(--text-primary)]">{children}</h1>
+            <h1 className={headingClass.h1}>{children}</h1>
           ),
           h2: ({ children }) => {
+            if (!renumberHeadings) {
+              return <h2 className={headingClass.h2}>{children}</h2>
+            }
             counter.h2 += 1
             counter.h3 = 0
             counter.h4 = 0
             return (
-              <h2 className="text-[18px] font-bold mt-6 mb-3 pl-3 border-l-[3px] border-[var(--border-active)] pb-1 border-b border-[var(--border-divider)] text-[var(--text-primary)]">
+              <h2 className={headingClass.h2}>
                 {cnNumber(counter.h2)}、{children}
               </h2>
             )
           },
           h3: ({ children }) => {
+            if (!renumberHeadings) {
+              return <h3 className={headingClass.h3}>{children}</h3>
+            }
             counter.h3 += 1
             counter.h4 = 0
             return (
-              <h3 className="text-[16px] font-semibold mt-5 mb-2 pl-3 border-l-2 border-[var(--border-active)] text-[var(--text-primary)]">
+              <h3 className={headingClass.h3}>
                 （{cnNumber(counter.h3)}）{children}
               </h3>
             )
           },
           h4: ({ children }) => {
+            if (!renumberHeadings) {
+              return <h4 className={headingClass.h4}>{children}</h4>
+            }
             counter.h4 += 1
             return (
-              <h4 className="text-[14px] font-semibold mt-3 mb-1.5 text-[var(--text-primary)]">
+              <h4 className={headingClass.h4}>
                 {counter.h4}. {children}
               </h4>
             )

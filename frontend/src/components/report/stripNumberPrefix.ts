@@ -30,3 +30,16 @@ export function stripNumberPrefix(text: string): string {
     })
     .join('\n')
 }
+
+const CN_NUMBERS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+
+/** 中文序号：1 → 一 */
+export function cnNumber(index: number): string {
+  return CN_NUMBERS[index - 1] ?? String(index)
+}
+
+/** Streamlit _hc.h3 等价：剥离旧编号后加（一）（二）… */
+export function formatParenthesizedHeading(index: number, title: string): string {
+  const cleaned = stripNumberPrefix(title.trim())
+  return `（${cnNumber(index)}）${cleaned}`
+}

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { use, useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { NODE_LABELS } from '@/lib/constants'
+import { parseRunLogProgress } from '@/lib/runLogProgress'
 import type { BaseReport, TraceResponse } from '@/types'
 import { useSSE } from '@/hooks/useSSE'
 import { PipelineStepper } from '@/components/analysis/PipelineStepper'
@@ -87,6 +88,7 @@ export default function AnalyzePage({
         traceId={traceId}
         sse={sse}
         scenario={trace?.meta?.input?.scenario}
+        runLog={trace?.log ?? ''}
         onRefresh={fetchTrace}
       />
     )
@@ -175,13 +177,27 @@ function RunningState({
   traceId,
   sse,
   scenario,
+  runLog,
   onRefresh,
 }: {
   traceId: string
   sse: ReturnType<typeof useSSE>
   scenario?: string
+  runLog?: string
   onRefresh?: () => void
 }) {
+  useEffect(() => {
+    if (!onRefresh) return
+    const id = setInterval(() => onRefresh(), 5000)
+    return () => clearInterval(id)
+  }, [onRefresh])
+
+  const logProgress = parseRunLogProgress(runLog ?? '')
+  const currentNode = sse.currentNode ?? logProgress.currentNode
+  const completedNodes =
+    sse.completedNodes.length > 0 ? sse.completedNodes : logProgress.completedNodes
+  const progressSource = sse.currentNode ? 'sse' : logProgress.currentNode ? 'log' : null
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -198,19 +214,21 @@ function RunningState({
         <div className="flex items-center gap-2">
           <Loader2 size={16} className="animate-spin text-[var(--info)]" />
           <span className="text-[14px] font-medium text-[var(--text-primary)]">
-            {sse.currentNode
-              ? `${NODE_LABELS[sse.currentNode] ?? sse.currentNode} 执行中...`
+            {currentNode
+              ? `${NODE_LABELS[currentNode] ?? currentNode} 执行中...`
               : sse.status === 'connecting'
                 ? '正在连接...'
-                : '等待节点调度...'}
+                : progressSource === null
+                  ? '等待节点调度...'
+                  : '正在同步进度...'}
           </span>
         </div>
 
         {/* Pipeline stepper */}
         <PipelineStepper
           scenario={scenario}
-          currentNode={sse.currentNode}
-          completedNodes={sse.completedNodes}
+          currentNode={currentNode}
+          completedNodes={completedNodes}
         />
 
         {sse.error && (

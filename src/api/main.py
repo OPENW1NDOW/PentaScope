@@ -9,7 +9,10 @@ app = FastAPI(title="竞品分析 Agent 系统", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )

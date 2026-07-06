@@ -6,7 +6,8 @@ import type {
   TraceResponse,
 } from '@/types'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+/** 默认走 Next.js rewrite 同源代理，避免 CORS；生产可设 NEXT_PUBLIC_API_URL 指向真实后端 */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1'
 
 /** API 错误：携带 HTTP 状态码与后端 detail 消息 */
 export class ApiError extends Error {
@@ -21,7 +22,15 @@ export class ApiError extends Error {
 
 /** 统一请求入口：res.ok 判断 + FastAPI detail 解析 + JSON 反序列化 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init)
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, init)
+  } catch {
+    throw new ApiError(
+      0,
+      '无法连接后端 API，请确认已启动：.\\venv\\Scripts\\Activate.ps1 后 uvicorn src.api.main:app --reload',
+    )
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     const detail =

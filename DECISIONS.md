@@ -15,6 +15,14 @@
 
 ---
 
+## 2026-07-07: Analyzer 并行拆分用固定 2 组 + gather 降级
+
+- 选择：竞品 ≥3 时拆成**固定 2 组**（前 N//2 一组、剩余一组）并发调 LLM，`asyncio.gather(return_exceptions=True)` 收集；任一组成功即降级返回合并结果，两组都失败才 raise ValueError
+- 理由：任务要求"拆 2 组并发提速 ~50%"，2 组已足够；固定组数比"按 `ANALYZER_CONCURRENCY` 动态拆 N 组"简单（`ANALYZER_CONCURRENCY` 仅作为是否并发的开关阈值，≥2 即拆 2 组），符合 CLAUDE.md 简洁优先；SWOT 主体由 scenario_input 决定与竞品无关，两组各产出完整四维 SWOT，合并后必满足 `Swot` 的 `min_length=1` 约束
+- 备选（按 `ANALYZER_CONCURRENCY` 动态拆 N 组、Semaphore 限速）：当前 4-5 竞品规模下 2 组已达成 ~50% 提速目标，动态 N 组增加复杂度但收益有限，留待竞品数显著增大再评估
+
+---
+
 ## 2026-07-06: Next.js 报告区块顺序沿用 06-23 Streamlit 拍板
 
 - 选择：**scenario_payload 放在 analysis_sections 之后、SWOT 之前**；背景在 executive_summary 之后、scope 之前；结论在 SWOT 之后、recommendations 之前——与 `src/frontend/render.py::render_base_report` 一致

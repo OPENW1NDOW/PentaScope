@@ -34,6 +34,8 @@ class Settings:
     WRITER_NARRATIVE_CONCURRENCY: int = _int_env("WRITER_NARRATIVE_CONCURRENCY", 3)
     # [方案 A1] infra error（timeout/connect）独立计数上限，超限强制终止防死循环
     INFRA_MAX_RETRIES: int = _int_env("INFRA_MAX_RETRIES", 3)
+    # Analyzer 并行拆分组数：竞品 ≥3 时拆成 2 组并发调用 LLM，提速约 50%
+    ANALYZER_CONCURRENCY: int = _int_env("ANALYZER_CONCURRENCY", 2)
 
 
 settings = Settings()

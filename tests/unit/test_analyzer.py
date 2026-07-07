@@ -290,3 +290,210 @@ async def test_analyze_retry_includes_error_feedback():
     second_call_args = mock_llm.call_json.call_args_list[1]
     retry_prompt = second_call_args[0][1]  # positional arg 1 = user prompt
     assert "校验失败" in retry_prompt or "修复" in retry_prompt
+
+
+# ============ 并行拆分测试 ============
+
+def _make_profile(name: str):
+    """构造最小合规 CompetitorProfile（并行测试用）"""
+    from src.schemas.profile import (
+        BasicInfo, Classification, CompetitorProfile, ProfileMetadata,
+    )
+    return CompetitorProfile(
+        classification=Classification(competitor_type="核心竞品", reason="r"),
+        basic_info=BasicInfo(name=name),
+        metadata=ProfileMetadata(collected_at="t", data_sources=[f"https://{name}.com"]),
+    )
+
+
+def _make_analysis_dict(competitor_name: str, *, swot_point_suffix: str = ""):
+    """构造最小合规 CompetitiveAnalysis dict（SWOT 四维各 1 条非空）"""
+    s = swot_point_suffix
+    return {
+        "positioning": {
+            "per_competitor": [{"name": competitor_name, "target_users": "u"}],
+            "source_urls": [f"https://{competitor_name}.com"],
+        },
+        "feature_matrix": [
+            {
+                "feature": "f1",
+                "our_product": "有",
+                "competitors": {competitor_name: "有"},
+                "gap_level": "持平",
+                "evidence": "e",
+                "source_urls": [f"https://{competitor_name}.com/feat"],
+            }
+        ],
+        "business_model": {
+            "per_competitor": [{"name": competitor_name, "revenue_model": "免费"}],
+            "source_urls": [f"https://{competitor_name}.com/bm"],
+        },
+        "operations": {
+            "per_competitor": [{"name": competitor_name, "growth_strategy": "g"}],
+            "source_urls": [f"https://{competitor_name}.com/op"],
+        },
+        "user_sentiment": {
+            "summary": f"{competitor_name} 口碑良好",
+            "per_competitor": {competitor_name: "正面"},
+            "source_urls": [f"https://{competitor_name}.com/us"],
+        },
+        "swot": {
+            "strengths": [{"point": f"优势A{s}", "evidence": "e", "dimension": "feature"}],
+            "weaknesses": [{"point": f"劣势A{s}", "evidence": "e", "dimension": "feature"}],
+            "opportunities": [{"point": f"机会A{s}", "evidence": "e", "dimension": "feature"}],
+            "threats": [{"point": f"威胁A{s}", "evidence": "e", "dimension": "feature"}],
+        },
+        "radar_scores": [
+            {"competitor": competitor_name, "dimensions": {"feature_breadth": 4.0}}
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_parallel_split_4_competitors():
+    """4 个竞品 → 拆成 2+2 并发，call_json 被调 2 次，feature_matrix 合并后 2 条"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D"]]
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[
+        _make_analysis_dict("A", swot_point_suffix="1"),
+        _make_analysis_dict("B", swot_point_suffix="2"),
+    ])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    result = await agent.analyze(profiles)
+
+    assert isinstance(result, CompetitiveAnalysis)
+    assert mock_llm.call_json.call_count == 2
+    # 每组 1 条 feature_matrix → 合并后 2 条
+    assert len(result.feature_matrix) == 2
+    # 每组 1 个 radar_scores → 合并后 2 条
+    assert len(result.radar_scores) == 2
+
+
+@pytest.mark.asyncio
+async def test_parallel_split_5_competitors():
+    """5 个竞品 → 拆成 3+2 或 2+3 并发，call_json 被调 2 次"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D", "E"]]
+
+    captured_profile_counts = []
+
+    class _LLM:
+        def __init__(self):
+            self.calls = 0
+
+        async def call_json(self, system, user, **kwargs):
+            self.calls += 1
+            # 数 prompt 中各竞品 basic_info.name 出现次数判断每组规模
+            present = [n for n in ["A", "B", "C", "D", "E"]
+                       if f'"name": "{n}"' in user]
+            captured_profile_counts.append(len(present))
+            # 用该组第一个竞品名构造返回
+            return _make_analysis_dict(present[0] if present else "A",
+                                       swot_point_suffix=str(self.calls))
+
+    llm = _LLM()
+    agent = AnalyzerAgent(llm=llm)
+    result = await agent.analyze(profiles)
+
+    assert llm.calls == 2
+    # 拆成两组，和为 5，且都不为空（2+3 或 3+2）
+    assert sum(captured_profile_counts) == 5
+    assert all(c > 0 for c in captured_profile_counts)
+    assert isinstance(result, CompetitiveAnalysis)
+
+
+@pytest.mark.asyncio
+async def test_no_split_2_competitors():
+    """2 个竞品 → 走原有单次调用路径，call_json 只调 1 次"""
+    profiles = [_make_profile("A"), _make_profile("B")]
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(return_value=_make_analysis_dict("A"))
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    result = await agent.analyze(profiles)
+
+    assert isinstance(result, CompetitiveAnalysis)
+    assert mock_llm.call_json.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_parallel_one_group_fails():
+    """一组失败（抛 ValueError）、另一组成功 → 降级返回部分结果，不抛异常"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D"]]
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[
+        _make_analysis_dict("A", swot_point_suffix="1"),
+        ValueError("group 2 boom"),
+    ])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    result = await agent.analyze(profiles)
+
+    # 一组成功的部分结果降级返回
+    assert isinstance(result, CompetitiveAnalysis)
+    assert len(result.feature_matrix) == 1
+    assert mock_llm.call_json.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_parallel_both_groups_fail():
+    """两组都失败 → raise ValueError"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D"]]
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[
+        ValueError("group 1 boom"),
+        ValueError("group 2 boom"),
+    ])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    with pytest.raises(ValueError):
+        await agent.analyze(profiles)
+    assert mock_llm.call_json.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_parallel_merge_swot_dedup():
+    """SWOT 合并时按 point 去重：两组 strengths 含相同 point 只保留一个"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D"]]
+
+    dict1 = _make_analysis_dict("A", swot_point_suffix="1")
+    dict2 = _make_analysis_dict("B", swot_point_suffix="1")  # 故意相同 point 后缀
+    # 两组 strengths 的 point 完全相同 → 去重后 1 条
+    assert dict1["swot"]["strengths"][0]["point"] == dict2["swot"]["strengths"][0]["point"]
+
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[dict1, dict2])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    result = await agent.analyze(profiles)
+
+    # strengths point 相同去重 → 1 条；其余维度 point 也相同去重 → 1 条
+    assert len(result.swot.strengths) == 1
+    assert len(result.swot.weaknesses) == 1
+    assert len(result.swot.opportunities) == 1
+    assert len(result.swot.threats) == 1
+
+
+@pytest.mark.asyncio
+async def test_parallel_merge_source_urls_dedup():
+    """source_urls 合并去重：两组 positioning.source_urls 有重复 URL 只保留一个"""
+    profiles = [_make_profile(n) for n in ["A", "B", "C", "D"]]
+
+    dict1 = _make_analysis_dict("A")
+    dict2 = _make_analysis_dict("B")
+    # 两组 positioning.source_urls 都含同一个共享 URL
+    shared = "https://shared.example.com"
+    dict1["positioning"]["source_urls"].append(shared)
+    dict2["positioning"]["source_urls"].append(shared)
+
+    mock_llm = MagicMock()
+    mock_llm.call_json = AsyncMock(side_effect=[dict1, dict2])
+
+    agent = AnalyzerAgent(llm=mock_llm)
+    result = await agent.analyze(profiles)
+
+    urls = result.positioning.source_urls
+    assert urls.count(shared) == 1
+    # 两组各自的 URL 都在
+    assert "https://A.com" in urls
+    assert "https://B.com" in urls

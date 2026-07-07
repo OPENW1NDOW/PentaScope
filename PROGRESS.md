@@ -16,6 +16,19 @@ PentaScope — AI 驱动的竞品分析 Agent 协作系统 — 项目进度日�
 
 ---
 
+## 2026-07-07（Analyzer 并行拆分提速）
+- 完成：
+  - **analyzer 并行分析**：`AnalyzerAgent.analyze` 在竞品 ≥3 且 `ANALYZER_CONCURRENCY ≥2` 时拆成 2 组并发调 LLM，`asyncio.gather(return_exceptions=True)` 降级；<3 走原单次路径。抽出 `_analyze_group`（复用原 normalize + backfill + 校验重试）/`_split_profiles`/`_merge_analyses`/`_dedup_swot_entries`
+  - **合并逻辑**：per_competitor / feature_matrix / radar_scores 列表拼接；user_sentiment.summary 取较长者；SWOT 四维按 point 去重；各维度 source_urls 拼接去重保序
+  - **降级语义**：一组失败另一组成功 → 返回部分结果不抛错；两组都失败 → raise ValueError（与原失败语义一致）
+  - **配置**：`src/utils/config.py` 新增 `ANALYZER_CONCURRENCY`（默认 2，`_int_env` 读取）
+  - **测试**：`tests/unit/test_analyzer.py` 新增 7 个用例（4/5 竞品拆分、2 竞品不拆、单组失败降级、双组失败抛错、SWOT 去重、source_urls 去重）
+- 验收：`pytest tests/unit/test_analyzer.py` 18 passed；全量 `pytest` 545 passed（无回归）；`ruff check src tests` 0 errors
+- 下一步：可选实测 4-5 竞品场景端到端耗时是否降至 ~120s（需真实 LLM key）
+- 阻塞：无
+
+---
+
 ## 2026-07-06（Next.js 前端全面优化 Phase 0-9 + 回归修复）
 - 完成：
   - **A 类真 bug 修复**：`useTraces` 改走 `api.getTraces`（修 Sidebar「最近分析」永远为空）；`AnalysisSections` 编号 `useRef`→普通对象（修 re-render 累加 + lint error）；`var(--divider)`→`var(--border-divider)`；mono 字体统一 `font-[family-name:var(--font-mono)]`；S3 价格用 `currencySymbol(tier.currency)` 替代硬编码 ¥

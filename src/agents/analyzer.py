@@ -1,12 +1,18 @@
+import asyncio
 import json
 import logging
+import time
 from typing import Optional
 from pydantic import ValidationError
 from src.schemas.profile import CompetitorProfile
-from src.schemas.analysis import CompetitiveAnalysis
+from src.schemas.analysis import (
+    BusinessModel, CompetitiveAnalysis, Operations, Positioning, UserSentiment,
+)
 from src.schemas.feedback import FeedbackIssue
 from src.schemas.input import ScenarioInput
+from src.schemas.report import Swot
 from src.agents.prompts import ANALYZER_SYSTEM
+from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -140,21 +146,20 @@ class AnalyzerAgent:
             "未知时填『未知』而非『无』，禁止留空。\n"
         )
 
-    async def analyze(
+    async def _analyze_group(
         self,
         profiles: list[CompetitorProfile],
-        scenario_input: Optional[ScenarioInput] = None,
-        feedback_issues: list[FeedbackIssue] | None = None,
+        scenario_input: Optional[ScenarioInput],
+        feedback_issues: list[FeedbackIssue] | None,
+        group_idx: int,
     ) -> CompetitiveAnalysis:
-        """对采集数据进行结构化分析。
+        """单组分析：复用原有 LLM 调用 + normalize + backfill + Pydantic 校验 + 重试逻辑。
 
-        [fix7] scenario_input 注入：让 analyzer 能感知场景 + 我方产品 + 分析意图，
-        修正 SWOT 主体写偏 / feature_matrix.our_product 不准等场景失明问题。
-        feedback_issues 非空时附加定向修正指令（回边重跑）。
+        用于并行拆分场景下的一组竞品；逻辑与原串行 analyze 完全一致，仅少了顶层拆分/合并。
         """
-        logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
+        logger.info("[analyzer] 组 %d 开始分析 %d 个竞品", group_idx, len(profiles))
+        t0 = time.monotonic()
 
-        # 序列化完整 profile 数据（不截断，依赖 256K 上下文）
         profiles_data = [p.model_dump() for p in profiles]
         profiles_text = json.dumps(profiles_data, ensure_ascii=False, indent=2)
 
@@ -171,7 +176,7 @@ class AnalyzerAgent:
         try:
             analysis = CompetitiveAnalysis(**result)
         except ValidationError as e:
-            logger.warning("[analyzer] Pydantic 校验失败, 重试: %s", e)
+            logger.warning("[analyzer] 组 %d Pydantic 校验失败, 重试: %s", group_idx, e)
             error_summary = self._serialize_validation_error(e)
             retry_prompt = f"{prompt}\n\n【上次校验失败，请逐条修复】\n{error_summary}"
             result = self._backfill_source_urls(
@@ -181,11 +186,163 @@ class AnalyzerAgent:
             try:
                 analysis = CompetitiveAnalysis(**result)
             except ValidationError as e2:
-                logger.error("[analyzer] 重试后仍然失败: %s, raw=%s", e2, result)
-                raise ValueError(f"Analyzer output validation failed after retry: {e2}") from e2
+                logger.error("[analyzer] 组 %d 重试后仍然失败: %s, raw=%s", group_idx, e2, result)
+                raise ValueError(f"Analyzer group {group_idx} validation failed after retry: {e2}") from e2
 
-        logger.info("[analyzer] 分析完成, 功能矩阵 %d 条, SWOT %d/%d/%d/%d",
-                    len(analysis.feature_matrix),
-                    len(analysis.swot.strengths), len(analysis.swot.weaknesses),
-                    len(analysis.swot.opportunities), len(analysis.swot.threats))
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "[analyzer] 组 %d 完成, 耗时 %.1fs, 功能矩阵 %d 条, SWOT %d/%d/%d/%d",
+            group_idx, elapsed, len(analysis.feature_matrix),
+            len(analysis.swot.strengths), len(analysis.swot.weaknesses),
+            len(analysis.swot.opportunities), len(analysis.swot.threats),
+        )
+        return analysis
+
+    @staticmethod
+    def _split_profiles(profiles: list[CompetitorProfile], groups: int) -> list[list[CompetitorProfile]]:
+        """简单平分：前 N//groups 个一组，剩余一组，组数固定为 2（与任务要求一致）。"""
+        if groups < 2:
+            return [list(profiles)]
+        mid = len(profiles) // 2
+        return [profiles[:mid], profiles[mid:]]
+
+    @staticmethod
+    def _dedup_swot_entries(entries: list) -> list:
+        """SWOT 条目按 point 去重（point 相同保留先出现的），保持原顺序。"""
+        seen = set()
+        out = []
+        for entry in entries:
+            key = entry.point if hasattr(entry, "point") else None
+            if key is not None:
+                if key in seen:
+                    continue
+                seen.add(key)
+            out.append(entry)
+        return out
+
+    @staticmethod
+    def _merge_analyses(analyses: list[CompetitiveAnalysis]) -> CompetitiveAnalysis:
+        """合并多组分析结果为一个完整 CompetitiveAnalysis。
+
+        - per_competitor / feature_matrix / radar_scores：列表直接拼接
+        - user_sentiment.per_competitor：dict 合并；summary 取较长者
+        - swot：四维按 point 去重后拼接
+        - 各维度 source_urls：拼接去重保序
+        """
+        if len(analyses) == 1:
+            return analyses[0]
+
+        def _merge_urls(*url_lists: list[str]) -> list[str]:
+            seen = set()
+            out = []
+            for urls in url_lists:
+                for u in urls or []:
+                    if u not in seen:
+                        seen.add(u)
+                        out.append(u)
+            return out
+
+        merged = CompetitiveAnalysis(
+            positioning=Positioning(
+                per_competitor=[e for a in analyses for e in a.positioning.per_competitor],
+                source_urls=_merge_urls(*[a.positioning.source_urls for a in analyses]),
+            ),
+            business_model=BusinessModel(
+                per_competitor=[e for a in analyses for e in a.business_model.per_competitor],
+                source_urls=_merge_urls(*[a.business_model.source_urls for a in analyses]),
+            ),
+            operations=Operations(
+                per_competitor=[e for a in analyses for e in a.operations.per_competitor],
+                source_urls=_merge_urls(*[a.operations.source_urls for a in analyses]),
+            ),
+            user_sentiment=UserSentiment(
+                summary=max(
+                    [a.user_sentiment.summary for a in analyses if a.user_sentiment.summary],
+                    key=len, default="",
+                ),
+                per_competitor={k: v for a in analyses for k, v in a.user_sentiment.per_competitor.items()},
+                source_urls=_merge_urls(*[a.user_sentiment.source_urls for a in analyses]),
+            ),
+            feature_matrix=[e for a in analyses for e in a.feature_matrix],
+            radar_scores=[e for a in analyses for e in a.radar_scores],
+        )
+
+        if any(a.swot for a in analyses):
+            merged.swot = Swot(
+                strengths=AnalyzerAgent._dedup_swot_entries(
+                    [e for a in analyses if a.swot for e in a.swot.strengths]),
+                weaknesses=AnalyzerAgent._dedup_swot_entries(
+                    [e for a in analyses if a.swot for e in a.swot.weaknesses]),
+                opportunities=AnalyzerAgent._dedup_swot_entries(
+                    [e for a in analyses if a.swot for e in a.swot.opportunities]),
+                threats=AnalyzerAgent._dedup_swot_entries(
+                    [e for a in analyses if a.swot for e in a.swot.threats]),
+            )
+
+        return merged
+
+    async def analyze(
+        self,
+        profiles: list[CompetitorProfile],
+        scenario_input: Optional[ScenarioInput] = None,
+        feedback_issues: list[FeedbackIssue] | None = None,
+    ) -> CompetitiveAnalysis:
+        """对采集数据进行结构化分析。
+
+        [fix7] scenario_input 注入：让 analyzer 能感知场景 + 我方产品 + 分析意图，
+        修正 SWOT 主体写偏 / feature_matrix.our_product 不准等场景失明问题。
+        feedback_issues 非空时附加定向修正指令（回边重跑）。
+
+        并行拆分：竞品 ≥3 且 ANALYZER_CONCURRENCY ≥2 时拆成 2 组并发调用 LLM，
+        合并结果后返回；<3 时保持原有单次调用路径。
+        """
+        logger.info("[analyzer] 开始分析 %d 个竞品", len(profiles))
+
+        concurrency = max(settings.ANALYZER_CONCURRENCY, 1)
+        if len(profiles) < 3 or concurrency < 2:
+            analysis = await self._analyze_group(
+                profiles, scenario_input, feedback_issues, group_idx=0
+            )
+            logger.info(
+                "[analyzer] 分析完成（单组）, 功能矩阵 %d 条, SWOT %d/%d/%d/%d",
+                len(analysis.feature_matrix),
+                len(analysis.swot.strengths), len(analysis.swot.weaknesses),
+                len(analysis.swot.opportunities), len(analysis.swot.threats),
+            )
+            return analysis
+
+        groups = self._split_profiles(profiles, concurrency)
+        logger.info("[analyzer] 并行拆分 %d 组: %s", len(groups),
+                    [len(g) for g in groups])
+
+        results = await asyncio.gather(
+            *[self._analyze_group(g, scenario_input, feedback_issues, i + 1)
+              for i, g in enumerate(groups)],
+            return_exceptions=True,
+        )
+
+        ok = [r for r in results if isinstance(r, CompetitiveAnalysis)]
+        failed = [r for r in results if isinstance(r, BaseException)]
+
+        if failed:
+            for f in failed:
+                logger.warning("[analyzer] 一组失败, 降级跳过: %s: %s",
+                               type(f).__name__, str(f)[:200])
+
+        if not ok:
+            # 两组都失败：取第一个异常向上抛 ValueError，保持与原失败语义一致
+            first = failed[0] if failed else ValueError("Analyzer produced no groups")
+            raise ValueError(f"Analyzer all groups failed: {first}") from first
+
+        if len(ok) < len(groups):
+            logger.warning("[analyzer] 部分组失败, 用成功的 %d/%d 组结果降级返回",
+                           len(ok), len(groups))
+
+        analysis = self._merge_analyses(ok)
+        logger.info(
+            "[analyzer] 分析完成（并行合并 %d 组）, 功能矩阵 %d 条, SWOT %d/%d/%d/%d",
+            len(ok), len(analysis.feature_matrix),
+            len(analysis.swot.strengths), len(analysis.swot.weaknesses),
+            len(analysis.swot.opportunities), len(analysis.swot.threats),
+        )
         return analysis
